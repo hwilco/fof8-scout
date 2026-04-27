@@ -1,0 +1,19 @@
+stages:
+  process_features:
+    cmd: uv run python src/fof8_ml/data/transform.py
+    deps:
+      - ../fof8-gen/data/raw
+      - src/fof8_ml/data/transform.py
+      - conf/data/
+      - conf/transform.yaml
+    outs:
+      - data/processed/features.parquet
+
+  train_model:
+    cmd: uv run python src/fof8_ml/train_pipeline.py
+    deps:
+      - data/processed/features.parquet
+      - src/fof8_ml/train_pipeline.py
+      - conf/
+    outs:
+      - outputs/metrics.json

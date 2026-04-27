@@ -1,20 +1,16 @@
 import polars as pl
 
+
 def test_feature_filtering():
     # Dummy data
-    df = pl.DataFrame({
-        "A": [1, 2],
-        "B": [3, 4],
-        "C": [5, 6],
-        "D": [7, 8]
-    })
-    
+    df = pl.DataFrame({"A": [1, 2], "B": [3, 4], "C": [5, 6], "D": [7, 8]})
+
     # Logic from train_pipeline.py
     def filter_features(X, include_features, exclude_features):
         X_curr = X.clone()
         if include_features:
             X_curr = X_curr.select(include_features)
-        
+
         if exclude_features:
             cols_to_drop = [c for c in exclude_features if c in X_curr.columns]
             if cols_to_drop:
@@ -43,6 +39,7 @@ def test_feature_filtering():
 
     # Logic with wildcards (from train_pipeline.py)
     import fnmatch
+
     def filter_features_wildcard(X, include_features, exclude_features):
         X_curr = X.clone()
         if include_features:
@@ -55,7 +52,7 @@ def test_feature_filtering():
                     expanded.append(p)
             include_cols = [c for c in list(dict.fromkeys(expanded)) if c in all_cols]
             X_curr = X_curr.select(include_cols)
-        
+
         if exclude_features:
             all_cols = X_curr.columns
             expanded = []
@@ -84,6 +81,7 @@ def test_feature_filtering():
     res7 = filter_features_wildcard(df2, ["Delta_*", "Beta_1"], ["Delta_2"])
     assert res7.columns == ["Delta_1", "Beta_1"]
     print("Test 7 Passed: Mixed wildcards and literals work")
+
 
 if __name__ == "__main__":
     test_feature_filtering()

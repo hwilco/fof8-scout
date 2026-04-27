@@ -7,5 +7,5 @@ __all__ = [
     "CatBoostRegressorWrapper",
     "XGBoostClassifierWrapper",
     "XGBoostRegressorWrapper",
-    "SklearnRegressorWrapper"
+    "SklearnRegressorWrapper",
 ]

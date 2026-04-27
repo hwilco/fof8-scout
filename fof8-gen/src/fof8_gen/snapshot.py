@@ -33,7 +33,9 @@ def detect_latest_year(league_dir):
     return latest_year
 
 
-def create_league_snapshot(fof8_dir, league_name, output_base_dir, file_filter=None, rename_map=None):
+def create_league_snapshot(
+    fof8_dir, league_name, output_base_dir, file_filter=None, rename_map=None
+):
     """
     Creates a snapshot of relevant CSV files for the current season.
 

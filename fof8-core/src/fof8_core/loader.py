@@ -51,7 +51,7 @@ class FOF8Loader:
         Scans a specific CSV file into a Polars LazyFrame.
         Supports wildcard filenames (e.g., 'player_ratings_season_*.csv').
         """
-        # Note: wildcards in schemas.py keys (like 'player_ratings_season_*') 
+        # Note: wildcards in schemas.py keys (like 'player_ratings_season_*')
         # won't map exactly to Path(filename).stem anymore if it resolves to a specific file.
         # But since we handle that fallback elsewhere, this is safe.
         schema_override = SCHEMAS.get(Path(filename).stem, {})
@@ -62,7 +62,7 @@ class FOF8Loader:
             paths = list(year_dir.glob(filename))
             if not paths:
                 raise FileNotFoundError(f"File matching {filename} not found in {year_dir}")
-            
+
             lfs = [self._scan_single_file(p, schema_override) for p in paths]
             return pl.concat(lfs)
 
@@ -91,7 +91,7 @@ class FOF8Loader:
             null_values=["", "null", "None", "N/A"],
             ignore_errors=True,
             # Force columns that are notorious for mixed types to String immediately
-            dtypes={"Injury_Type": pl.String, "Season_Statistics_-_Injury_Type": pl.String}
+            dtypes={"Injury_Type": pl.String, "Season_Statistics_-_Injury_Type": pl.String},
         )
 
         # Clean up column names
@@ -182,18 +182,45 @@ class FOF8Loader:
 
         # Hardcoded lookup first to resolve ambiguity (like New York)
         team_ids = {
-            "arizona cardinals": 0, "atlanta falcons": 1, "baltimore ravens": 2, "buffalo bills": 3,
-            "carolina panthers": 4, "chicago bears": 5, "cincinnati bengals": 6, "dallas cowboys": 7,
-            "denver broncos": 8, "detroit lions": 9, "green bay packers": 10, "indianapolis colts": 11,
-            "jacksonville jaguars": 12, "kansas city chiefs": 13, "miami dolphins": 14, "minnesota vikings": 15,
-            "new england patriots": 16, "new orleans saints": 17, "new york giants": 18, "new york jets": 19,
-            "las vegas raiders": 20, "oakland raiders": 20, "philadelphia eagles": 21, "pittsburgh steelers": 22,
-            "los angeles rams": 23, "st. louis rams": 23, "seattle seahawks": 24, "san francisco 49ers": 25,
-            "los angeles chargers": 26, "san diego chargers": 26, "tampa bay buccaneers": 27, "tennessee titans": 28,
-            "washington commanders": 29, "washington redskins": 29, "washington football team": 29,
-            "cleveland browns": 30, "houston texans": 31,
+            "arizona cardinals": 0,
+            "atlanta falcons": 1,
+            "baltimore ravens": 2,
+            "buffalo bills": 3,
+            "carolina panthers": 4,
+            "chicago bears": 5,
+            "cincinnati bengals": 6,
+            "dallas cowboys": 7,
+            "denver broncos": 8,
+            "detroit lions": 9,
+            "green bay packers": 10,
+            "indianapolis colts": 11,
+            "jacksonville jaguars": 12,
+            "kansas city chiefs": 13,
+            "miami dolphins": 14,
+            "minnesota vikings": 15,
+            "new england patriots": 16,
+            "new orleans saints": 17,
+            "new york giants": 18,
+            "new york jets": 19,
+            "las vegas raiders": 20,
+            "oakland raiders": 20,
+            "philadelphia eagles": 21,
+            "pittsburgh steelers": 22,
+            "los angeles rams": 23,
+            "st. louis rams": 23,
+            "seattle seahawks": 24,
+            "san francisco 49ers": 25,
+            "los angeles chargers": 26,
+            "san diego chargers": 26,
+            "tampa bay buccaneers": 27,
+            "tennessee titans": 28,
+            "washington commanders": 29,
+            "washington redskins": 29,
+            "washington football team": 29,
+            "cleveland browns": 30,
+            "houston texans": 31,
         }
-        
+
         known_id = team_ids.get(team_name.lower())
         if known_id is not None:
             return known_id
@@ -201,11 +228,7 @@ class FOF8Loader:
         # Resolve name to ID using the first available year's team info as a fallback
         try:
             years = sorted(
-                [
-                    p.name
-                    for p in self.league_dir.iterdir()
-                    if p.is_dir() and p.name.isdigit()
-                ]
+                [p.name for p in self.league_dir.iterdir() if p.is_dir() and p.name.isdigit()]
             )
             if not years:
                 return None

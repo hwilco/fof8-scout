@@ -1,0 +1,8 @@
+# Ground Truth Data Store Parameters
+# This defines the "Universal Truth" parquet.
+# Rebuilds only occur if the raw data source or league changes.
+league_name: "DRAFT005"
+raw_path: "../fof8-gen/data/raw"
+processed_path: "./data/processed"
+
+active_team_id: null

@@ -1,0 +1,6 @@
+defaults:
+  - data: fof8_base
+  - _self_
+
+# Universal Truth Build Parameters
+# The merit_threshold is now managed in fof8_base.yaml as it defines the data store schema.

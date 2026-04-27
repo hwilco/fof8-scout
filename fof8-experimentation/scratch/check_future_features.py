@@ -3,12 +3,13 @@ from fof8_core.loader import FOF8Loader
 from fof8_core.features import get_draft_class
 from pathlib import Path
 
+
 def main():
     raw_path = "../fof8-gen/data/raw"
     league_name = "DRAFT005"
-    
+
     loader = FOF8Loader(base_path=raw_path, league_name=league_name)
-    
+
     years = [2021, 2025, 2030]
     all_future_cols = set()
     non_zero_by_pos = {}
@@ -17,7 +18,7 @@ def main():
         try:
             df = get_draft_class(loader, year)
             future_cols = [c for c in df.columns if "Future_" in c]
-            
+
             for col in future_cols:
                 all_future_cols.add(col)
                 # Filter for non-zero and count by position
@@ -30,7 +31,7 @@ def main():
                         pos = row["Position_Group"]
                         count = row["count"]
                         non_zero_by_pos[col][pos] = non_zero_by_pos[col].get(pos, 0) + count
-                
+
         except Exception as e:
             print(f"Error for year {year}: {e}")
 

@@ -34,11 +34,7 @@ def test_get_draft_class_pipeline(mock_loader, tmp_path):
 
         # player_information_pre_draft.csv
         pl.DataFrame(
-            {
-                "Player_ID": [1, 2],
-                "Position": ["QB", "QB"],
-                "Year_Born": [1998, 1999]
-            }
+            {"Player_ID": [1, 2], "Position": ["QB", "QB"], "Year_Born": [1998, 1999]}
         ).write_csv(year_dir / "player_information_pre_draft.csv")
 
     df = get_draft_class(mock_loader, year=2020)

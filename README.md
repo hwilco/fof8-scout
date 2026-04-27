@@ -74,12 +74,18 @@ This project uses **[DVC (Data Version Control)](https://dvc.org/)** to manage l
 
 ### The Workflow
 
-1.  **Collection (Windows)**: `fof8-gen` exports CSVs to `fof8-gen/data/raw/`.
-2.  **Versioning (Windows)**: Use `dvc push` to upload the new data to the remote.
-3.  **Consumption (Dev Container)**: Use `dvc pull` to download the data into your experimentation environment.
+This project uses a hybrid DagsHub/DVC architecture to ensure data lineage across environments.
 
-> [!NOTE]
-> The `fof8-experimentation` module is configured to look for data in `../fof8-gen/data/raw`, keeping the raw data out of the modeling module's source tree.
+1.  **Collection (Windows)**: `fof8-gen` exports raw CSVs to `fof8-gen/data/raw/`.
+2.  **Versioning (Windows)**: Run `dvc add fof8-gen/data/raw` to update the data version, then `git commit` and `dvc push`.
+3.  **Consumption (Dev Container)**: Run `dvc pull` to sync the latest raw data.
+4.  **Orchestration (Dev Container)**: Run `dvc repro fof8-experimentation/dvc.yaml` from the root. This will:
+    -   **Transform**: Run `transform.py` to build a single "Universal Truth" feature store (`features.parquet`).
+    -   **Train**: Run `train_pipeline.py` which dynamically splits the parquet in-memory and logs results to MLflow.
+
+> [!TIP]
+> The `git_commit` is automatically logged as a tag in MLflow, allowing you to trace any model run back to its exact data and code version.
+
 
 ---
 

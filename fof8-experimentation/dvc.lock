@@ -1,0 +1,50 @@
+schema: '2.0'
+stages:
+  process_features:
+    cmd: uv run python src/fof8_ml/data/transform.py
+    deps:
+    - path: ../fof8-gen/data/raw
+      hash: md5
+      md5: 6d65a79e8705835baee9b453f347030c.dir
+      size: 4524800332
+      nfiles: 2854
+    - path: conf/data/
+      hash: md5
+      md5: 5482881a1f1854f0f32e548a11df3001.dir
+      size: 261
+      nfiles: 1
+    - path: conf/transform.yaml
+      hash: md5
+      md5: 59a497ada77b18e3f6092122a9badb39
+      size: 170
+    - path: src/fof8_ml/data/transform.py
+      hash: md5
+      md5: d03347f292e6e3deb4b90e0881fb6591
+      size: 1681
+    outs:
+    - path: data/processed/features.parquet
+      hash: md5
+      md5: 9c3fde0e1bbc5b37821e9a501cb671cb
+      size: 5323358
+  train_model:
+    cmd: uv run python src/fof8_ml/train_pipeline.py
+    deps:
+    - path: conf/
+      hash: md5
+      md5: 22b53a698420dcbba83e1b51374ef258.dir
+      size: 5941
+      nfiles: 16
+    - path: data/processed/features.parquet
+      hash: md5
+      md5: 9c3fde0e1bbc5b37821e9a501cb671cb
+      size: 5323358
+    - path: src/fof8_ml/train_pipeline.py
+      hash: md5
+      md5: 541d56aa008609b253cd4d13c1b1e882
+      size: 31752
+      isexec: true
+    outs:
+    - path: outputs/metrics.json
+      hash: md5
+      md5: 4dfd4aea7e301073b4678ba35ba9ef04
+      size: 22

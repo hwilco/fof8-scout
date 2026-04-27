@@ -1,34 +1,31 @@
 defaults:
+  - data: fof8_base
   - model@stage1_model: s1_catboost
   - model@stage2_model: reg_tweedie
   - hparams_search: s1_catboost_survival
   - override hydra/sweeper: optuna
   - _self_
 
-experiment_name: "Economic_Talent_Engine"
-sweep_name: null      # Optional: Name for grouping multiple trials (Parent Run in MLflow)
-quiet_sweep: false    # Set to true to suppress verbose fold logs during sweeps
-stage1_run_id: null # Provide a Run ID here to skip Stage 1 training
-train_stage2: false # Set to false to only train the Stage 1 Sieve
-use_gpu: false       # Enable GPU acceleration for Stage 1 & 2 models if supported
+experiment_name: "Economic_Talent_Engine_v2"
+sweep_name: null
+quiet_sweep: false
+stage1_run_id: null
+train_stage2: false
+use_gpu: false
 
-data:
-  right_censor_buffer: 20   # Exclude last 20 years to ensure careers are finished
-  test_split_pct: 0.20      # Reserve the final 20% of valid years for chronological holdout
-  positions: "all"
-  active_team_id: null
-  seed: 42
-  raw_path: "../fof8-gen/data/raw"
-  league_name: "DRAFT005"
-  cache_dir: "./data/cache"
-  include_features: null  # Subset of features to use. null = use all features.
-  exclude_features: null  # Features to explicitly remove.
-  mask_positional_features: true # Null out noise features per position, defined in features.py
+# ML Experiment Settings (Dynamic In-Memory)
+seed: 42
+test_split_pct: 0.20
+right_censor_buffer: 20
+positions: "all"
+mask_positional_features: true
+include_features: null
+exclude_features: null
 
 target:
-  merit_threshold: 0         # 0.0 = Pure ROI. Increase to e.g., 0.05 to filter out minimum-salary backups.
-  min_survivor_recall: 0.95    # Ensure the Sieve passes at least 95% of actual hits
-  target_column: "DGO"         # Updated for clarity, though not strictly used in the current dataset.py logic
+  merit_threshold: 0
+  min_survivor_recall: 0.95
+  target_column: "DGO"
 
 optimization:
   metric: "s1_oof_pr_auc"  # Change this to "s1_oof_recall_bust" or "s2_oof_rmse" as needed

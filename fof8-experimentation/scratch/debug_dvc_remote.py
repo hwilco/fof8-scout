@@ -7,7 +7,7 @@ data_path = "fof8-gen/data/raw"
 print(f"Current Working Directory: {os.getcwd()}")
 
 try:
-    url = dvc.api.get_url(path=data_path, repo=repo_root, remote='origin')
+    url = dvc.api.get_url(path=data_path, repo=repo_root, remote="origin")
     print(f"URL (remote='origin'): {url}")
 except Exception as e:
     print(f"Error (remote='origin'): {e}")

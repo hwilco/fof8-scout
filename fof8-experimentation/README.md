@@ -15,28 +15,33 @@ The `fof8_ml` source code is organized into modular components to support scalab
 
 The pipeline utilizes **DVC** for data versioning, **Hydra** for configuration management, and **MLflow** for experiment tracking.
 
-### 1. Fetching the Data (DVC)
+### 1. Data Pipeline Orchestration (DagsHub)
 
-Raw simulation data is versioned via DVC and stored in `fof8-gen/data/raw` (referenced by this module). Ensure you have the latest data snapshot before running experiments:
+We use DVC to manage the "Universal Truth" data store and orchestrate the training pipeline. This ensures that features are only reprocessed when the raw data or transformation logic changes.
 
 ```bash
-# Pull the latest data tracked by the current Git commit
+# From the project root:
+# 1. Pull the latest raw data
 uv run dvc pull
-```
 
-> [!TIP]
-> This command will pull data into `../fof8-gen/data/raw`. The ML pipeline is already configured to look for data at that path.
+# 2. Run the full pipeline (Transform -> Train)
+uv run dvc repro fof8-experimentation/dvc.yaml
+```
 
 ### 2. Running Training Experiments (Hydra)
-Execute all ML commands from the monorepo root to ensure proper workspace resolution. We use `train_pipeline.py` for the primary Economic Talent Engine:
+
+The training pipeline is decoupled from the data transformation. You can still run the script directly for fast iteration or specific Hydra overrides:
 
 ```bash
-# Run the full 2-stage pipeline with default settings
-uv run --package fof8-experimentation python src/fof8_ml/train_pipeline.py
-
-# Override hyperparameters on the fly (e.g., Stage 1 learning rate)
-uv run --package fof8-experimentation python src/fof8_ml/train_pipeline.py stage1_model.params.learning_rate=0.01
+# Run with specific Hydra overrides (still utilizes the DVC-processed features.parquet)
+uv run --package fof8-experimentation python src/fof8_ml/train_pipeline.py experiment_name="Testing_DagsHub_Setup"
 ```
+
+> [!IMPORTANT]
+> **Data vs ML Decoupling**:
+> - The `transform` stage (handled by DVC) builds the single `features.parquet` file.
+> - The `train` stage handles chronological splitting **in-memory**. This means you can adjust your test split cutoff in `conf/data/fof8_base.yaml` and rerun `dvc repro`—DVC will skip the expensive transformation and only rerun the training.
+
 
 ### Feature Ablation
 You can experiment with different feature subsets using the `include_features` and `exclude_features` configuration options. Both support wildcards (e.g., `Delta_*`). If both are provided, `exclude_features` acts as a final filter (removing features even if they were explicitly included).
@@ -72,4 +77,3 @@ To keep the source tree clean, all execution artifacts are organized as follows:
 
 > [!TIP]
 > All local logs and generated files (like OOF results) are automatically saved into the timestamped `outputs/` directory for each run, so your project root stays clean!
-

@@ -89,27 +89,22 @@ def get_annual_financials(loader: FOF8Loader) -> pl.DataFrame:
         )
 
 
-def get_peak_overall(loader: FOF8Loader, k:int = 3) -> pl.DataFrame:
+def get_peak_overall(loader: FOF8Loader, k: int = 3) -> pl.DataFrame:
     """
     Calculates the mean of the top k Current_Overall values for each player,
     using the league-scout post-exhibition ratings.
     """
     with pl.StringCache():
         lf_ratings = loader.scan_file("player_ratings_season_*.csv")
-        
+
         return (
-            lf_ratings
-            .filter(pl.col("Scouting") == "Exhibition")
+            lf_ratings.filter(pl.col("Scouting") == "Exhibition")
             .select(["Player_ID", "Current_Overall"])
             .group_by("Player_ID")
-            .agg(
-                pl.col("Current_Overall")
-                .top_k(k)
-                .mean()
-                .alias("Peak_Overall")
-            )
+            .agg(pl.col("Current_Overall").top_k(k).mean().alias("Peak_Overall"))
             .collect()
         )
+
 
 def get_career_vorp(loader: FOF8Loader) -> pl.DataFrame:
     """
@@ -119,40 +114,60 @@ def get_career_vorp(loader: FOF8Loader) -> pl.DataFrame:
     with pl.StringCache():
         # 1. Fetch Salary Caps
         lf_caps = loader.scan_file("universe_info.csv")
-        df_caps = (
-            lf_caps.filter(pl.col("Information") == "Salary Cap (in tens of thousands)")
-            .select(["Year", pl.col("Value/Round/Position").cast(pl.Int32).alias("Cap_10k")])
-        )
+        df_caps = lf_caps.filter(
+            pl.col("Information") == "Salary Cap (in tens of thousands)"
+        ).select(["Year", pl.col("Value/Round/Position").cast(pl.Int32).alias("Cap_10k")])
 
         # 2. Fetch Player Records & Calculate Actual Cap Shares
         lf_records = loader.scan_file("player_record.csv")
         df_records = (
-            lf_records.select([
-                "Player_ID", "Year", "Position",
-                "Salary_Year_1", "Bonus_Year_1",
-                "S_Games_Started"
-            ])
+            lf_records.select(
+                [
+                    "Player_ID",
+                    "Year",
+                    "Position",
+                    "Salary_Year_1",
+                    "Bonus_Year_1",
+                    "S_Games_Started",
+                ]
+            )
             .join(df_caps.lazy(), on="Year", how="left")
-            .with_columns([
-                ((pl.col("Salary_Year_1") + pl.col("Bonus_Year_1")) / pl.col("Cap_10k")).alias("Actual_Cap_Share"),
-                pl.col("S_Games_Started").max().over("Year").alias("Max_Games")
-            ])
+            .with_columns(
+                [
+                    ((pl.col("Salary_Year_1") + pl.col("Bonus_Year_1")) / pl.col("Cap_10k")).alias(
+                        "Actual_Cap_Share"
+                    ),
+                    pl.col("S_Games_Started").max().over("Year").alias("Max_Games"),
+                ]
+            )
         )
 
         # 3. Calculate the "Market Rates" per Position per Year
         df_market = (
             df_records.filter(pl.col("Actual_Cap_Share") > 0)
             .with_columns(
-                (pl.col("Actual_Cap_Share").rank(descending=True).over(["Year", "Position"]) / 
-                 pl.len().over(["Year", "Position"])).alias("Salary_Rank_Pct")
+                (
+                    pl.col("Actual_Cap_Share").rank(descending=True).over(["Year", "Position"])
+                    / pl.len().over(["Year", "Position"])
+                ).alias("Salary_Rank_Pct")
             )
             .group_by(["Year", "Position"])
-            .agg([
-                # The top 25% paid players define the true "Starter Market Rate"
-                pl.col("Actual_Cap_Share").filter(pl.col("Salary_Rank_Pct") <= 0.25).mean().alias("Starter_Rate"),
-                # The 25% to 50% paid players define the "Replacement/Backup Market Rate"
-                pl.col("Actual_Cap_Share").filter((pl.col("Salary_Rank_Pct") > 0.25) & (pl.col("Salary_Rank_Pct") <= 0.50)).mean().alias("Replacement_Rate")
-            ])
+            .agg(
+                [
+                    # The top 25% paid players define the true "Starter Market Rate"
+                    pl.col("Actual_Cap_Share")
+                    .filter(pl.col("Salary_Rank_Pct") <= 0.25)
+                    .mean()
+                    .alias("Starter_Rate"),
+                    # The 25% to 50% paid players define the "Replacement/Backup Market Rate"
+                    pl.col("Actual_Cap_Share")
+                    .filter(
+                        (pl.col("Salary_Rank_Pct") > 0.25) & (pl.col("Salary_Rank_Pct") <= 0.50)
+                    )
+                    .mean()
+                    .alias("Replacement_Rate"),
+                ]
+            )
         )
 
         # 4. Calculate VORP based purely on Starts * Positional Premium
@@ -160,11 +175,15 @@ def get_career_vorp(loader: FOF8Loader) -> pl.DataFrame:
             df_records.join(df_market, on=["Year", "Position"], how="left")
             .with_columns(
                 # Premium = Economic difference between a Starter and a Backup
-                (pl.col("Starter_Rate") - pl.col("Replacement_Rate").fill_null(0)).alias("Positional_Premium")
+                (pl.col("Starter_Rate") - pl.col("Replacement_Rate").fill_null(0)).alias(
+                    "Positional_Premium"
+                )
             )
             .with_columns(
                 # VORP = % of season started * Positional Premium
-                ((pl.col("S_Games_Started") / pl.col("Max_Games")) * pl.col("Positional_Premium")).alias("Annual_VORP")
+                (
+                    (pl.col("S_Games_Started") / pl.col("Max_Games")) * pl.col("Positional_Premium")
+                ).alias("Annual_VORP")
             )
             .group_by("Player_ID")
             .agg(pl.col("Annual_VORP").sum().alias("Career_VORP"))
@@ -174,16 +193,15 @@ def get_career_vorp(loader: FOF8Loader) -> pl.DataFrame:
 
 def get_merit_cap_share(loader: FOF8Loader) -> pl.DataFrame:
     """
-    Calculates pure merit-based earnings by subtracting the total expected cap share 
-    of a player's initial rookie contract from their actual career earnings, properly 
+    Calculates pure merit-based earnings by subtracting the total expected cap share
+    of a player's initial rookie contract from their actual career earnings, properly
     accounting for year-over-year cap inflation.
     """
     with pl.StringCache():
         # 1. Get Actual Career Earnings (sum of actual Cap Share per year)
         df_annual = get_annual_financials(loader)
-        df_actual_career = (
-            df_annual.group_by("Player_ID")
-            .agg(pl.col("Annual_Cap_Share").sum().alias("Actual_Career_Cap_Share"))
+        df_actual_career = df_annual.group_by("Player_ID").agg(
+            pl.col("Annual_Cap_Share").sum().alias("Actual_Career_Cap_Share")
         )
 
         # 2. Get the Salary Cap Lookup Table
@@ -197,47 +215,81 @@ def get_merit_cap_share(loader: FOF8Loader) -> pl.DataFrame:
         # 3. Get Initial Contract Values from their Rookie Season
         lf_records = loader.scan_file("player_record.csv")
         df_rookie_base = (
-            lf_records.filter(pl.col("Experience") == 1) # Isolate rookie year
-            .select([
-                "Player_ID", 
-                "Year", # This is the Rookie Year
-                "Salary_Year_1", "Salary_Year_2", "Salary_Year_3", "Salary_Year_4", "Salary_Year_5",
-                "Bonus_Year_1", "Bonus_Year_2", "Bonus_Year_3", "Bonus_Year_4", "Bonus_Year_5"
-            ])
+            lf_records.filter(pl.col("Experience") == 1)  # Isolate rookie year
+            .select(
+                [
+                    "Player_ID",
+                    "Year",  # This is the Rookie Year
+                    "Salary_Year_1",
+                    "Salary_Year_2",
+                    "Salary_Year_3",
+                    "Salary_Year_4",
+                    "Salary_Year_5",
+                    "Bonus_Year_1",
+                    "Bonus_Year_2",
+                    "Bonus_Year_3",
+                    "Bonus_Year_4",
+                    "Bonus_Year_5",
+                ]
+            )
             .collect()
         )
 
         # 4. Unpivot (Melt) the salaries and bonuses to long format to easily match with future caps
         # We handle Salary and Bonus separately, then join them together
-        df_salaries = df_rookie_base.unpivot(
-            index=["Player_ID", "Year"], 
-            on=["Salary_Year_1", "Salary_Year_2", "Salary_Year_3", "Salary_Year_4", "Salary_Year_5"],
-            variable_name="Contract_Year_String", 
-            value_name="Salary"
-        ).with_columns(
-            # Extract the year integer (1-5) from the column name
-            pl.col("Contract_Year_String").str.extract(r"(\d+)").cast(pl.Int32).alias("Contract_Year_Index")
-        ).drop("Contract_Year_String")
+        df_salaries = (
+            df_rookie_base.unpivot(
+                index=["Player_ID", "Year"],
+                on=[
+                    "Salary_Year_1",
+                    "Salary_Year_2",
+                    "Salary_Year_3",
+                    "Salary_Year_4",
+                    "Salary_Year_5",
+                ],
+                variable_name="Contract_Year_String",
+                value_name="Salary",
+            )
+            .with_columns(
+                # Extract the year integer (1-5) from the column name
+                pl.col("Contract_Year_String")
+                .str.extract(r"(\d+)")
+                .cast(pl.Int32)
+                .alias("Contract_Year_Index")
+            )
+            .drop("Contract_Year_String")
+        )
 
-        df_bonuses = df_rookie_base.unpivot(
-            index=["Player_ID", "Year"], 
-            on=["Bonus_Year_1", "Bonus_Year_2", "Bonus_Year_3", "Bonus_Year_4", "Bonus_Year_5"],
-            variable_name="Contract_Year_String", 
-            value_name="Bonus"
-        ).with_columns(
-            pl.col("Contract_Year_String").str.extract(r"(\d+)").cast(pl.Int32).alias("Contract_Year_Index")
-        ).drop("Contract_Year_String")
+        df_bonuses = (
+            df_rookie_base.unpivot(
+                index=["Player_ID", "Year"],
+                on=["Bonus_Year_1", "Bonus_Year_2", "Bonus_Year_3", "Bonus_Year_4", "Bonus_Year_5"],
+                variable_name="Contract_Year_String",
+                value_name="Bonus",
+            )
+            .with_columns(
+                pl.col("Contract_Year_String")
+                .str.extract(r"(\d+)")
+                .cast(pl.Int32)
+                .alias("Contract_Year_Index")
+            )
+            .drop("Contract_Year_String")
+        )
 
         # 5. Join Salaries, Bonuses, and the Forward-Looking Cap
         df_rookie_contracts = (
             df_salaries.join(df_bonuses, on=["Player_ID", "Year", "Contract_Year_Index"])
             # Calculate the ACTUAL year this money is paid out
-            .with_columns((pl.col("Year") + pl.col("Contract_Year_Index") - 1).alias("Actual_Payout_Year"))
+            .with_columns(
+                (pl.col("Year") + pl.col("Contract_Year_Index") - 1).alias("Actual_Payout_Year")
+            )
             # Join the Cap lookup table on the Actual Payout Year
             .join(df_caps, left_on="Actual_Payout_Year", right_on="Year", how="left")
             # Calculate this specific year's cap share
             .with_columns(
-                ((pl.col("Salary") + pl.col("Bonus")) / pl.col("Cap_10k")).alias("Annual_Expected_Cap_Share")
+                ((pl.col("Salary") + pl.col("Bonus")) / pl.col("Cap_10k")).alias(
+                    "Annual_Expected_Cap_Share"
+                )
             )
             # Roll it back up to a single expected value per player
             .group_by("Player_ID")
@@ -247,11 +299,11 @@ def get_merit_cap_share(loader: FOF8Loader) -> pl.DataFrame:
         # 6. Join to actual career earnings and calculate the final Merit metric
         return (
             df_actual_career.join(df_rookie_contracts, on="Player_ID", how="left")
+            .with_columns(pl.col("Initial_Contract_Cap_Share").fill_null(0))
             .with_columns(
-                pl.col("Initial_Contract_Cap_Share").fill_null(0) 
-            )
-            .with_columns(
-                (pl.col("Actual_Career_Cap_Share") - pl.col("Initial_Contract_Cap_Share")).alias("Career_Merit_Cap_Share")
+                (pl.col("Actual_Career_Cap_Share") - pl.col("Initial_Contract_Cap_Share")).alias(
+                    "Career_Merit_Cap_Share"
+                )
             )
             .select(["Player_ID", "Career_Merit_Cap_Share"])
         )
@@ -297,49 +349,49 @@ def calculate_season_av(lf_records: pl.LazyFrame) -> pl.LazyFrame:
     based on raw box-score statistics.
     """
     return (
-        lf_records
-        .with_columns([
-            # Fill nulls for all season stats to prevent math errors
-            pl.col("^S_.*$").fill_null(0).cast(pl.Float32)
-        ])
+        lf_records.with_columns(
+            [
+                # Fill nulls for all season stats to prevent math errors
+                pl.col("^S_.*$").fill_null(0).cast(pl.Float32)
+            ]
+        )
         .with_columns(
             (
                 # Passing
-                (pl.col("S_Passing_Yards") / 25) + 
-                (pl.col("S_Touchdown_Passes") * 4) - 
-                (pl.col("S_Intercepted") * 2) - 
-                (pl.col("S_Sacked") * 1) +
-                
+                (pl.col("S_Passing_Yards") / 25)
+                + (pl.col("S_Touchdown_Passes") * 4)
+                - (pl.col("S_Intercepted") * 2)
+                - (pl.col("S_Sacked") * 1)
+                +
                 # Rushing & Receiving
-                (pl.col("S_Rushing_Yards") / 10) + 
-                (pl.col("S_Receiving_Yards") / 10) + 
-                (pl.col("S_Rushing_Touchdowns") * 6) + 
-                (pl.col("S_Receiving_Touchdowns") * 6) +
-                
+                (pl.col("S_Rushing_Yards") / 10)
+                + (pl.col("S_Receiving_Yards") / 10)
+                + (pl.col("S_Rushing_Touchdowns") * 6)
+                + (pl.col("S_Receiving_Touchdowns") * 6)
+                +
                 # Defense
-                (pl.col("S_Tackles") * 1) + 
-                (pl.col("S_Assists") * 0.5) + 
-                ((pl.col("S_Sacks_(x10)") / 10) * 4) + 
-                (pl.col("S_Interceptions") * 5) + 
-                (pl.col("S_Passes_Defensed") * 1) +
-                
+                (pl.col("S_Tackles") * 1)
+                + (pl.col("S_Assists") * 0.5)
+                + ((pl.col("S_Sacks_(x10)") / 10) * 4)
+                + (pl.col("S_Interceptions") * 5)
+                + (pl.col("S_Passes_Defensed") * 1)
+                +
                 # Turnovers
-                (pl.col("S_Fumbles_Forced") * 3) + 
-                (pl.col("S_Fumbles_Recovered") * 3) - 
-                (pl.col("S_Fumbles") * 2) +
-                
+                (pl.col("S_Fumbles_Forced") * 3)
+                + (pl.col("S_Fumbles_Recovered") * 3)
+                - (pl.col("S_Fumbles") * 2)
+                +
                 # Blocking (Applies to TEs, FBs, WRs, and OL)
-                (pl.col("S_Key_Run_Blocks") * 0.5) + 
-                (pl.col("S_Pancake_Blocks") * 1) - 
-                (pl.col("S_Sacks_Allowed") * 3) +
-                
+                (pl.col("S_Key_Run_Blocks") * 0.5)
+                + (pl.col("S_Pancake_Blocks") * 1)
+                - (pl.col("S_Sacks_Allowed") * 3)
+                +
                 # Special Teams / Specialists
-                (pl.col("S_Field_Goals_Made") * 3) - 
-                ((pl.col("S_Field_Goals_Attempted") - pl.col("S_Field_Goals_Made")) * 2) + 
-                (pl.col("S_Punts_Inside_20") * 1) +
-                (pl.col("S_Punt_Returns_Touchdowns") * 6) +
-                (pl.col("S_Kick_Return_Touchdowns") * 6)
-
+                (pl.col("S_Field_Goals_Made") * 3)
+                - ((pl.col("S_Field_Goals_Attempted") - pl.col("S_Field_Goals_Made")) * 2)
+                + (pl.col("S_Punts_Inside_20") * 1)
+                + (pl.col("S_Punt_Returns_Touchdowns") * 6)
+                + (pl.col("S_Kick_Return_Touchdowns") * 6)
             ).alias("Base_Stat_AV")
         )
         .with_columns(
@@ -354,11 +406,10 @@ def calculate_season_av(lf_records: pl.LazyFrame) -> pl.LazyFrame:
 
 
 def get_career_value_metrics(
-    loader: FOF8Loader, 
-    strategy: ReplacementStrategy = strategy_hybrid_baseline
+    loader: FOF8Loader, strategy: ReplacementStrategy = strategy_hybrid_baseline
 ) -> pl.DataFrame:
     """
-    Calculates universal Approximate Value (AV) and position-adjusted 
+    Calculates universal Approximate Value (AV) and position-adjusted
     Value Over Replacement Player (VORP) using the specified strategy.
     """
     with pl.StringCache():
@@ -374,9 +425,11 @@ def get_career_value_metrics(
         # 3. Aggregate to Career Totals
         return (
             lf_vorp.group_by("Player_ID")
-            .agg([
-                pl.col("Season_AV").sum().alias("Career_AV"),
-                pl.col("Season_VORP").sum().alias("Career_VORP")
-            ])
+            .agg(
+                [
+                    pl.col("Season_AV").sum().alias("Career_AV"),
+                    pl.col("Season_VORP").sum().alias("Career_VORP"),
+                ]
+            )
             .collect()
         )

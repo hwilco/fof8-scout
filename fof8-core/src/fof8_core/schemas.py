@@ -5,31 +5,57 @@ import polars as pl
 # Draft-Day Position Groups (Broad)
 POSITION_GROUPS = pl.Enum(
     [
-        "QB", 
-        "RB", "FB", 
-        "TE", 
-        "WR", 
-        "T", "G", "C", 
-        "DE", "DT", 
-        "OLB", "ILB", 
-        "CB", "S", 
-        "K", "P", "LS"
+        "QB",
+        "RB",
+        "FB",
+        "TE",
+        "WR",
+        "T",
+        "G",
+        "C",
+        "DE",
+        "DT",
+        "OLB",
+        "ILB",
+        "CB",
+        "S",
+        "K",
+        "P",
+        "LS",
     ]
 )
 
 # Depth Chart Positions (Specific)
 POSITIONS = pl.Enum(
     [
-        "QB", 
-        "RB", "FB", 
-        "TE", 
-        "SE", "FL",
-        "LT", "RT", "LG", "RG", "C",
-        "LDE", "RDE",
-        "LDT", "RDT", "NT",
-        "SLB", "WLB", "MLB", "SILB", "WILB",
-        "LCB", "RCB", "SS", "FS",
-        "K", "P", "LS"
+        "QB",
+        "RB",
+        "FB",
+        "TE",
+        "SE",
+        "FL",
+        "LT",
+        "RT",
+        "LG",
+        "RG",
+        "C",
+        "LDE",
+        "RDE",
+        "LDT",
+        "RDT",
+        "NT",
+        "SLB",
+        "WLB",
+        "MLB",
+        "SILB",
+        "WILB",
+        "LCB",
+        "RCB",
+        "SS",
+        "FS",
+        "K",
+        "P",
+        "LS",
     ]
 )
 
