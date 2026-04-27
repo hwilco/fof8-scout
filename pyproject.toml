@@ -6,7 +6,7 @@ description = "Monorepo for scouting FOF8 draft prospects — data generation, e
 dependencies = [
     "dagshub>=0.7.0",
     "mlflow>=3.11.1",
-    "dvc",
+    "dvc[s3]",
 ]
 
 [tool.uv.workspace]

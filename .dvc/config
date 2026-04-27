@@ -3,4 +3,5 @@
 ['remote "local_remote"']
     url = C:\Users\hwilco\dvc_remotes\fof8-scout
 ['remote "origin"']
-    url = https://dagshub.com/hwilco/fof8-scout.dvc
+    url = s3://dvc
+    endpointurl = https://dagshub.com/hwilco/fof8-scout.s3
