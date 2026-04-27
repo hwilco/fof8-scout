@@ -1,0 +1,42 @@
+# Python & Tools
+**/__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.env
+.ipynb_checkpoints/
+.ruff_cache/
+
+# Project Specific
+**/data/raw/
+**/data/processed/
+**/data/cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Ignore Dev Container local environment variables
+.devcontainer/.env
+
+# --- ML Pipeline (Hydra, MLflow, DVC) ---
+
+# MLflow & Hydra
+*.db
+*.bak
+mlruns/
+mlflow_artifacts/
+artifacts/
+outputs/
+multirun/
+catboost_info/
+
+# Logs and results
+*.log
+*.csv
+*.png
+optimization_results.yaml
+
+# DVC (Data Version Control)
+# Note: DVC also creates its own .gitignore inside the .dvc/ folder to ignore its cache.
+*.dvc.local

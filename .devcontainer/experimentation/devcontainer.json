@@ -1,0 +1,46 @@
+{
+    "name": "FOF8 Experimentation",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "runArgs": [
+        "--env-file", ".devcontainer/.env",
+        "--gpus", "all"
+    ],
+    "containerEnv": {
+        "EDITOR": "nano"
+    },
+    "features": {
+        "ghcr.io/devcontainers/features/python:1": {
+            "version": "3.12"
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "settings": {
+                // The .venv lives outside the project dir (see Dockerfile), so we must
+                // point VS Code to it explicitly rather than relying on auto-discovery.
+                "python.defaultInterpreterPath": "/workspaces/.venv/bin/python"
+            },
+            "extensions": [
+                "ms-toolsai.jupyter",
+                "ms-python.python",
+                "charliermarsh.ruff",
+                "tamasfe.even-better-toml"
+            ]
+        }
+    },
+    "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+    // Only install the experimentation package, but include the root dev tools
+    "postCreateCommand": [
+        "git config --global --add safe.directory ${containerWorkspaceFolder}",
+        "if ! command -v nvidia-smi &> /dev/null; then echo 'WARNING: NVIDIA GPU not detected. Ensure the NVIDIA Container Toolkit is installed on your host.'; fi",
+        "uv sync --package fof8-experimentation",
+        "uv run nbstripout --install",
+        "git config filter.nbstripout.clean 'uv run nbstripout'",
+        "git config diff.ipynb.textconv 'uv run nbstripout -t'",
+        "uv run pre-commit install"
+    ],
+    "remoteUser": "vscode"
+}

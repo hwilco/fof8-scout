@@ -1,0 +1,141 @@
+from typing import Any, Dict
+
+import polars as pl
+
+# Draft-Day Position Groups (Broad)
+POSITION_GROUPS = pl.Enum(
+    [
+        "QB", 
+        "RB", "FB", 
+        "TE", 
+        "WR", 
+        "T", "G", "C", 
+        "DE", "DT", 
+        "OLB", "ILB", 
+        "CB", "S", 
+        "K", "P", "LS"
+    ]
+)
+
+# Depth Chart Positions (Specific)
+POSITIONS = pl.Enum(
+    [
+        "QB", 
+        "RB", "FB", 
+        "TE", 
+        "SE", "FL",
+        "LT", "RT", "LG", "RG", "C",
+        "LDE", "RDE",
+        "LDT", "RDT", "NT",
+        "SLB", "WLB", "MLB", "SILB", "WILB",
+        "LCB", "RCB", "SS", "FS",
+        "K", "P", "LS"
+    ]
+)
+
+# Standardized schemas for FOF8 CSV files to ensure memory efficiency and correct joining.
+# NOTE: Binary flags (0/1) are stored as pl.Int8 rather than pl.Boolean for CSV
+# loading compatibility. Polars scan_csv expects boolean strings for Boolean types,
+# whereas FOF8 exports 0/1 integers. Int8 is memory efficient (1 byte) and
+# supports direct arithmetic (e.g. mean() for rates).
+SCHEMAS: Dict[str, Dict[str, Any]] = {
+    "player_information_pre_draft": {
+        "Player_ID": pl.Int32,
+        "Position": POSITIONS,
+        "Draft_Year": pl.Int16,
+        "Draft_Round": pl.Int8,
+        "Drafted_Position": pl.Int16,
+        "Drafted_By": pl.Int8,
+        "Championship_Rings": pl.Int8,
+        "Hall_of_Fame_Flag": pl.Int8,
+        "Year_Born": pl.Int16,
+        "Month_Born": pl.Int8,
+        "Day_Born": pl.Int8,
+        "Career_Games_Played": pl.Int16,
+        "Number_of_Seasons": pl.Int8,
+    },
+    "player_information_post_sim": {
+        "Player_ID": pl.Int32,
+        "Position": POSITIONS,
+        "Draft_Year": pl.Int16,
+        "Draft_Round": pl.Int8,
+        "Drafted_Position": pl.Int16,
+        "Drafted_By": pl.Int8,
+        "Championship_Rings": pl.Int8,
+        "Hall_of_Fame_Flag": pl.Int8,
+        "Year_Born": pl.Int16,
+        "Month_Born": pl.Int8,
+        "Day_Born": pl.Int8,
+        "Career_Games_Played": pl.Int16,
+        "Number_of_Seasons": pl.Int8,
+    },
+    "rookies": {
+        "Player_ID": pl.Int32,
+        "Position_Group": POSITION_GROUPS,
+        "College": pl.Categorical,
+        "Height": pl.Int8,
+        "Weight": pl.Int16,
+        "Dash": pl.Int16,
+        "Solecismic": pl.Int8,
+        "Strength": pl.Int8,
+        "Agility": pl.Int16,
+        "Jump": pl.Int16,
+        "Position_Specific": pl.Int8,
+        "Developed": pl.Int8,
+        "Grade": pl.Int8,
+    },
+    "draft_personal": {
+        "Player_ID": pl.Int32,
+        "Interviewed": pl.Int8,
+    },
+    "player_record": {
+        "Player_ID": pl.Int32,
+        "Experience": pl.Int8,
+        "Team": pl.Int8,
+        "Position": POSITIONS,
+        "Position_Group": POSITION_GROUPS,
+        "Health": pl.String,
+        "Injury_Type": pl.String,
+        "Designation": pl.String,
+        "Status": pl.String,
+        "How_Acquired": pl.String,
+        "Contract_Length": pl.Int8,
+        "Salary_Year_1": pl.Int32,
+        "Salary_Year_2": pl.Int32,
+        "Salary_Year_3": pl.Int32,
+        "Salary_Year_4": pl.Int32,
+        "Salary_Year_5": pl.Int32,
+        "Bonus_Year_1": pl.Int32,
+        "Bonus_Year_2": pl.Int32,
+        "Bonus_Year_3": pl.Int32,
+        "Bonus_Year_4": pl.Int32,
+        "Bonus_Year_5": pl.Int32,
+        "Hall_Of_Fame_Points": pl.Int16,
+        "S_Games_Played": pl.Int8,
+        "S_Games_Started": pl.Int8,
+        "S_Pass_Plays": pl.Int16,
+        "S_Run_Plays": pl.Int16,
+        "S_Special_Teams_Plays": pl.Int16,
+    },
+    "staff": {
+        "Staff_ID": pl.Int32,
+        "Current_Team": pl.Int8,
+        "Role": pl.Categorical,
+        "Scouting_Ability": pl.Int8,
+        "Age": pl.Int16,
+        "Retired": pl.Int8,
+    },
+    "player_ratings_season_*": {
+        "Year": pl.Int16,
+        "Player_ID": pl.Int32,
+        "Scouting": pl.Categorical,
+        "Current_Overall": pl.Float32,
+        "Future_Overall": pl.Float32,
+    },
+    "awards": {
+        "Year": pl.Int16,
+        "Award": pl.Categorical,
+        "Player/Coach": pl.Int32,
+        "Team": pl.Int8,
+    },
+}

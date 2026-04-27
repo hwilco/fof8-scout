@@ -1,0 +1,36 @@
+[project]
+name = "fof8-scout"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+description = "Monorepo for scouting FOF8 draft prospects — data generation, exploration, and ML modelling"
+
+[tool.uv.workspace]
+members = [
+    "fof8-core",
+    "fof8-gen",
+    "fof8-experimentation"
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.11",
+    "pyright",
+    "pre-commit",
+    "nbstripout",
+    "pytest",
+    "pytest-mock",
+    "dvc"
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"] # Error, Pyflakes, and Isort (import sorting)

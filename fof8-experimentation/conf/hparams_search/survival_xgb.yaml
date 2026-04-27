@@ -1,0 +1,6 @@
+# @package hydra.sweeper
+search_space:
+  model.params.max_depth: range(3, 10)
+  model.params.learning_rate: interval(0.01, 0.1)
+  model.params.min_child_weight: range(1, 7)
+  model.params.n_estimators: range(500, 2001)

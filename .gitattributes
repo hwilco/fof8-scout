@@ -1,0 +1,11 @@
+# Enforce LF line endings for all text files
+* text=auto eol=lf
+
+# Mark binary files to prevent modification
+*.png binary
+*.jpg binary
+*.exe binary
+
+# Use nbstripout to transparently strip notebook outputs in Git
+# while keeping them locally. Requires `uv run nbstripout --install`
+*.ipynb filter=nbstripout

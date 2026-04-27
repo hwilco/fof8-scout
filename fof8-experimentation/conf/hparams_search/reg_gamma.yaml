@@ -1,0 +1,9 @@
+# @package _global_
+defaults:
+  - override /hydra/sweeper: optuna
+
+hydra:
+  sweeper:
+    search_space:
+      stage2_model.params.alpha: interval(0.001, 10.0)
+      stage2_model.params.max_iter: choice(100, 200, 500)

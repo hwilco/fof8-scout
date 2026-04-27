@@ -1,0 +1,6 @@
+name: "sklearn_tweedie"
+params:
+  power: 1.5 # 1.0 = Poisson, 2.0 = Gamma, 1.5 = Compound Poisson-Gamma
+  alpha: 1.0 # Regularization strength
+  max_iter: 1000
+  link: "log"

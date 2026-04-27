@@ -1,0 +1,29 @@
+# FOF8 Metadata Template
+# Copy this file to data/raw/<LEAGUE_NAME>/metadata.yaml
+# and update it to match your in-game settings.
+
+game_version: "FOF8 v8.4"
+generation_date: 2026-04-21
+
+# Settings configured in the "Single Player Settings" menu
+single_player_settings:
+  cap_increase_range:
+    from: 28
+    to: 80
+  injury_setting: 50
+  combine_accuracy: 50
+
+# Settings chosen during the "New Game" setup
+new_game_options:
+  team: "Miami Dolphins"
+  league_name: "DRAFT001"
+  begin_with_draft: true
+  alternate_player_file: false
+  random_new_player_file: false
+  starting_year: 2020
+  coach_names_file: false
+  x_factor: true
+  personality_and_chemistry: false
+  fire_for_poor_performance: false
+  level_economic_field: true
+  track_scouted_rating_history: true
