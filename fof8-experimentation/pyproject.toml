@@ -28,6 +28,8 @@ dependencies = [
     "optuna==4.8.0",
     "sqlalchemy<2.0.0",
     "alembic>=1.6.5",
+    "dagshub",
+    "dvc",
 ]
 
 [build-system]

@@ -12,6 +12,8 @@ import fnmatch
 import hydra
 import mlflow
 import mlflow.data
+import dagshub
+import dvc.api
 import polars as pl
 import os
 import numpy as np
@@ -53,6 +55,17 @@ def flatten_dict(d: dict, parent_key: str = '', sep: str = '.') -> dict:
         else:
             items.append((new_key, v))
     return dict(items)
+    
+@contextlib.contextmanager
+def preserve_cwd(new_cwd: str = None):
+    """Temporarily change the working directory."""
+    old_cwd = os.getcwd()
+    if new_cwd:
+        os.chdir(new_cwd)
+    try:
+        yield
+    finally:
+        os.chdir(old_cwd)
 
 def get_model_wrapper(model_name: str, stage: str, random_seed: int, params: dict, use_gpu: bool = False, thread_count: int = -1):
     model_name = model_name.lower()
@@ -75,21 +88,27 @@ def get_model_wrapper(model_name: str, stage: str, random_seed: int, params: dic
 
 @hydra.main(version_base=None, config_path="../../conf", config_name="economic_pipeline")
 def main(cfg: DictConfig):
+    # Initialize DagsHub tracking
+    # This automatically sets MLFLOW_TRACKING_URI and credentials
+    dagshub.init(repo_owner="hwilco", repo_name="fof8-scout", mlflow=True)
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     exp_root = os.path.abspath(os.path.join(script_dir, "..", ".."))
-    db_path = os.path.join(exp_root, "mlflow.db")
-    artifact_root = os.path.join(exp_root, "mlruns")
+    # db_path = os.path.join(exp_root, "mlflow.db")
+    # artifact_root = os.path.join(exp_root, "mlruns")
     
-    mlflow.set_tracking_uri(f"sqlite:///{db_path}")
+    # Universal autologging for CatBoost, XGBoost, Sklearn
+    mlflow.autolog(log_models=False) # We log models manually for better control
+
+    # Use local SQLite only if DagsHub/Remote URI is not set
+    # if not os.environ.get("MLFLOW_TRACKING_URI"):
+    #     mlflow.set_tracking_uri(f"sqlite:///{db_path}")
 
     client = mlflow.tracking.MlflowClient()
     exp = client.get_experiment_by_name(cfg.experiment_name)
     if exp is None:
         try:
-            client.create_experiment(
-                cfg.experiment_name, 
-                artifact_location=f"file:///{artifact_root.replace('\\', '/')}"
-            )
+            client.create_experiment(cfg.experiment_name)
         except Exception:
             # Handle race condition where experiment is created by another process
             pass
@@ -255,6 +274,22 @@ def main(cfg: DictConfig):
         run_name=f"Pipeline_{cfg.stage1_model.name}_{cfg.stage2_model.name}",
         tags=tags
     ) as pipeline_run:
+        # Log DagsHub and dataset metadata
+        mlflow.set_tag("data.league", cfg.data.league_name)
+        mlflow.set_tag("data.raw_path", cfg.data.raw_path)
+
+        # Log DVC data version
+        try:
+            # Resolve data path relative to the repository root
+            repo_root = os.path.abspath(os.path.join(exp_root, ".."))
+            relative_data_path = os.path.relpath(absolute_raw_path, repo_root)
+            
+            # dvc.api.get_url works best when called from the repo root or the directory containing the .dvc file
+            with preserve_cwd(repo_root):
+                data_url = dvc.api.get_url(path=relative_data_path, remote='origin')
+                mlflow.set_tag("dvc.data_url", data_url)
+        except Exception as e:
+            logging.warning(f"Could not log DVC data version: {e}")
         cfg_container = OmegaConf.to_container(cfg, resolve=True)
         mlflow.log_params(flatten_dict(cfg_container))
 
@@ -573,6 +608,13 @@ def main(cfg: DictConfig):
                 # Log trial params as a clean summary
                 trial_params = {k: v for k, v in cfg_container.items() if k in ["stage1_model", "stage2_model"]}
                 client.set_tag(sweep_run_id, "best_params", str(trial_params))
+
+                # Register the model to the DagsHub Model Registry
+                if cfg.get("train_stage2", True):
+                    mlflow.register_model(
+                        model_uri=f"runs:/{pipeline_run.info.run_id}/stage2_model",
+                        name="fof8-scout-regressor"
+                    )
 
             # --- Live Leaderboard Dashboard ---
             trial_num = HydraConfig.get().job.num + 1

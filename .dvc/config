@@ -1,4 +1,6 @@
 [core]
-    remote = local_remote
+    remote = origin
 ['remote "local_remote"']
     url = C:\Users\hwilco\dvc_remotes\fof8-scout
+['remote "origin"']
+    url = https://dagshub.com/hwilco/fof8-scout.dvc
