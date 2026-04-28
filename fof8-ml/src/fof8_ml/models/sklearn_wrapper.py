@@ -6,7 +6,7 @@ import joblib
 import os
 
 from .base import ModelWrapper
-from fof8_ml.data.transforms import preprocess_for_sklearn
+from fof8_core.features import preprocess_for_sklearn_ml_v1
 
 
 class SklearnRegressorWrapper(ModelWrapper):
@@ -39,12 +39,12 @@ class SklearnRegressorWrapper(ModelWrapper):
 
         y_train_raw = np.expm1(y_train)
 
-        X_sk, self.scaler = preprocess_for_sklearn(X_train)
+        X_sk, self.scaler = preprocess_for_sklearn_ml_v1(X_train)
         self.columns = X_sk.columns
         self.model.fit(X_sk, y_train_raw)
 
     def predict(self, X: pl.DataFrame) -> np.ndarray:
-        X_sk, _ = preprocess_for_sklearn(X, scaler=self.scaler)
+        X_sk, _ = preprocess_for_sklearn_ml_v1(X, scaler=self.scaler)
         X_sk = X_sk.reindex(columns=self.columns, fill_value=0)
         y_pred_raw = self.model.predict(X_sk)
 

@@ -2,7 +2,7 @@ import polars as pl
 from fof8_core.loader import FOF8Loader
 from fof8_core.features import get_draft_class
 from fof8_core.targets import get_career_outcomes, get_peak_overall, get_merit_cap_share
-from fof8_ml.data.features import MASKABLE_FEATURES, POSITION_FEATURE_MAP
+from fof8_core.features import MASKABLE_FEATURES_ML_V1, POSITION_FEATURE_MAP_ML_V1
 
 
 def apply_position_mask(df: pl.DataFrame) -> pl.DataFrame:
@@ -10,13 +10,13 @@ def apply_position_mask(df: pl.DataFrame) -> pl.DataFrame:
     Nulls out features that are irrelevant for specific positions.
     """
     # Get all maskable columns that actually exist in the dataframe
-    existing_maskable = [col for col in MASKABLE_FEATURES if col in df.columns]
+    existing_maskable = [col for col in MASKABLE_FEATURES_ML_V1 if col in df.columns]
 
     # Pre-calculate which positions should have each feature nulled
     feature_null_positions = {}
     for col in existing_maskable:
         null_positions = []
-        for pos, keeps in POSITION_FEATURE_MAP.items():
+        for pos, keeps in POSITION_FEATURE_MAP_ML_V1.items():
             if col not in keeps:
                 null_positions.append(pos)
         if null_positions:

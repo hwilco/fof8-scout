@@ -42,16 +42,18 @@ def get_draft_class(loader: FOF8Loader, year: int, active_team_id: int = None) -
         lower_is_better = ["Dash", "Agility"]
 
         # Step A: Convert 0s to Nulls for combine drills ONLY (FOF8 doesn't generate 0 lb players)
+        actual_rookies_cols = lf_rookies.collect_schema().names()
         lf_rookies = lf_rookies.with_columns(
             [
                 pl.when(pl.col(c) == 0).then(None).otherwise(pl.col(c)).alias(c)
-                for c in combine_drills
+                for c in combine_drills if c in actual_rookies_cols
             ]
         )
 
         # Step B: Calculate Z-Scores safely for everything
         z_score_exprs = []
-        for c in z_score_targets:
+        actual_cols = lf_rookies.collect_schema().names()
+        for c in [target for target in z_score_targets if target in actual_cols]:
             std_expr = pl.col(c).std().over("Position_Group")
 
             # Safely calculate Z-score, yielding Null if the drill was skipped
