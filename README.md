@@ -8,10 +8,10 @@ A `uv` workspace monorepo for scouting FOF8 draft prospects — automating data 
 |---|---|---|
 | [`fof8-gen/`](./fof8-gen/README.md) | RPA automation to simulate FOF8 seasons and export CSVs | **Windows host** |
 | [`fof8-core/`](./fof8-core/README.md) | Shared domain logic, Polars pipelines, and schemas | **Hybrid** |
-| [`fof8-experimentation/`](./fof8-experimentation/) | Polars + Jupyter data exploration and analysis | **Dev Container** |
+| [`fof8-ml/`](./fof8-ml/) | Polars + Jupyter data exploration and analysis | **Dev Container** |
 
 > [!IMPORTANT]
-> `fof8-gen` requires direct Windows desktop access (screen capture, GUI automation) and **cannot** run in a container. `fof8-experimentation` is fully containerized for reproducibility. `fof8-core` is a shared library.
+> `fof8-gen` requires direct Windows desktop access (screen capture, GUI automation) and **cannot** run in a container. `fof8-ml` is fully containerized for reproducibility. `fof8-core` is a shared library.
 
 ---
 
@@ -25,7 +25,7 @@ fof8-scout/
 ├── fof8-core/                # Shared logic, schemas, and pipelines
 │   ├── pyproject.toml
 │   └── src/
-├── fof8-experimentation/     # Data science & ML modeling
+├── fof8-ml/     # Data science & ML modeling
 │   ├── conf/                # Hydra hierarchical configurations
 │   ├── mlruns/              # MLflow centralized artifact store
 │   ├── mlflow.db            # MLflow experiment metadata
@@ -58,7 +58,7 @@ See the [fof8-gen README](./fof8-gen/README.md) for full setup and usage.
 uv sync --package fof8-gen
 ```
 
-### fof8-experimentation (Dev Container)
+### fof8-ml (Dev Container)
 
 Open the repo in VS Code and select **"Reopen in Container"** when prompted (or run `Dev Containers: Reopen in Container` from the command palette). The container will install dependencies automatically via `postCreateCommand`.
 
@@ -66,7 +66,7 @@ Open the repo in VS Code and select **"Reopen in Container"** when prompted (or 
 To use GPU acceleration for model training (XGBoost/CatBoost):
 1.  **Host Requirement**: Install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) on your Linux or WSL2 host.
 2.  **Configuration**: The `.devcontainer` is already configured to request GPU access via `--gpus all`.
-3.  **Verification**: Run `uv run --package fof8-experimentation python fof8-experimentation/scratch/check_gpu.py` inside the container.
+3.  **Verification**: Run `uv run --package fof8-ml python fof8-ml/scratch/check_gpu.py` inside the container.
 
 ## Data Synchronization (DVC)
 
@@ -79,7 +79,7 @@ This project uses a hybrid DagsHub/DVC architecture to ensure data lineage acros
 1.  **Collection (Windows)**: `fof8-gen` exports raw CSVs to `fof8-gen/data/raw/`.
 2.  **Versioning (Windows)**: Run `dvc add fof8-gen/data/raw` to update the data version, then `git commit` and `dvc push`.
 3.  **Consumption (Dev Container)**: Run `dvc pull` to sync the latest raw data.
-4.  **Orchestration (Dev Container)**: Run `dvc repro fof8-experimentation/dvc.yaml` from the root. This will:
+4.  **Orchestration (Dev Container)**: Run `dvc repro fof8-ml/dvc.yaml` from the root. This will:
     -   **Transform**: Run `transform.py` to build a single "Universal Truth" feature store (`features.parquet`).
     -   **Train**: Run `train_pipeline.py` which dynamically splits the parquet in-memory and logs results to MLflow.
 

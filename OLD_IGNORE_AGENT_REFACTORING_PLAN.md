@@ -1,7 +1,7 @@
 # FOF8-Scout: Architecture Refactoring Plan
 
 ## 1. Context & Objectives
-This project is an ML experimentation pipeline (`fof8-experimentation`) built on top of a simulation data parser (`fof8-core`). The goal of this refactor is to eliminate data leakage, decouple physical data materialization from the ML training loop, and implement a strictly typed, modular Hydra configuration taxonomy.
+This project is an ML experimentation pipeline (`fof8-ml`) built on top of a simulation data parser (`fof8-core`). The goal of this refactor is to eliminate data leakage, decouple physical data materialization from the ML training loop, and implement a strictly typed, modular Hydra configuration taxonomy.
 
 **Strict Agent Directives:**
 * **Data Processing:** Maintain strict use of `polars` for all data transformations. Do not regress to `pandas` unless strictly required by a downstream ML library (e.g., scikit-learn).

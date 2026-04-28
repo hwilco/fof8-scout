@@ -4,7 +4,7 @@ The central engine for the `fof8-scout` monorepo. This package provides shared d
 
 ## Role and Capabilities
 
-`fof8-core` serves as the single source of truth for how FOF8 data is interpreted and processed across the repository. It is used by `fof8-gen` for data collection decisions and by `fof8-experimentation` for machine learning modeling.
+`fof8-core` serves as the single source of truth for how FOF8 data is interpreted and processed across the repository. It is used by `fof8-gen` for data collection decisions and by `fof8-ml` for machine learning modeling.
 
 - **Data Loading (`FOF8Loader`)**: Multi-year CSV scanning with automatic year injection and memory-efficient schema enforcement.
 - **Domain Schemas**: Standardized Polars schemas using downcasting (`Int8`/`Int16`) and categorical types to handle 100+ years of simulation data in memory.
@@ -14,7 +14,7 @@ The central engine for the `fof8-scout` monorepo. This package provides shared d
 
 ## Installation
 
-This package is a member of the `fof8-scout` uv workspace. It is automatically available to other modules (like `fof8-experimentation`) when the workspace is synced.
+This package is a member of the `fof8-scout` uv workspace. It is automatically available to other modules (like `fof8-ml`) when the workspace is synced.
 
 ## Usage
 

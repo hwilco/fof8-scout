@@ -115,14 +115,14 @@ def get_model_wrapper(
             raise ValueError(f"Unknown model for stage 2: {model_name}")
 
 
-@hydra.main(version_base=None, config_path="../../conf", config_name="economic_pipeline")
+@hydra.main(version_base=None, config_path="conf", config_name="economic_pipeline")
 def main(cfg: DictConfig):
     # Initialize DagsHub tracking
     # This automatically sets MLFLOW_TRACKING_URI and credentials
     dagshub.init(repo_owner="hwilco", repo_name="fof8-scout", mlflow=True)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    exp_root = os.path.abspath(os.path.join(script_dir, "..", ".."))
+    exp_root = os.path.abspath(os.path.join(script_dir, ".."))
     # db_path = os.path.join(exp_root, "mlflow.db")
     # artifact_root = os.path.join(exp_root, "mlruns")
 

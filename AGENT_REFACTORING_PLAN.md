@@ -19,12 +19,12 @@
    ```
 
 #### **Phase 2: Isolating the ML Library**
-The `fof8-experimentation` directory currently acts as both a library and an execution space. We will re-scope it to be purely an ML library.
+The `fof8-ml` directory currently acts as both a library and an execution space. We will re-scope it to be purely an ML library.
 1. Rename the top-level directory:
    ```bash
-   git mv fof8-experimentation fof8-ml
+   git mv fof8-ml fof8-ml
    ```
-2. Update the workspace reference. In the root `pyproject.toml`, find the `members` array and change `"fof8-experimentation"` to `"fof8-ml"`.
+2. Update the workspace reference. In the root `pyproject.toml`, find the `members` array and change `"fof8-ml"` to `"fof8-ml"`.
 3. In `fof8-ml/pyproject.toml`, verify the package name is correct (it should be `fof8_ml` or similar).
 
 #### **Phase 3: Extracting Orchestration & Execution**
@@ -61,7 +61,7 @@ Separate temporary scripts and notebooks from the production path.
 
 #### **Phase 6: Update Imports and Paths (CRITICAL)**
 Because files have moved, import statements and relative paths are broken.
-1. **Search and Replace:** Perform a search and replace for `fof8-experimentation` to `fof8-ml` strictly limited to `.md`, `.json`, `.yaml`, and `.py` files. Explicitly exclude the `.git/`, `.dvc/`, and `.venv/` directories from this operation to prevent repository corruption.
+1. **Search and Replace:** Perform a search and replace for `fof8-ml` to `fof8-ml` strictly limited to `.md`, `.json`, `.yaml`, and `.py` files. Explicitly exclude the `.git/`, `.dvc/`, and `.venv/` directories from this operation to prevent repository corruption.
 2. **Fix Entry Points:** In `pipelines/train.py` and `pipelines/batch_inference.py`, update local imports. They should now import models and evaluations from `fof8_ml` (which is in their Python path via `uv`), and feature logic from `fof8_core`.
 3. **Fix Hydra Configs:** Ensure `pipelines/train.py` correctly points to `pipelines/conf/` for its Hydra configuration initialization.
    * *Agent instruction:* Modify the `@hydra.main(config_path="conf", ...)` decorator appropriately. Additionally, explicitly use `hydra.utils.get_original_cwd()` or ensure `hydra.job.chdir=True` is properly configured in the yaml files if any relative data paths are loaded within the training script, since DVC will execute from the root.

@@ -25,7 +25,7 @@ We use DVC to manage the "Universal Truth" data store and orchestrate the traini
 uv run dvc pull
 
 # 2. Run the full pipeline (Transform -> Train)
-uv run dvc repro fof8-experimentation/dvc.yaml
+uv run dvc repro fof8-ml/dvc.yaml
 ```
 
 ### 2. Running Training Experiments (Hydra)
@@ -34,7 +34,7 @@ The training pipeline is decoupled from the data transformation. You can still r
 
 ```bash
 # Run with specific Hydra overrides (still utilizes the DVC-processed features.parquet)
-uv run --package fof8-experimentation python src/fof8_ml/train_pipeline.py experiment_name="Testing_DagsHub_Setup"
+uv run --package fof8-ml python src/fof8_ml/train_pipeline.py experiment_name="Testing_DagsHub_Setup"
 ```
 
 > [!IMPORTANT]
@@ -48,13 +48,13 @@ You can experiment with different feature subsets using the `include_features` a
 
 ```bash
 # Only use specific features
-uv run --package fof8-experimentation python src/fof8_ml/train_pipeline.py data.include_features="[Combine_40, Combine_Bench]"
+uv run --package fof8-ml python src/fof8_ml/train_pipeline.py data.include_features="[Combine_40, Combine_Bench]"
 
 # Use all features EXCEPT specific ones
-uv run --package fof8-experimentation python src/fof8_ml/train_pipeline.py data.exclude_features="[Weight, Age]"
+uv run --package fof8-ml python src/fof8_ml/train_pipeline.py data.exclude_features="[Weight, Age]"
 
 # Wildcard support
-uv run --package fof8-experimentation python src/fof8_ml/train_pipeline.py data.exclude_features="[Delta_*]"
+uv run --package fof8-ml python src/fof8_ml/train_pipeline.py data.exclude_features="[Delta_*]"
 ```
 
 ### 3. Viewing Results (MLflow)
@@ -62,7 +62,7 @@ Every run automatically logs hyperparameters, metrics, and models to a centraliz
 
 ```bash
 # Start the local tracking server
-uv run mlflow ui --backend-store-uri sqlite:///fof8-experimentation/mlflow.db --port 5000
+uv run mlflow ui --backend-store-uri sqlite:///fof8-ml/mlflow.db --port 5000
 ```
 Then open `http://localhost:5000` in your browser.
 

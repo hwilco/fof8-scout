@@ -13,11 +13,11 @@ from fof8_core.loader import FOF8Loader
 from fof8_core.features import get_draft_class
 
 
-@hydra.main(version_base=None, config_path="../../conf", config_name="economic_pipeline")
+@hydra.main(version_base=None, config_path="conf", config_name="economic_pipeline")
 def main(cfg: DictConfig):
     # Define a stable root directory for the experimentation package (two levels up from this script)
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    exp_root = os.path.abspath(os.path.join(script_dir, "..", ".."))
+    exp_root = os.path.abspath(os.path.join(script_dir, ".."))
 
     # Set the tracking URI to be stable within the experimentation package
     db_path = os.path.join(exp_root, "mlflow.db")

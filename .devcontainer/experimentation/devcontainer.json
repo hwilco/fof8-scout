@@ -36,7 +36,7 @@
     "postCreateCommand": [
         "git config --global --add safe.directory ${containerWorkspaceFolder}",
         "if ! command -v nvidia-smi &> /dev/null; then echo 'WARNING: NVIDIA GPU not detected. Ensure the NVIDIA Container Toolkit is installed on your host.'; fi",
-        "uv sync --package fof8-experimentation",
+        "uv sync --package fof8-ml",
         "uv run nbstripout --install",
         "git config filter.nbstripout.clean 'uv run nbstripout'",
         "git config diff.ipynb.textconv 'uv run nbstripout -t'",
