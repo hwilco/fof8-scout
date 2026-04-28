@@ -5,33 +5,7 @@ from fof8_core.targets import get_career_outcomes, get_peak_overall, get_merit_c
 from fof8_core.features import MASKABLE_FEATURES_ML_V1, POSITION_FEATURE_MAP_ML_V1
 
 
-def apply_position_mask(df: pl.DataFrame) -> pl.DataFrame:
-    """
-    Nulls out features that are irrelevant for specific positions.
-    """
-    # Get all maskable columns that actually exist in the dataframe
-    existing_maskable = [col for col in MASKABLE_FEATURES_ML_V1 if col in df.columns]
 
-    # Pre-calculate which positions should have each feature nulled
-    feature_null_positions = {}
-    for col in existing_maskable:
-        null_positions = []
-        for pos, keeps in POSITION_FEATURE_MAP_ML_V1.items():
-            if col not in keeps:
-                null_positions.append(pos)
-        if null_positions:
-            feature_null_positions[col] = null_positions
-
-    # Apply the mask column by column
-    for col, null_positions in feature_null_positions.items():
-        df = df.with_columns(
-            pl.when(pl.col("Position_Group").cast(pl.String).is_in(null_positions))
-            .then(None)
-            .otherwise(pl.col(col))
-            .alias(col)
-        )
-
-    return df
 
 
 def build_survival_dataset(

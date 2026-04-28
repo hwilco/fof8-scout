@@ -43,7 +43,7 @@ from hydra.types import RunMode
 from omegaconf import DictConfig, OmegaConf
 
 from fof8_core.loader import FOF8Loader
-from fof8_ml.data.dataset import apply_position_mask
+from fof8_core.features import apply_position_mask_ml_v1 as apply_position_mask
 import subprocess
 import json
 from fof8_ml.evaluation.metrics import calculate_survival_metrics

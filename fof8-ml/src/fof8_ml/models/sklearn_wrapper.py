@@ -45,7 +45,14 @@ class SklearnRegressorWrapper(ModelWrapper):
 
     def predict(self, X: pl.DataFrame) -> np.ndarray:
         X_sk, _ = preprocess_for_sklearn_ml_v1(X, scaler=self.scaler)
-        X_sk = X_sk.reindex(columns=self.columns, fill_value=0)
+
+        # Align columns to match training set (Pure Polars approach)
+        missing_cols = [c for c in self.columns if c not in X_sk.columns]
+        if missing_cols:
+            X_sk = X_sk.with_columns([pl.lit(0).alias(c) for c in missing_cols])
+
+        # Select and reorder to match training set
+        X_sk = X_sk.select(self.columns)
         y_pred_raw = self.model.predict(X_sk)
 
         # Convert back to log space to be consistent with tree models
@@ -61,5 +68,5 @@ class SklearnRegressorWrapper(ModelWrapper):
         mlflow.log_artifact(f"{name}_scaler.joblib")
 
         with open(f"{name}_features.txt", "w") as f:
-            f.write("\n".join(self.columns.tolist()))
+            f.write("\n".join(self.columns))
         mlflow.log_artifact(f"{name}_features.txt")

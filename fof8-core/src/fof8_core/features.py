@@ -1,5 +1,4 @@
 import polars as pl
-import pandas as pd
 from sklearn.preprocessing import StandardScaler
 
 from .loader import FOF8Loader
@@ -279,27 +278,67 @@ POSITION_FEATURE_MAP_ML_V1 = {
 ALL_POSITIONS_ML_V1 = list(POSITION_FEATURE_MAP_ML_V1.keys())
 
 
+def apply_position_mask_ml_v1(df: pl.DataFrame) -> pl.DataFrame:
+    """
+    Nulls out features that are irrelevant for specific positions.
+    Migrated from fof8-ml for centralized feature store management.
+    """
+    # Get all maskable columns that actually exist in the dataframe
+    existing_maskable = [col for col in MASKABLE_FEATURES_ML_V1 if col in df.columns]
+
+    # Pre-calculate which positions should have each feature nulled
+    feature_null_positions = {}
+    for col in existing_maskable:
+        null_positions = []
+        for pos, keeps in POSITION_FEATURE_MAP_ML_V1.items():
+            if col not in keeps:
+                null_positions.append(pos)
+        if null_positions:
+            feature_null_positions[col] = null_positions
+
+    # Apply the mask column by column
+    for col, null_positions in feature_null_positions.items():
+        df = df.with_columns(
+            pl.when(pl.col("Position_Group").cast(pl.String).is_in(null_positions))
+            .then(None)
+            .otherwise(pl.col(col))
+            .alias(col)
+        )
+
+    return df
+
+
 def preprocess_for_sklearn_ml_v1(X_pl: pl.DataFrame, scaler=None):
     """
     Prepares a Polars DataFrame for scikit-learn models by:
-    1. Converting to pandas.
-    2. One-hot encoding categorical features.
-    3. Filling NaNs with 0.
-    4. Scaling features using StandardScaler.
+    1. One-hot encoding categorical features using pl.get_dummies().
+    2. Filling Nulls with 0.
+    3. Scaling features using StandardScaler (via numpy conversion).
     """
-    X_pd = X_pl.to_pandas()
-    # Simple OHE for categorical columns
-    cat_cols = X_pd.select_dtypes(include=["object", "category"]).columns.tolist()
+    # 1. One-hot encoding
+    cat_cols = [
+        col for col, dtype in X_pl.schema.items()
+        if dtype in [pl.String, pl.Categorical, pl.Enum]
+    ]
+
     if cat_cols:
-        X_pd = pd.get_dummies(X_pd, columns=cat_cols, drop_first=True)
-    # Fill NaNs for GLMs
-    X_pd = X_pd.fillna(0)
+        # Using pl.get_dummies as requested
+        X_pl = pl.get_dummies(X_pl, columns=cat_cols, drop_first=True)
+
+    # 2. Fill Nulls for GLMs/Linear Models
+    X_pl = X_pl.fill_null(0)
+
+    # 3. Scaling (Extracting numpy array as requested)
+    columns = X_pl.columns
+    X_np = X_pl.to_numpy()
 
     if scaler is None:
         scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X_pd)
+        X_scaled = scaler.fit_transform(X_np)
     else:
-        X_scaled = scaler.transform(X_pd)
+        X_scaled = scaler.transform(X_np)
 
-    X_final = pd.DataFrame(X_scaled, columns=X_pd.columns, index=X_pd.index)
+    # Reconstruct as pure Polars DataFrame before returning
+    X_final = pl.DataFrame(X_scaled, schema=columns)
+
     return X_final, scaler
