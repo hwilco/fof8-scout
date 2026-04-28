@@ -1,39 +1,26 @@
 defaults:
   - data: fof8_base
+  - target: economic
+  - split: chronological
+  - cv: kfold_5
   - model@stage1_model: s1_catboost
   - model@stage2_model: reg_tweedie
   - hparams_search: s1_catboost_survival
   - override hydra/sweeper: optuna
   - _self_
 
-experiment_name: "Economic_Talent_Engine_v2"
-sweep_name: null
-quiet_sweep: false
-stage1_run_id: null
-train_stage2: false
+experiment_name: "Economic_Talent_Engine_v3"
+train_stage2: true
 use_gpu: false
-
-# ML Experiment Settings (Dynamic In-Memory)
 seed: 42
-test_split_pct: 0.20
-right_censor_buffer: 20
-positions: "all"
+
 mask_positional_features: true
 include_features: null
 exclude_features: null
 
-target:
-  merit_threshold: 0
-  min_survivor_recall: 0.95
-  target_column: "DGO"
-
 optimization:
-  metric: "s1_oof_pr_auc"  # Change this to "s1_oof_recall_bust" or "s2_oof_rmse" as needed
-  direction: "maximize"    # "maximize" for AUC/Recall/F1, "minimize" for RMSE/Loss
-
-cv:
-  enabled: true
-  n_folds: 5
+  metric: "s1_oof_pr_auc"
+  direction: "maximize"
 
 diagnostics:
   log_importance: true
@@ -58,4 +45,4 @@ hydra:
     sampler:
       _target_: optuna.samplers.TPESampler
       seed: 42
-      multivariate: true   # Considers correlations between parameters
+      multivariate: true

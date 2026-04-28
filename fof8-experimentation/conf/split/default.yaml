@@ -1,2 +1,0 @@
-test_split_pct: 0.20      # Reserve the final 20% of valid years for chronological holdout
-seed: 42

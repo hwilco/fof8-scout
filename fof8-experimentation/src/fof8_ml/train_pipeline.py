@@ -203,10 +203,7 @@ def main(cfg: DictConfig):
     valid_start_year = initial_year + 1
 
     # 2. Load Preprocessed Data
-    processed_path = os.path.abspath(
-        os.path.join(exp_root, cfg.data.get("processed_path", "data/processed"))
-    )
-    features_file = os.path.join(processed_path, "features.parquet")
+    features_file = os.path.abspath(os.path.join(exp_root, cfg.data.features_path))
 
     if not os.path.exists(features_file):
         raise FileNotFoundError(
@@ -218,7 +215,7 @@ def main(cfg: DictConfig):
     # --- Runtime Filtering & Target Labeling ---
     # 1. Apply Merit Threshold to define the binary target
     df = df.with_columns(
-        (pl.col("Career_Merit_Cap_Share") > cfg.target.merit_threshold)
+        (pl.col("Career_Merit_Cap_Share") > cfg.target.stage1_sieve.merit_threshold)
         .alias("Cleared_Sieve")
         .cast(pl.Int8)
     )
@@ -229,12 +226,12 @@ def main(cfg: DictConfig):
         df = df.filter(pl.col("Position_Group").is_in(pos_list))
 
     # 3. Apply Right Censor Buffer (Years where players haven't finished careers)
-    valid_end_year = final_sim_year - cfg.right_censor_buffer
+    valid_end_year = final_sim_year - cfg.split.right_censor_buffer
     df = df.filter(pl.col("Year") <= valid_end_year)
 
     # --- In-Memory Chronological Split ---
     total_valid_years = valid_end_year - valid_start_year + 1
-    test_years_count = int(total_valid_years * cfg.test_split_pct)
+    test_years_count = int(total_valid_years * cfg.split.test_split_pct)
     train_end_year = valid_end_year - test_years_count
 
     train_year_range = [valid_start_year, train_end_year]
@@ -243,7 +240,7 @@ def main(cfg: DictConfig):
     if not (is_sweep and cfg.get("quiet_sweep", False)):
         print(f"Simulation Range: {initial_year} to {final_sim_year}")
         print(
-            f"Active Range: {valid_start_year} to {valid_end_year} (Buffer: {cfg.right_censor_buffer} years)"
+            f"Active Range: {valid_start_year} to {valid_end_year} (Buffer: {cfg.split.right_censor_buffer} years)"
         )
         print(
             f"Training Set: {train_year_range} ({train_year_range[1] - train_year_range[0] + 1} draft classes)"
@@ -260,7 +257,13 @@ def main(cfg: DictConfig):
     )
 
     metadata_cols = ["Player_ID", "Year", "First_Name", "Last_Name"]
-    target_cols = ["Cleared_Sieve", "DGO"]
+    # Phase 1 & 2: Dynamic Target & Leakage Prevention
+    # We strip out both our learning targets and any manually defined leakage columns
+    target_cols = [
+        cfg.target.stage1_sieve.target_col, 
+        cfg.target.stage2_intensity.target_col
+    ] + list(cfg.target.leakage_prevention.drop_cols)
+    
     feature_cols = [c for c in df.columns if c not in metadata_cols and c not in target_cols]
 
     X_train = train_df.select(feature_cols)
@@ -316,8 +319,8 @@ def main(cfg: DictConfig):
             X_train = X_train.drop(cols_to_drop)
             X_test = X_test.drop(cols_to_drop)
 
-    y_cls = y_train_df.get_column("Cleared_Sieve").to_numpy()
-    y_reg = y_train_df.get_column("DGO").to_numpy()
+    y_cls = y_train_df.get_column(cfg.target.stage1_sieve.target_col).to_numpy()
+    y_reg = y_train_df.get_column(cfg.target.stage2_intensity.target_col).to_numpy()
 
     # If in a sweep, we link to the sweep_run_id via tags
     tags = {}
@@ -400,7 +403,7 @@ def main(cfg: DictConfig):
                     print("STAGE 1: SIEVE CLASSIFIER")
                     print("=" * 40)
 
-                skf = StratifiedKFold(n_splits=cfg.cv.n_folds, shuffle=True, random_state=cfg.seed)
+                skf = StratifiedKFold(n_splits=cfg.cv.n_folds, shuffle=cfg.cv.shuffle, random_state=cfg.seed)
                 indices = np.arange(len(X_train))
                 oof_probs = np.zeros(len(X_train))
 
@@ -445,7 +448,7 @@ def main(cfg: DictConfig):
                 # Threshold Optimization
                 if not (is_sweep and cfg.get("quiet_sweep", False)):
                     print(
-                        f"\nOptimizing Stage 1 Threshold (Constraint: Min Survivor Recall >= {cfg.target.min_survivor_recall})..."
+                        f"\nOptimizing Stage 1 Threshold (Constraint: Min Survivor Recall >= {cfg.target.stage1_sieve.min_survivor_recall})..."
                     )
                 best_threshold = 0.5
                 best_f1_0 = -1.0
@@ -457,7 +460,7 @@ def main(cfg: DictConfig):
                     f1_0 = f1_score(y_true, current_preds, pos_label=0)
                     recall_1 = recall_score(y_true, current_preds)
 
-                    if recall_1 >= cfg.target.min_survivor_recall:
+                    if recall_1 >= cfg.target.stage1_sieve.min_survivor_recall:
                         if f1_0 > best_f1_0:
                             best_f1_0 = f1_0
                             best_threshold = thresh
@@ -579,7 +582,7 @@ def main(cfg: DictConfig):
                 X_reg = X_train.filter(pl.Series(mask))
                 y_reg_target = np.log1p(y_reg[mask])
 
-                kf = KFold(n_splits=cfg.cv.n_folds, shuffle=True, random_state=cfg.seed)
+                kf = KFold(n_splits=cfg.cv.n_folds, shuffle=cfg.cv.shuffle, random_state=cfg.seed)
                 indices_reg = np.arange(len(X_reg))
                 oof_preds_reg = np.zeros(len(X_reg))
 

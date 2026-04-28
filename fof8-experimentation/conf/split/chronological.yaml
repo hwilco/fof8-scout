@@ -1,0 +1,3 @@
+strategy: "chronological"
+test_split_pct: 0.20
+right_censor_buffer: 20
