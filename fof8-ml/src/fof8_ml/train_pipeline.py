@@ -260,10 +260,10 @@ def main(cfg: DictConfig):
     # Phase 1 & 2: Dynamic Target & Leakage Prevention
     # We strip out both our learning targets and any manually defined leakage columns
     target_cols = [
-        cfg.target.stage1_sieve.target_col, 
+        cfg.target.stage1_sieve.target_col,
         cfg.target.stage2_intensity.target_col
     ] + list(cfg.target.leakage_prevention.drop_cols)
-    
+
     feature_cols = [c for c in df.columns if c not in metadata_cols and c not in target_cols]
 
     X_train = train_df.select(feature_cols)

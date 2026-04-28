@@ -72,8 +72,8 @@ df_base_value = df_results.filter(pl.col("Original_Position") == pl.col("Evaluat
 
 # Join base value back to see the delta
 df_final_board = df_final_board.join(
-    df_base_value.select(["Player_ID", "Universal_EDV"]), 
-    on="Player_ID", 
+    df_base_value.select(["Player_ID", "Universal_EDV"]),
+    on="Player_ID",
     suffix="_Base"
 )
 

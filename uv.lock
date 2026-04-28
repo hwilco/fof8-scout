@@ -11,8 +11,8 @@ resolution-markers = [
 [manifest]
 members = [
     "fof8-core",
-    "fof8-experimentation",
     "fof8-gen",
+    "fof8-ml",
     "fof8-scout",
 ]
 
@@ -1241,9 +1241,28 @@ dependencies = [
 requires-dist = [{ name = "polars", specifier = ">=1.0.0" }]
 
 [[package]]
-name = "fof8-experimentation"
+name = "fof8-gen"
 version = "0.1.0"
-source = { editable = "fof8-experimentation" }
+source = { editable = "fof8-gen" }
+dependencies = [
+    { name = "opencv-python" },
+    { name = "pillow" },
+    { name = "pyautogui" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "opencv-python", specifier = ">=4.13.0.92" },
+    { name = "pillow", specifier = ">=12.2.0" },
+    { name = "pyautogui", specifier = ">=0.9.54" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+]
+
+[[package]]
+name = "fof8-ml"
+version = "0.1.0"
+source = { editable = "fof8-ml" }
 dependencies = [
     { name = "alembic" },
     { name = "altair" },
@@ -1303,25 +1322,6 @@ requires-dist = [
     { name = "torch", index = "https://download.pytorch.org/whl/cu130" },
     { name = "torchvision", specifier = ">=0.26.0", index = "https://download.pytorch.org/whl/cu130" },
     { name = "xgboost" },
-]
-
-[[package]]
-name = "fof8-gen"
-version = "0.1.0"
-source = { editable = "fof8-gen" }
-dependencies = [
-    { name = "opencv-python" },
-    { name = "pillow" },
-    { name = "pyautogui" },
-    { name = "pyyaml" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "opencv-python", specifier = ">=4.13.0.92" },
-    { name = "pillow", specifier = ">=12.2.0" },
-    { name = "pyautogui", specifier = ">=0.9.54" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
 ]
 
 [[package]]
@@ -4343,9 +4343,9 @@ dependencies = [
     { name = "typing-extensions" },
 ]
 wheels = [
-    { url = "https://download-r2.pytorch.org/whl/cu130/torch-2.11.0%2Bcu130-cp312-cp312-manylinux_2_28_aarch64.whl", upload-time = "2026-03-23T15:04:35Z" },
-    { url = "https://download-r2.pytorch.org/whl/cu130/torch-2.11.0%2Bcu130-cp312-cp312-manylinux_2_28_x86_64.whl", upload-time = "2026-03-23T15:04:35Z" },
-    { url = "https://download-r2.pytorch.org/whl/cu130/torch-2.11.0%2Bcu130-cp312-cp312-win_amd64.whl", upload-time = "2026-03-23T15:04:38Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torch-2.11.0%2Bcu130-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:252f237d417fac3ba59b1635815c1f035a8241f2af038f2c076ed430932d89f1", upload-time = "2026-04-27T20:01:46Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torch-2.11.0%2Bcu130-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:96911323dcfcd42028c7e8edde7bdf25bb187753234e8775f0f3f112e86a22db", upload-time = "2026-04-27T20:02:14Z" },
+    { url = "https://download-r2.pytorch.org/whl/cu130/torch-2.11.0%2Bcu130-cp312-cp312-win_amd64.whl", hash = "sha256:ef8beae16d781c3244ef28dc7bee6d8871c26bbde65d5bf66e902cb61972c4ab", upload-time = "2026-04-27T20:03:28Z" },
 ]
 
 [[package]]

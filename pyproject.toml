@@ -13,7 +13,7 @@ dependencies = [
 members = [
     "fof8-core",
     "fof8-gen",
-    "fof8-experimentation"
+    "fof8-ml"
 ]
 
 [[tool.uv.index]]

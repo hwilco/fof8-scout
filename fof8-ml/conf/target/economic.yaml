@@ -5,7 +5,7 @@ stage1_sieve:
 stage2_intensity:
   target_col: "DGO"
 leakage_prevention:
-  drop_cols: 
+  drop_cols:
     - "Career_Merit_Cap_Share"
     - "Peak_Overall"
     - "Career_Games_Played"
