@@ -19,6 +19,13 @@
 > * **Pre-Season Files:** `rookies.csv`, `draft_personal.csv`, and `player_information_pre_draft.csv` are captured at the *start* of the iteration (after the draft class is generated, but before the draft or season occurs). These are safe to use as predictive features.
 > * **Post-Season Files:** All other files (including `player_information_post_sim.csv`) are exported at the *end* of the season. They contain the results of the simulated year (stats, injuries, development, rating changes). Using these as features for that same draft class will cause target leakage.
 
+> [!CAUTION]
+> **Survival Bias & The "Purge" Phenomenon**
+> FOF8 periodically purges "unimportant" players from its internal database to manage file size.
+> * **Purge Rule:** Any rookie who is **undrafted and remains unsigned** is deleted from the game database after their rookie year.
+> * **ML Impact:** If you join a list of rookies against a *later* snapshot (e.g., trying to find 2024 rookie birth years in a 2030 cumulative file), you will only find the "successes" (players who signed). Training on this subset will introduce extreme **Survival Bias**.
+> * **Best Practice:** Always join `rookies.csv` with the `player_information_pre_draft.csv` or `players_personal.csv` from the **exact same year directory**. These snapshots are "frozen" and contain the complete class (drafted and undrafted) before the purge occurs.
+
 ---
 
 ## Files Per Snapshot (27 files per year)
@@ -30,7 +37,7 @@ based on how they behave over time.
 
 | File | Rows (2050) | Rows (2144) | Description |
 |---|---|---|---|
-| `player_information_post_sim.csv` | 10,903 | 36,837 | Every player ever created. Grows by ~300/year. Retired players persist forever. Contains career totals and draft info. Note: Lacks unsigned undrafted rookies. |
+| `player_information_post_sim.csv` | 10,903 | 36,837 | Every player ever created. Grows by ~300/year. Retired players persist forever. Contains career totals and draft info. Note: Unsigned undrafted rookies are purged from this file after their draft year. |
 | `awards.csv` | ~varies | ~varies | **Cumulative** history of all awards won. Every snapshot contains the full history up to that point. |
 | `career_records.csv` | ~varies | ~varies | **Cumulative** all-time leaderboards by category. |
 | `season_records.csv` | ~varies | ~varies | **Cumulative** single-season records by category. |
@@ -40,7 +47,7 @@ based on how they behave over time.
 | File | Rows (typical) | Description |
 |---|---|---|
 | `player_record.csv` | ~2,718 | Current roster players only. Season stats, contract, salary, personality, combine results, status. |
-| `players_personal.csv` | ~1,917 | True skill ratings (Current and Future) for active players only. The "answer key." |
+| `players_personal.csv` | ~1,917 | True skill ratings (Current and Future) for active players. **Crucial:** Includes the full draft class in their draft year snapshot, even if undrafted. |
 | `player_ratings_season_{Y}.csv` | ~varies | Scouted ratings at Pre-Camp and Exhibition stages. Contains Current_Overall and Future_Overall as seen by scouts. |
 | `player_season_{Y}.csv` | ~varies | Per-week game statistics for the completed season. Populated with real stats in DRAFT003. |
 | `universe_info.csv` | ~230 | **Economic Context** — Current salary cap, game stage, and draft order. Essential for contract normalization. |
@@ -52,7 +59,7 @@ based on how they behave over time.
 |---|---|---|
 | `rookies.csv` | ~801 | All rookie prospects for that year's draft. Combine scores + scouting grade. |
 | `draft_personal.csv` | ~801 | Scouting report skill ranges (Low/High) for each rookie. |
-| `player_information_pre_draft.csv` | ~801 | Baseline information including exact natural Position for rookies. |
+| `player_information_pre_draft.csv` | ~801 | Baseline information, including exact natural Position and birth years. Guaranteed to contain the entire draft class. |
 
 ### Other Files
 
@@ -169,7 +176,7 @@ have narrower scouting ranges, reflecting more information.
 
 **Timing:** Post-Season. Contains snapshots from the completed year.
 
-Contains two scouting stages per player per year: `Pre-Camp` and `Exhibition`. Each row represents **one scout's assessment** of a player at a specific point in the preseason.
+Contains two scouting stages per player per year: `Pre-Camp` and `Exhibition`. Each row represents **one scout's assessment** of a player at a specific point in the preseason. **Note:** Like the rating files, this includes the entire draft class (including undrafted players) in their rookie year snapshot.
 
 ### `staff.csv` — Coaching Staff & Scouting Abilities
 

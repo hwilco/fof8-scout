@@ -8,42 +8,47 @@ from .loader import FOF8Loader
 from .targets_replacements import ReplacementStrategy, strategy_hybrid_baseline
 
 
-def get_career_outcomes(loader: FOF8Loader, final_year: int) -> pl.DataFrame:
+def get_career_outcomes(loader: FOF8Loader) -> pl.DataFrame:
     """
-    Extracts career-long outcome metrics from the final available snapshot.
+    Extracts career-long outcome metrics by scanning all available snapshots.
+    Using all snapshots ensures we recover players who were purged from the
+    game's final cumulative files (e.g., undrafted rookies).
 
     Args:
         loader: An instance of FOF8Loader.
-        final_year: The final year of the simulation to pull career totals from.
 
     Returns:
         A Polars DataFrame containing career targets (Games Played, Rings, HOF).
     """
     with pl.StringCache():
-        lf_info = loader.scan_file("player_information_post_sim.csv", year=final_year)
+        # Scan ALL years to recover players who were purged from the final cumulative file.
+        # We sort by Year and take the last entry for each player to capture their
+        # final career state before retirement or purging.
+        lf_info = loader.scan_file("player_information_post_sim.csv")
 
         return (
             lf_info.select(
                 [
                     "Player_ID",
-                    "Draft_Year",
-                    "Year_Born",
-                    "Draft_Round",
+                    "Year",
                     "Career_Games_Played",
                     "Championship_Rings",
                     "Hall_of_Fame_Flag",
                     "Number_of_Seasons",
                 ]
             )
+            .sort("Year")
+            .group_by("Player_ID")
+            .last()
             .with_columns(
                 [
-                    (pl.col("Draft_Round") > 0).alias("Was_Drafted"),
                     pl.col("Career_Games_Played").fill_null(0),
                     pl.col("Championship_Rings").fill_null(0),
                     pl.col("Hall_of_Fame_Flag").fill_null(0),
                     pl.col("Number_of_Seasons").fill_null(0),
                 ]
             )
+            .drop("Year")
             .collect()
         )
 

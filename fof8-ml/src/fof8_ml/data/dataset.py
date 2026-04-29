@@ -32,11 +32,11 @@ def build_survival_dataset(
             logging.info(f"Discovered active team ID: {active_team_id}")
 
     # 1. Fetch Career Targets
-    df_targets = get_career_outcomes(loader, final_sim_year)
+    df_targets = get_career_outcomes(loader)
 
     df_targets = df_targets.with_columns(
         (pl.col(target_column) >= survival_threshold).alias("Survived").cast(pl.Int8)
-    ).select(["Player_ID", "Draft_Year", "Survived"])
+    ).select(["Player_ID", "Survived"])
 
     # 2. Fetch Features for the requested years
     feature_dfs = []
@@ -58,9 +58,8 @@ def build_survival_dataset(
     # 3. Join Features and Targets
     df_master = df_all_features.join(
         df_targets,
-        left_on=["Player_ID", "Year"],
-        right_on=["Player_ID", "Draft_Year"],
-        how="left",  # CHANGED: Preserve all rookies
+        on="Player_ID",
+        how="left",  # Preserve all rookies
     )
 
     # 3.5 Handle the missing outcomes for undrafted busts
@@ -124,16 +123,11 @@ def build_economic_dataset(
     df_peak = get_peak_overall(loader)
     df_merit = get_merit_cap_share(loader)
 
-    with pl.StringCache():
-        df_info = (
-            loader.scan_file("player_information_post_sim.csv", year=final_sim_year)
-            .select(["Player_ID", "Draft_Year"])
-            .collect()
-        )
-
+    # 2. Join Target components directly.
+    # We don't join against the survivor-only cumulative file (df_info) because
+    # that would drop undrafted rookies who were purged from the game.
     df_targets = (
-        df_info.join(df_peak, on="Player_ID", how="left")
-        .join(df_merit, on="Player_ID", how="left")
+        df_peak.join(df_merit, on="Player_ID", how="full")
         .with_columns(
             pl.col("Peak_Overall").fill_null(0), pl.col("Career_Merit_Cap_Share").fill_null(0)
         )
@@ -145,10 +139,10 @@ def build_economic_dataset(
             .alias("Cleared_Sieve")
             .cast(pl.Int8),
         )
-        .select(["Player_ID", "Draft_Year", "Cleared_Sieve", "DGO", "Career_Merit_Cap_Share"])
+        .select(["Player_ID", "Cleared_Sieve", "DGO", "Career_Merit_Cap_Share"])
     )
 
-    # 2. Fetch Features for the requested years
+    # 3. Fetch Features for the requested years
     feature_dfs = []
     start_year, end_year = year_range
     for year in range(start_year, end_year + 1):
@@ -165,11 +159,10 @@ def build_economic_dataset(
             positions = [positions]
         df_all_features = df_all_features.filter(pl.col("Position_Group").is_in(positions))
 
-    # 3. Join Features and Targets
+    # 4. Join Features and Targets
     df_master = df_all_features.join(
         df_targets,
-        left_on=["Player_ID", "Year"],
-        right_on=["Player_ID", "Draft_Year"],
+        on="Player_ID",
         how="left",  # Preserve all rookies
     )
 
