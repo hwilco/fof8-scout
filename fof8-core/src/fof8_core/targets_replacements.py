@@ -99,6 +99,9 @@ def strategy_n_plus_one(lf_av: pl.LazyFrame) -> pl.LazyFrame:
 
 def strategy_hybrid_baseline(lf_av: pl.LazyFrame) -> pl.LazyFrame:
     """
+    IMPORTANT: This method is currently broken due to some oddities in player snap counts
+    (e.g. QBs in DRAFT005).
+
     Calculates replacement level using a rate-based (per-snap) bifurcated approach
     to solve the 'bench penalty' in zero-injury simulations.
 

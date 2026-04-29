@@ -8,7 +8,8 @@ A `uv` workspace monorepo for scouting FOF8 draft prospects — automating data 
 |---|---|---|
 | [`fof8-gen/`](./fof8-gen/README.md) | RPA automation to simulate FOF8 seasons and export CSVs | **Windows host** |
 | [`fof8-core/`](./fof8-core/README.md) | Shared domain logic, Polars pipelines, and schemas | **Hybrid** |
-| [`fof8-ml/`](./fof8-ml/) | Polars + Jupyter data exploration and analysis | **Dev Container** |
+| [`fof8-ml/`](./fof8-ml/) | Modular ML modeling pipeline | **Dev Container** |
+| [`notebooks/`](./notebooks/) | Jupyter data exploration and analysis | **Dev Container** |
 
 > [!IMPORTANT]
 > `fof8-gen` requires direct Windows desktop access (screen capture, GUI automation) and **cannot** run in a container. `fof8-ml` is fully containerized for reproducibility. `fof8-core` is a shared library.
@@ -25,18 +26,18 @@ fof8-scout/
 ├── fof8-core/                # Shared logic, schemas, and pipelines
 │   ├── pyproject.toml
 │   └── src/
-├── fof8-ml/     # Data science & ML modeling
+├── fof8-ml/                 # Data science & ML modeling
 │   ├── conf/                # Hydra hierarchical configurations
 │   ├── mlruns/              # MLflow centralized artifact store
 │   ├── mlflow.db            # MLflow experiment metadata
 │   ├── outputs/             # Organized run logs & local files
 │   ├── multirun/            # Results from hyperparameter sweeps
-│   ├── notebooks/           # Analysis and exploration notebooks
 │   ├── src/fof8_ml/         # Modular ML pipeline
 │   │   ├── data/            # Dataset & Transform logic
 │   │   ├── models/          # Multi-library Model Wrappers
 │   │   ├── evaluation/      # Metrics & Plotting
-├── pipelines/             # ML Orchestration Scripts
+├── notebooks/               # Analysis and exploration notebooks
+├── pipelines/               # ML Orchestration Scripts
 │   ├── process_features.py
 │   └── train.py
 │   └── pyproject.toml
@@ -81,7 +82,7 @@ This project uses a hybrid DagsHub/DVC architecture to ensure data lineage acros
 1.  **Collection (Windows)**: `fof8-gen` exports raw CSVs to `fof8-gen/data/raw/`.
 2.  **Versioning (Windows)**: Run `dvc add fof8-gen/data/raw` to update the data version, then `git commit` and `dvc push`.
 3.  **Consumption (Dev Container)**: Run `dvc pull` to sync the latest raw data.
-4.  **Orchestration (Dev Container)**: Run `dvc repro fof8-ml/dvc.yaml` from the root. This will:
+4.  **Orchestration (Dev Container)**: Run `dvc repro` from the root. This will:
     -   **Transform**: Run `pipelines/process_features.py` to build a single "Universal Truth" feature store (`features.parquet`).
     -   **Train**: Run `pipelines/train.py` which dynamically splits the parquet in-memory and logs results to MLflow.
 
