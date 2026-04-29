@@ -1,7 +1,6 @@
 # Ground Truth Data Store Paths
 league_name: "DRAFT005"
-raw_path: "../fof8-gen/data/raw"
-features_path: "./data/processed/X_features.parquet"
-targets_path: "./data/processed/y_targets.parquet"
+raw_path: "fof8-gen/data/raw"
+features_path: "fof8-ml/data/processed/features.parquet"
 
 active_team_id: null

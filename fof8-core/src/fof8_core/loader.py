@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Optional
 
 import polars as pl
 
@@ -46,7 +45,7 @@ class FOF8Loader:
             raise ValueError(f"No year directories found in {self.league_dir}")
         return min(years)
 
-    def scan_file(self, filename: str, year: Optional[int] = None) -> pl.LazyFrame:
+    def scan_file(self, filename: str, year: int | None = None) -> pl.LazyFrame:
         """
         Scans a specific CSV file into a Polars LazyFrame.
         Supports wildcard filenames (e.g., 'player_ratings_season_*.csv').
@@ -116,10 +115,16 @@ class FOF8Loader:
 
         # Apply schema overrides as casts
         column_names_post_rename = lf.collect_schema().names()
+
+        # Drop unpopulated Future_ columns
+        future_cols = [col for col in column_names_post_rename if "Future_" in col]
+        if future_cols:
+            lf = lf.drop(future_cols)
+
         casts = [
             pl.col(col).cast(dtype)
             for col, dtype in schema_override.items()
-            if col in column_names_post_rename
+            if col in column_names_post_rename and col not in future_cols
         ]
         if casts:
             lf = lf.with_columns(casts)
@@ -151,7 +156,7 @@ class FOF8Loader:
         # item() returns the first value of the first column as a python type
         return int(cap_value) * 10_000
 
-    def get_active_team_id(self) -> Optional[int]:
+    def get_active_team_id(self) -> int | None:
         """
         Dynamically discovers the active team ID from the league metadata.
         Uses metadata.yaml to find the team name and resolves it via team_information.csv.

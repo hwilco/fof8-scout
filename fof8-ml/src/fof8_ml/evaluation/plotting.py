@@ -1,15 +1,26 @@
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import tempfile
-import os
 import logging
+import os
+import tempfile
+
+import matplotlib.pyplot as plt
 import mlflow
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+import numpy as np
+import pandas as pd
+from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 
 
 def log_feature_importance(model, feature_names, stage_name, is_catboost, X=None, log_shap=False):
-    """Helper to generate and log feature importance plots to MLflow."""
+    """
+    Helper to generate and log feature importance plots to MLflow.
+
+    Args:
+        model: The trained model wrapper.
+        feature_names: List of feature names.
+        stage_name: Name of the pipeline stage.
+        is_catboost: Boolean indicating if model is CatBoost.
+        X: Optional feature data for SHAP values.
+        log_shap: Boolean indicating whether to log SHAP plots.
+    """
 
     # 1. Main Importance Plot (PredictionValuesChange or Weights)
     if is_catboost:
@@ -80,7 +91,8 @@ def log_feature_importance(model, feature_names, stage_name, is_catboost, X=None
                             else X_pos
                         )
 
-                        # Calculate SHAP values on the FULL feature set (required for model compatibility)
+                        # Calculate SHAP values on the FULL feature set
+                        # (required for model compatibility)
                         shap_pos = explainer.shap_values(X_pos_sample)
 
                         # Identify columns that are NOT all-NaN to avoid plotting warnings
@@ -118,7 +130,14 @@ def log_feature_importance(model, feature_names, stage_name, is_catboost, X=None
 
 
 def log_confusion_matrix(y_true, y_pred, threshold: float):
-    """Helper to generate and log confusion matrix."""
+    """
+    Helper to generate and log confusion matrix.
+
+    Args:
+        y_true: Ground truth labels.
+        y_pred: Predicted labels.
+        threshold: Classification threshold used.
+    """
     cm = confusion_matrix(y_true, y_pred)
     fig, ax = plt.subplots()
     ConfusionMatrixDisplay(cm, display_labels=["Bust", "Hit"]).plot(

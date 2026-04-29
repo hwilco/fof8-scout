@@ -1,10 +1,10 @@
 import os
-import hydra
-from omegaconf import DictConfig
-import polars as pl
 
+import hydra
+import polars as pl
 from fof8_core.loader import FOF8Loader
 from fof8_ml.data.dataset import build_economic_dataset
+from omegaconf import DictConfig
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="transform")

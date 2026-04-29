@@ -1,8 +1,7 @@
 import catboost as cb
-import polars as pl
-import pandas as pd
-import numpy as np
 import mlflow
+import numpy as np
+import polars as pl
 import torch
 
 from .base import ModelWrapper
@@ -12,6 +11,15 @@ class CatBoostWrapper(ModelWrapper):
     """Shared logic for CatBoost wrapper."""
 
     def _prepare_data(self, X: pl.DataFrame):
+        """
+        Converts Polars DataFrame to Pandas and identifies categorical features.
+
+        Args:
+            X: Input Polars DataFrame.
+
+        Returns:
+            Tuple of (Pandas DataFrame, list of categorical feature names).
+        """
         X_pd = X.to_pandas()
         cat_features = X_pd.select_dtypes(include=["object", "category"]).columns.tolist()
         return X_pd, cat_features

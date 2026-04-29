@@ -1,21 +1,19 @@
+import os
+import random
+
 import hydra
 import mlflow
 import polars as pl
-import numpy as np
-import random
-from pathlib import Path
-from hydra.utils import to_absolute_path
-from omegaconf import DictConfig, OmegaConf
-import os
-import pandas as pd
-
-from fof8_core.loader import FOF8Loader
 from fof8_core.features import get_draft_class
+from fof8_core.loader import FOF8Loader
+from hydra.utils import to_absolute_path
+from omegaconf import DictConfig
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="economic_pipeline")
 def main(cfg: DictConfig):
-    # Define a stable root directory for the experimentation package (two levels up from this script)
+    # Define a stable root directory for the experimentation package
+    # (two levels up from this script)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     exp_root = os.path.abspath(os.path.join(script_dir, ".."))
 
@@ -68,7 +66,7 @@ def main(cfg: DictConfig):
         model = mlflow.catboost.load_model(stage1_model_uri)
         is_catboost = True
         print("Loaded CatBoost model.")
-    except:
+    except Exception:
         try:
             model = mlflow.xgboost.load_model(stage1_model_uri)
             is_catboost = False
@@ -106,8 +104,8 @@ def main(cfg: DictConfig):
 
             # 2. Fetch Age (needed if model uses it)
             # Based on inference.py, it joins with player_information.csv
-            # We use 2144 as reference for player_info if needed, but usually we use the current year's data
-            # for birth years.
+            # We use 2144 as reference for player_info if needed,
+            # but usually we use the current year's data for birth years.
             try:
                 df_info = (
                     loader.scan_file("player_information.csv", year=year)
@@ -173,11 +171,11 @@ def main(cfg: DictConfig):
     # Sort by probability within each year/position or overall?
     df_final = df_final.sort(["Year", "P_Sieve"], descending=[False, True])
 
-    output_file = to_absolute_path(f"draft004_random10_predictions.csv")
+    output_file = to_absolute_path("draft004_random10_predictions.csv")
     df_final.write_csv(output_file)
 
     print("\n" + "=" * 40)
-    print(f"Prediction Complete!")
+    print("Prediction Complete!")
     print(f"Results saved to: {output_file}")
     print("=" * 40)
 
@@ -187,7 +185,8 @@ def main(cfg: DictConfig):
         print(df_final.head(5))
     except UnicodeEncodeError:
         print(
-            "\nTop 5 Prospects by P_Sieve across all 10 years (CSV saved, console print failed due to encoding)"
+            "\nTop 5 Prospects by P_Sieve across all 10 years "
+            "(CSV saved, console print failed due to encoding)"
         )
 
 

@@ -1,9 +1,8 @@
-import xgboost as xgb
-import polars as pl
-import pandas as pd
-import numpy as np
 import mlflow
+import numpy as np
+import polars as pl
 import torch
+import xgboost as xgb
 
 from .base import ModelWrapper
 

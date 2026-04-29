@@ -1,0 +1,28 @@
+schema: '2.0'
+stages:
+  process_features:
+    cmd: uv run python pipelines/process_features.py
+    deps:
+    - path: fof8-gen/data/raw
+      hash: md5
+      md5: 6d65a79e8705835baee9b453f347030c.dir
+      size: 4524800332
+      nfiles: 2854
+    - path: pipelines/conf/data/
+      hash: md5
+      md5: dcf7fe0ce583997d0385afe432c3ce8c.dir
+      size: 221
+      nfiles: 1
+    - path: pipelines/conf/transform.yaml
+      hash: md5
+      md5: ed77ac850743510a0b4a41a307d6d1d5
+      size: 175
+    - path: pipelines/process_features.py
+      hash: md5
+      md5: 64b2f11a853ac05f143db747f399788f
+      size: 1673
+    outs:
+    - path: fof8-ml/data/processed/features.parquet
+      hash: md5
+      md5: 9c3fde0e1bbc5b37821e9a501cb671cb
+      size: 5323358

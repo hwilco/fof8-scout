@@ -1,10 +1,15 @@
+import logging
+
 import polars as pl
-from sklearn.preprocessing import StandardScaler
 
 from .loader import FOF8Loader
 
+logger = logging.getLogger(__name__)
 
-def get_draft_class(loader: FOF8Loader, year: int, active_team_id: int = None) -> pl.DataFrame:
+
+def get_draft_class(
+    loader: FOF8Loader, year: int, active_team_id: int | None = None
+) -> pl.DataFrame:
     """
     Loads and processes the draft class for a specific year with engineered features.
 
@@ -45,7 +50,8 @@ def get_draft_class(loader: FOF8Loader, year: int, active_team_id: int = None) -
         lf_rookies = lf_rookies.with_columns(
             [
                 pl.when(pl.col(c) == 0).then(None).otherwise(pl.col(c)).alias(c)
-                for c in combine_drills if c in actual_rookies_cols
+                for c in combine_drills
+                if c in actual_rookies_cols
             ]
         )
 
@@ -73,12 +79,8 @@ def get_draft_class(loader: FOF8Loader, year: int, active_team_id: int = None) -
         lf_rookies = lf_rookies.with_columns(z_score_exprs)
 
         # We find all 'High_' columns and calculate Delta and Mean
-        # NOTE: We explicitly skip 'Future_' columns as they are unpopulated in our datasets
-        high_cols = [
-            c
-            for c in lf_personal.collect_schema().names()
-            if c.startswith("High_") and "Future_" not in c
-        ]
+        # NOTE: 'Future_' columns are already dropped by the loader
+        high_cols = [c for c in lf_personal.collect_schema().names() if c.startswith("High_")]
         engineering_exprs = []
         for c in high_cols:
             low_col = c.replace("High_", "Low_")
@@ -93,9 +95,7 @@ def get_draft_class(loader: FOF8Loader, year: int, active_team_id: int = None) -
 
         # 3. Drop collinear High/Low columns, relying on Mean and Delta
         low_cols = [c.replace("High_", "Low_") for c in high_cols]
-        # Also drop the dead 'Future_' columns explicitly
-        dead_future_cols = [c for c in lf_personal.collect_schema().names() if "Future_" in c]
-        lf_personal = lf_personal.drop(high_cols + low_cols + dead_future_cols)
+        lf_personal = lf_personal.drop(high_cols + low_cols)
 
         # 4. Feature Engineering: Coach Scouting Ability
         if active_team_id is not None:
@@ -145,7 +145,7 @@ def get_draft_class(loader: FOF8Loader, year: int, active_team_id: int = None) -
                         ]
                     )
             except Exception as e:
-                print(f"Warning: Could not load staff for year {year}: {e}")
+                logger.warning(f"Could not load staff for year {year}: {e}")
 
         # Join features on Player_ID and Year
         return lf_rookies.join(lf_personal, on=["Player_ID", "Year"], how="left").collect()
@@ -219,7 +219,16 @@ SPECIAL_TEAMS_FEATURE = ["Special_Teams"]
 
 
 # Expand to include Mean_ and Delta_ prefixes
-def expand_features_ml_v1(base_list):
+def expand_features(base_list: list[str]) -> list[str]:
+    """
+    Expands a list of base feature names into their Mean and Delta equivalents.
+
+    Args:
+        base_list: List of base feature names.
+
+    Returns:
+        List containing the expanded 'Mean_' and 'Delta_' prefixed feature names.
+    """
     expanded = []
     for feat in base_list:
         expanded.append(f"Mean_{feat}")
@@ -228,7 +237,7 @@ def expand_features_ml_v1(base_list):
 
 
 # The list of all features that are subject to being masked (nulled)
-MASKABLE_FEATURES_ML_V1 = expand_features_ml_v1(
+MASKABLE_FEATURES = expand_features(
     PASSING_FEATURES
     + RUSHING_FEATURES
     + RECEIVING_FEATURES
@@ -244,101 +253,76 @@ MASKABLE_FEATURES_ML_V1 = expand_features_ml_v1(
 
 # Explicit map of which features to KEEP for each position group.
 # Anything in MASKABLE_FEATURES not in this list will be set to Null for that position.
-POSITION_FEATURE_MAP_ML_V1 = {
-    "QB": expand_features_ml_v1(PASSING_FEATURES + KICK_HOLDING_FEATURE),
-    "RB": expand_features_ml_v1(RUSHING_FEATURES + RECEIVING_FEATURES + SPECIAL_TEAMS_FEATURE),
-    "FB": expand_features_ml_v1(
+POSITION_FEATURE_MAP = {
+    "QB": expand_features(PASSING_FEATURES + KICK_HOLDING_FEATURE),
+    "RB": expand_features(RUSHING_FEATURES + RECEIVING_FEATURES + SPECIAL_TEAMS_FEATURE),
+    "FB": expand_features(
         RUSHING_FEATURES + RECEIVING_FEATURES + BLOCKING_FEATURES + SPECIAL_TEAMS_FEATURE
     ),
-    "WR": expand_features_ml_v1(
+    "WR": expand_features(
         RUSHING_FEATURES
         + RECEIVING_FEATURES
         + BLOCKING_FEATURES
         + RETURNER_FEATURES
         + SPECIAL_TEAMS_FEATURE
     ),
-    "TE": expand_features_ml_v1(
+    "TE": expand_features(
         RUSHING_FEATURES + RECEIVING_FEATURES + BLOCKING_FEATURES + SPECIAL_TEAMS_FEATURE
     ),
-    "C": expand_features_ml_v1(BLOCKING_FEATURES + LONG_SNAPPING_FEATURE),
-    "G": expand_features_ml_v1(BLOCKING_FEATURES + LONG_SNAPPING_FEATURE),
-    "T": expand_features_ml_v1(BLOCKING_FEATURES + LONG_SNAPPING_FEATURE),
-    "DE": expand_features_ml_v1(DEFENSIVE_FEATURES + SPECIAL_TEAMS_FEATURE),
-    "DT": expand_features_ml_v1(DEFENSIVE_FEATURES + SPECIAL_TEAMS_FEATURE),
-    "OLB": expand_features_ml_v1(DEFENSIVE_FEATURES + SPECIAL_TEAMS_FEATURE),
-    "ILB": expand_features_ml_v1(DEFENSIVE_FEATURES + SPECIAL_TEAMS_FEATURE),
-    "CB": expand_features_ml_v1(DEFENSIVE_FEATURES + RETURNER_FEATURES + SPECIAL_TEAMS_FEATURE),
-    "S": expand_features_ml_v1(DEFENSIVE_FEATURES + RETURNER_FEATURES + SPECIAL_TEAMS_FEATURE),
-    "K": expand_features_ml_v1(KICKING_FEATURES + KICK_HOLDING_FEATURE),
-    "P": expand_features_ml_v1(PUNTING_FEATURES + KICK_HOLDING_FEATURE),
-    "LS": expand_features_ml_v1(BLOCKING_FEATURES + LONG_SNAPPING_FEATURE + SPECIAL_TEAMS_FEATURE),
+    "C": expand_features(BLOCKING_FEATURES + LONG_SNAPPING_FEATURE),
+    "G": expand_features(BLOCKING_FEATURES + LONG_SNAPPING_FEATURE),
+    "T": expand_features(BLOCKING_FEATURES + LONG_SNAPPING_FEATURE),
+    "DE": expand_features(DEFENSIVE_FEATURES + SPECIAL_TEAMS_FEATURE),
+    "DT": expand_features(DEFENSIVE_FEATURES + SPECIAL_TEAMS_FEATURE),
+    "OLB": expand_features(DEFENSIVE_FEATURES + SPECIAL_TEAMS_FEATURE),
+    "ILB": expand_features(DEFENSIVE_FEATURES + SPECIAL_TEAMS_FEATURE),
+    "CB": expand_features(DEFENSIVE_FEATURES + RETURNER_FEATURES + SPECIAL_TEAMS_FEATURE),
+    "S": expand_features(DEFENSIVE_FEATURES + RETURNER_FEATURES + SPECIAL_TEAMS_FEATURE),
+    "K": expand_features(KICKING_FEATURES + KICK_HOLDING_FEATURE),
+    "P": expand_features(PUNTING_FEATURES + KICK_HOLDING_FEATURE),
+    "LS": expand_features(BLOCKING_FEATURES + LONG_SNAPPING_FEATURE + SPECIAL_TEAMS_FEATURE),
 }
 
 # Special handling for "All" or if we want to add more general ones
-ALL_POSITIONS_ML_V1 = list(POSITION_FEATURE_MAP_ML_V1.keys())
+ALL_POSITIONS = list(POSITION_FEATURE_MAP.keys())
 
 
-def apply_position_mask_ml_v1(df: pl.DataFrame) -> pl.DataFrame:
+def apply_position_mask(df: pl.DataFrame) -> pl.DataFrame:
     """
     Nulls out features that are irrelevant for specific positions.
+
+    This function ensures that features which are not meaningful or captured
+    for certain player positions (e.g., passing features for a defensive tackle)
+    are strictly set to Null. This prevents models from inappropriately learning
+    from default or zero values in these columns.
+
     Migrated from fof8-ml for centralized feature store management.
     """
     # Get all maskable columns that actually exist in the dataframe
-    existing_maskable = [col for col in MASKABLE_FEATURES_ML_V1 if col in df.columns]
+    existing_maskable = [col for col in MASKABLE_FEATURES if col in df.columns]
 
     # Pre-calculate which positions should have each feature nulled
     feature_null_positions = {}
     for col in existing_maskable:
         null_positions = []
-        for pos, keeps in POSITION_FEATURE_MAP_ML_V1.items():
+        for pos, keeps in POSITION_FEATURE_MAP.items():
             if col not in keeps:
                 null_positions.append(pos)
         if null_positions:
             feature_null_positions[col] = null_positions
 
-    # Apply the mask column by column
+    # Build all mask expressions
+    mask_exprs = []
     for col, null_positions in feature_null_positions.items():
-        df = df.with_columns(
+        mask_exprs.append(
             pl.when(pl.col("Position_Group").cast(pl.String).is_in(null_positions))
             .then(None)
             .otherwise(pl.col(col))
             .alias(col)
         )
 
+    # Apply the masks simultaneously
+    if mask_exprs:
+        df = df.with_columns(mask_exprs)
+
     return df
-
-
-def preprocess_for_sklearn_ml_v1(X_pl: pl.DataFrame, scaler=None):
-    """
-    Prepares a Polars DataFrame for scikit-learn models by:
-    1. One-hot encoding categorical features using pl.get_dummies().
-    2. Filling Nulls with 0.
-    3. Scaling features using StandardScaler (via numpy conversion).
-    """
-    # 1. One-hot encoding
-    cat_cols = [
-        col for col, dtype in X_pl.schema.items()
-        if dtype in [pl.String, pl.Categorical, pl.Enum]
-    ]
-
-    if cat_cols:
-        # Using pl.get_dummies as requested
-        X_pl = pl.get_dummies(X_pl, columns=cat_cols, drop_first=True)
-
-    # 2. Fill Nulls for GLMs/Linear Models
-    X_pl = X_pl.fill_null(0)
-
-    # 3. Scaling (Extracting numpy array as requested)
-    columns = X_pl.columns
-    X_np = X_pl.to_numpy()
-
-    if scaler is None:
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X_np)
-    else:
-        X_scaled = scaler.transform(X_np)
-
-    # Reconstruct as pure Polars DataFrame before returning
-    X_final = pl.DataFrame(X_scaled, schema=columns)
-
-    return X_final, scaler

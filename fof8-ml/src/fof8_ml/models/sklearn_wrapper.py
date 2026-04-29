@@ -1,12 +1,12 @@
-from sklearn.linear_model import TweedieRegressor, GammaRegressor
-import polars as pl
-import numpy as np
-import mlflow
 import joblib
-import os
+import mlflow
+import numpy as np
+import polars as pl
+from sklearn.linear_model import GammaRegressor, TweedieRegressor
+
+from fof8_ml.data.preprocessing import preprocess_for_sklearn
 
 from .base import ModelWrapper
-from fof8_core.features import preprocess_for_sklearn_ml_v1
 
 
 class SklearnRegressorWrapper(ModelWrapper):
@@ -39,20 +39,12 @@ class SklearnRegressorWrapper(ModelWrapper):
 
         y_train_raw = np.expm1(y_train)
 
-        X_sk, self.scaler = preprocess_for_sklearn_ml_v1(X_train)
-        self.columns = X_sk.columns
+        X_sk, self.scaler, self.columns = preprocess_for_sklearn(X_train)
         self.model.fit(X_sk, y_train_raw)
 
     def predict(self, X: pl.DataFrame) -> np.ndarray:
-        X_sk, _ = preprocess_for_sklearn_ml_v1(X, scaler=self.scaler)
+        X_sk, _, _ = preprocess_for_sklearn(X, scaler=self.scaler, expected_columns=self.columns)
 
-        # Align columns to match training set (Pure Polars approach)
-        missing_cols = [c for c in self.columns if c not in X_sk.columns]
-        if missing_cols:
-            X_sk = X_sk.with_columns([pl.lit(0).alias(c) for c in missing_cols])
-
-        # Select and reorder to match training set
-        X_sk = X_sk.select(self.columns)
         y_pred_raw = self.model.predict(X_sk)
 
         # Convert back to log space to be consistent with tree models

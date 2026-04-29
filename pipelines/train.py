@@ -1,6 +1,44 @@
-import logging
-import warnings
 import contextlib
+import fnmatch
+import json
+import logging
+import os
+import subprocess
+import warnings
+
+import dagshub
+import dvc.api
+import hydra
+import matplotlib
+import mlflow
+import mlflow.data
+import numpy as np
+import polars as pl
+from fof8_core.features import apply_position_mask
+from fof8_core.loader import FOF8Loader
+from fof8_ml.evaluation.metrics import calculate_survival_metrics
+from fof8_ml.evaluation.plotting import log_confusion_matrix, log_feature_importance
+from fof8_ml.models import (
+    CatBoostClassifierWrapper,
+    CatBoostRegressorWrapper,
+    SklearnRegressorWrapper,
+    XGBoostClassifierWrapper,
+    XGBoostRegressorWrapper,
+)
+from hydra.core.hydra_config import HydraConfig
+from hydra.types import RunMode
+from omegaconf import DictConfig, OmegaConf
+from sklearn.metrics import (
+    auc,
+    f1_score,
+    mean_absolute_error,
+    mean_squared_error,
+    precision_recall_curve,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
+from sklearn.model_selection import KFold, StratifiedKFold
 
 # Suppress Optuna deprecation warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="optuna.distributions")
@@ -10,54 +48,7 @@ warnings.filterwarnings(
 # Suppress Hydra experimental feature warnings
 warnings.filterwarnings("ignore", message=".*multivariate.*experimental feature.*")
 
-import fnmatch
-import hydra
-import mlflow
-import mlflow.data
-import dagshub
-import dvc.api
-import polars as pl
-import os
-import numpy as np
-import pandas as pd
-import matplotlib
-
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
-from sklearn.model_selection import StratifiedKFold, KFold
-from sklearn.metrics import (
-    confusion_matrix,
-    f1_score,
-    mean_squared_error,
-    mean_absolute_error,
-    recall_score,
-    precision_score,
-    precision_recall_curve,
-    auc,
-    roc_auc_score,
-)
-from hydra.utils import to_absolute_path
-from hydra.core.hydra_config import HydraConfig
-from hydra.types import RunMode
-from omegaconf import DictConfig, OmegaConf
-
-from fof8_core.loader import FOF8Loader
-from fof8_core.features import apply_position_mask_ml_v1 as apply_position_mask
-import subprocess
-import json
-from fof8_ml.evaluation.metrics import calculate_survival_metrics
-from fof8_ml.evaluation.plotting import log_feature_importance, log_confusion_matrix
-
-# Dynamic Model Loading
-from fof8_ml.models import (
-    CatBoostClassifierWrapper,
-    CatBoostRegressorWrapper,
-    XGBoostClassifierWrapper,
-    XGBoostRegressorWrapper,
-    SklearnRegressorWrapper,
-)
-
 logging.getLogger("matplotlib").setLevel(logging.ERROR)
 
 
@@ -92,6 +83,20 @@ def get_model_wrapper(
     use_gpu: bool = False,
     thread_count: int = -1,
 ):
+    """
+    Factory function to instantiate the appropriate model wrapper based on config.
+
+    Args:
+        model_name: Name of the model (e.g., 's1_catboost', 'xgb').
+        stage: Pipeline stage ('stage1' or 'stage2').
+        random_seed: Random seed for reproducibility.
+        params: Dictionary of model hyperparameters.
+        use_gpu: Whether to enable GPU acceleration.
+        thread_count: Number of threads to use (-1 for all cores).
+
+    Returns:
+        An instantiated subclass of ModelWrapper.
+    """
     model_name = model_name.lower()
     if stage == "stage1":
         if "catboost" in model_name:
@@ -148,7 +153,7 @@ def main(cfg: DictConfig):
     is_sweep = False
     try:
         is_sweep = HydraConfig.get().mode == RunMode.MULTIRUN
-    except:
+    except Exception:
         pass
 
     sweep_run_id = None
@@ -240,13 +245,16 @@ def main(cfg: DictConfig):
     if not (is_sweep and cfg.get("quiet_sweep", False)):
         print(f"Simulation Range: {initial_year} to {final_sim_year}")
         print(
-            f"Active Range: {valid_start_year} to {valid_end_year} (Buffer: {cfg.split.right_censor_buffer} years)"
+            f"Active Range: {valid_start_year} to {valid_end_year} "
+            f"(Buffer: {cfg.split.right_censor_buffer} years)"
         )
         print(
-            f"Training Set: {train_year_range} ({train_year_range[1] - train_year_range[0] + 1} draft classes)"
+            f"Training Set: {train_year_range} "
+            f"({train_year_range[1] - train_year_range[0] + 1} draft classes)"
         )
         print(
-            f"Holdout Set: {test_year_range} ({test_year_range[1] - test_year_range[0] + 1} draft classes)"
+            f"Holdout Set: {test_year_range} "
+            f"({test_year_range[1] - test_year_range[0] + 1} draft classes)"
         )
 
     train_df = df.filter(
@@ -261,7 +269,7 @@ def main(cfg: DictConfig):
     # We strip out both our learning targets and any manually defined leakage columns
     target_cols = [
         cfg.target.stage1_sieve.target_col,
-        cfg.target.stage2_intensity.target_col
+        cfg.target.stage2_intensity.target_col,
     ] + list(cfg.target.leakage_prevention.drop_cols)
 
     feature_cols = [c for c in df.columns if c not in metadata_cols and c not in target_cols]
@@ -295,7 +303,8 @@ def main(cfg: DictConfig):
         include_cols = [c for c in list(dict.fromkeys(expanded_include)) if c in all_cols]
 
         print(
-            f"Applying Feature Ablation: Keeping {len(include_cols)} features matching {include_features}"
+            f"Applying Feature Ablation: Keeping {len(include_cols)} "
+            f"features matching {include_features}"
         )
         X_train = X_train.select(include_cols)
         X_test = X_test.select(include_cols)
@@ -314,7 +323,8 @@ def main(cfg: DictConfig):
         cols_to_drop = [c for c in list(dict.fromkeys(expanded_exclude)) if c in all_cols]
         if cols_to_drop:
             print(
-                f"Applying Feature Ablation: Excluding {len(cols_to_drop)} features matching {exclude_features}"
+                f"Applying Feature Ablation: Excluding {len(cols_to_drop)} "
+                f"features matching {exclude_features}"
             )
             X_train = X_train.drop(cols_to_drop)
             X_test = X_test.drop(cols_to_drop)
@@ -355,7 +365,7 @@ def main(cfg: DictConfig):
                 try:
                     data_url = dvc.api.get_url(path=relative_data_path, remote="origin")
                     mlflow.set_tag("dvc.data_url", data_url)
-                except:
+                except Exception:
                     pass
         except Exception as e:
             logging.warning(f"Could not log Git commit / DVC version: {e}")
@@ -373,7 +383,8 @@ def main(cfg: DictConfig):
         pos_weight = n_neg / n_pos if n_pos > 0 else 1.0
         if not (is_sweep and cfg.get("quiet_sweep", False)):
             print(
-                f"Stage 1 Class Balance - Positive Merit (Hits): {n_pos}, Negative Merit (Busts): {n_neg}, Ratio: {pos_weight:.2f}"
+                f"Stage 1 Class Balance - Positive Merit (Hits): {n_pos}, "
+                f"Negative Merit (Busts): {n_neg}, Ratio: {pos_weight:.2f}"
             )
         mlflow.log_params({"data.n_pos": n_pos, "data.n_neg": n_neg})
 
@@ -403,7 +414,9 @@ def main(cfg: DictConfig):
                     print("STAGE 1: SIEVE CLASSIFIER")
                     print("=" * 40)
 
-                skf = StratifiedKFold(n_splits=cfg.cv.n_folds, shuffle=cfg.cv.shuffle, random_state=cfg.seed)
+                skf = StratifiedKFold(
+                    n_splits=cfg.cv.n_folds, shuffle=cfg.cv.shuffle, random_state=cfg.seed
+                )
                 indices = np.arange(len(X_train))
                 oof_probs = np.zeros(len(X_train))
 
@@ -448,7 +461,8 @@ def main(cfg: DictConfig):
                 # Threshold Optimization
                 if not (is_sweep and cfg.get("quiet_sweep", False)):
                     print(
-                        f"\nOptimizing Stage 1 Threshold (Constraint: Min Survivor Recall >= {cfg.target.stage1_sieve.min_survivor_recall})..."
+                        f"\nOptimizing Stage 1 Threshold (Constraint: Min Survivor "
+                        f"Recall >= {cfg.target.stage1_sieve.min_survivor_recall})..."
                     )
                 best_threshold = 0.5
                 best_f1_0 = -1.0
@@ -557,7 +571,7 @@ def main(cfg: DictConfig):
             mlflow.set_tag("stage1_source_run", stage1_run_id)
             try:
                 best_f1_0 = client.get_run(stage1_run_id).data.metrics.get("s1_oof_f1_bust", 0.0)
-            except:
+            except Exception:
                 best_f1_0 = 0.0
 
         # ---------------------------------------------------------
@@ -640,8 +654,6 @@ def main(cfg: DictConfig):
                     }
                 )
 
-                mlflow.log_metrics({"s2_oof_rmse": s2_oof_rmse})
-
                 # Train Final Stage 2 Model
                 avg_best_iters_reg = int(np.mean(best_iters_reg)) if best_iters_reg else 100
                 final_params_s2 = OmegaConf.to_container(cfg.stage2_model.params, resolve=True)
@@ -693,7 +705,8 @@ def main(cfg: DictConfig):
         current_score = available_metrics.get(opt_metric)
         if current_score is None:
             raise ValueError(
-                f"Metric '{opt_metric}' is not available for optimization. Available metrics: {list(available_metrics.keys())}"
+                f"Metric '{opt_metric}' is not available for optimization. "
+                f"Available metrics: {list(available_metrics.keys())}"
             )
 
         score_name = f"best_{opt_metric}"
@@ -723,14 +736,22 @@ def main(cfg: DictConfig):
 
                 # 2. Log a Note (Markdown) on the Parent with a link
                 # Note: This uses a relative link that works within the MLflow UI
-                note_content = f"### 🏆 Current Sweep Champion\n- **Run ID:** `{pipeline_run.info.run_id}`\n- **{score_label}:** {current_score:.4f}\n- **Params:** {str({k: v for k, v in cfg_container.items() if k in ['stage1_model', 'stage2_model']})}"
+                champ_params = {
+                    k: v for k, v in cfg_container.items() if k in ["stage1_model", "stage2_model"]
+                }
+                note_content = (
+                    f"### 🏆 Current Sweep Champion\n"
+                    f"- **Run ID:** `{pipeline_run.info.run_id}`\n"
+                    f"- **{score_label}:** {current_score:.4f}\n"
+                    f"- **Params:** {json.dumps(champ_params, indent=2)}"
+                )
                 client.set_tag(sweep_run_id, "mlflow.note.content", note_content)
 
                 # 3. "Bubble Up" the Champion Tag on the child run
                 if previous_champion_id:
                     try:
                         client.delete_tag(previous_champion_id, "champion")
-                    except:
+                    except Exception:
                         pass  # Might fail if the run was deleted or tag missing
                 client.set_tag(pipeline_run.info.run_id, "champion", "true")
 
@@ -761,7 +782,7 @@ def main(cfg: DictConfig):
                 try:
                     best_trial_run = client.get_run(best_trial_id)
                     best_trial_num = best_trial_run.data.tags.get("trial_num", "?")
-                except:
+                except Exception:
                     pass
 
             # Dynamic Label for display: Convert 'best_s1_f1_bust' -> 'S1_F1_BUST'
@@ -771,7 +792,8 @@ def main(cfg: DictConfig):
             print(f"🏆 SWEEP LEADERBOARD | Trial [{trial_num}/{n_trials}]")
             print("-" * 60)
             print(
-                f"LATEST TRIAL RESULT: {current_score:.4f} ({score_label}) ({'IMPROVEMENT' if is_new_best else 'No improvement'})"
+                f"LATEST TRIAL RESULT: {current_score:.4f} ({score_label}) "
+                f"({'IMPROVEMENT' if is_new_best else 'No improvement'})"
             )
             print(f"BEST SO FAR:         {best_score:.4f} ({score_label}) [Trial {best_trial_num}]")
             if is_new_best:

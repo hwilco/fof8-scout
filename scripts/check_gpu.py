@@ -1,5 +1,5 @@
-import xgboost as xgb
 import catboost as cb
+import xgboost as xgb
 
 print(f"XGBoost version: {xgb.__version__}")
 try:

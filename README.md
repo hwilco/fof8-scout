@@ -36,7 +36,9 @@ fof8-scout/
 │   │   ├── data/            # Dataset & Transform logic
 │   │   ├── models/          # Multi-library Model Wrappers
 │   │   ├── evaluation/      # Metrics & Plotting
-│   │   └── train_pipeline.py # Main orchestrator
+├── pipelines/             # ML Orchestration Scripts
+│   ├── process_features.py
+│   └── train.py
 │   └── pyproject.toml
 
 ├── .devcontainer/
@@ -80,8 +82,8 @@ This project uses a hybrid DagsHub/DVC architecture to ensure data lineage acros
 2.  **Versioning (Windows)**: Run `dvc add fof8-gen/data/raw` to update the data version, then `git commit` and `dvc push`.
 3.  **Consumption (Dev Container)**: Run `dvc pull` to sync the latest raw data.
 4.  **Orchestration (Dev Container)**: Run `dvc repro fof8-ml/dvc.yaml` from the root. This will:
-    -   **Transform**: Run `transform.py` to build a single "Universal Truth" feature store (`features.parquet`).
-    -   **Train**: Run `train_pipeline.py` which dynamically splits the parquet in-memory and logs results to MLflow.
+    -   **Transform**: Run `pipelines/process_features.py` to build a single "Universal Truth" feature store (`features.parquet`).
+    -   **Train**: Run `pipelines/train.py` which dynamically splits the parquet in-memory and logs results to MLflow.
 
 > [!TIP]
 > The `git_commit` is automatically logged as a tag in MLflow, allowing you to trace any model run back to its exact data and code version.

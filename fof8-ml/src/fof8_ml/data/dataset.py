@@ -1,13 +1,15 @@
+import logging
+
 import polars as pl
-from fof8_core.loader import FOF8Loader
 from fof8_core.features import get_draft_class
-from fof8_core.targets import get_career_outcomes, get_peak_overall, get_merit_cap_share
-from fof8_core.features import MASKABLE_FEATURES_ML_V1, POSITION_FEATURE_MAP_ML_V1
+from fof8_core.loader import FOF8Loader
+from fof8_core.targets import get_career_outcomes, get_merit_cap_share, get_peak_overall
 
 
-
-
-
+# TODO: Determine the fate of `build_survival_dataset`.
+# This function applies filtering and splitting (training domain logic) which might belong in
+# `pipelines/process_features.py` or the orchestrator, rather than the core data module.
+# Consider deprecating this or moving the temporal splitting logic upstream.
 def build_survival_dataset(
     raw_path: str,
     league_name: str,
@@ -15,7 +17,7 @@ def build_survival_dataset(
     final_sim_year: int,
     survival_threshold: int,
     target_column: str = "Career_Games_Played",
-    positions: list[str] = None,
+    positions: list[str] | None = None,
     active_team_id: int = None,
 ) -> tuple[pl.DataFrame, pl.Series]:
     """
@@ -27,7 +29,7 @@ def build_survival_dataset(
     if active_team_id is None:
         active_team_id = loader.get_active_team_id()
         if active_team_id is not None:
-            print(f"Discovered active team ID: {active_team_id}")
+            logging.info(f"Discovered active team ID: {active_team_id}")
 
     # 1. Fetch Career Targets
     df_targets = get_career_outcomes(loader, final_sim_year)
@@ -44,7 +46,7 @@ def build_survival_dataset(
             df_features = get_draft_class(loader, year, active_team_id=active_team_id)
             feature_dfs.append(df_features)
         except Exception as e:
-            print(f"Skipping year {year}: {e}")
+            logging.info(f"Skipping year {year}: {e}")
 
     df_all_features = pl.concat(feature_dfs)
 
@@ -68,7 +70,8 @@ def build_survival_dataset(
     # Drop identifiers to prevent data leakage
     df_model = df_master.drop(["Player_ID", "Year", "First_Name", "Last_Name"])
 
-    # 5. Feature Engineering: Bucket rare colleges to prevent overfitting and handle unseen categories
+    # 5. Feature Engineering: Bucket rare colleges to prevent overfitting
+    # and handle unseen categories
     if "College" in df_model.columns:
         college_counts = df_model["College"].value_counts()
         # Keep colleges with at least 10 prospects across the dataset
@@ -102,7 +105,7 @@ def build_economic_dataset(
     league_name: str,
     year_range: list[int],
     final_sim_year: int,
-    positions: list[str] = None,
+    positions: list[str] | None = None,
     active_team_id: int = None,
     merit_threshold: float = 0,
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
@@ -115,7 +118,7 @@ def build_economic_dataset(
     if active_team_id is None:
         active_team_id = loader.get_active_team_id()
         if active_team_id is not None:
-            print(f"Discovered active team ID: {active_team_id}")
+            logging.info(f"Discovered active team ID: {active_team_id}")
 
     # 1. Fetch Targets
     df_peak = get_peak_overall(loader)
@@ -153,7 +156,7 @@ def build_economic_dataset(
             df_features = get_draft_class(loader, year, active_team_id=active_team_id)
             feature_dfs.append(df_features)
         except Exception as e:
-            print(f"Skipping year {year}: {e}")
+            logging.info(f"Skipping year {year}: {e}")
 
     df_all_features = pl.concat(feature_dfs)
 
@@ -182,7 +185,8 @@ def build_economic_dataset(
     # 4. Prep for XGBoost/CatBoost
     df_model = df_master.drop(["Player_ID", "Year", "First_Name", "Last_Name"])
 
-    # 5. Feature Engineering: Bucket rare colleges to prevent overfitting and handle unseen categories
+    # 5. Feature Engineering: Bucket rare colleges to prevent overfitting
+    # and handle unseen categories
     if "College" in df_model.columns:
         college_counts = df_model["College"].value_counts()
         # Keep colleges with at least 1 prospects per year on average

@@ -1,16 +1,18 @@
 import hashlib
 import json
+import logging
 import os
-import polars as pl
 from pathlib import Path
+
+import polars as pl
+import yaml
+from hydra.utils import to_absolute_path
 from omegaconf import OmegaConf
 
-from hydra.utils import to_absolute_path
-
-import yaml
+logger = logging.getLogger(__name__)
 
 
-def get_data_hash(cfg, year_range=None):
+def get_data_hash(cfg, year_range: tuple[int, int] | None = None) -> str:
     """
     Generates a unique hash based on the data and target configuration.
     """
@@ -55,7 +57,9 @@ def get_data_hash(cfg, year_range=None):
     return hashlib.md5(cfg_json.encode()).hexdigest()
 
 
-def load_cached_dataset(cache_dir, cfg, split_name="train", year_range=None):
+def load_cached_dataset(
+    cache_dir: str | Path, cfg, split_name: str = "train", year_range: tuple[int, int] | None = None
+) -> tuple[pl.DataFrame | None, pl.DataFrame | None, pl.DataFrame | None]:
     """
     Attempts to load X, y, and metadata from Parquet files if they exist and match the config hash.
     """
@@ -78,7 +82,15 @@ def load_cached_dataset(cache_dir, cfg, split_name="train", year_range=None):
     return None, None, None
 
 
-def save_cached_dataset(cache_dir, cfg, X, y, meta, split_name="train", year_range=None):
+def save_cached_dataset(
+    cache_dir: str | Path,
+    cfg,
+    X: pl.DataFrame,
+    y: pl.DataFrame,
+    meta: pl.DataFrame,
+    split_name: str = "train",
+    year_range: tuple[int, int] | None = None,
+) -> Path:
     """
     Saves the dataset to Parquet files in a versioned directory.
     """
@@ -90,5 +102,5 @@ def save_cached_dataset(cache_dir, cfg, X, y, meta, split_name="train", year_ran
     y.write_parquet(cache_path / "y.parquet")
     meta.write_parquet(cache_path / "metadata.parquet")
 
-    print(f"Saved {split_name} dataset to cache (hash: {h[:8]}).")
+    logger.info(f"Saved {split_name} dataset to cache (hash: {h[:8]}).")
     return cache_path

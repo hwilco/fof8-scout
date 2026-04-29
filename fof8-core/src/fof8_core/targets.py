@@ -1,6 +1,9 @@
 import polars as pl
-from typing import List, Optional
 
+# TODO: Implement a "Target Registry" pattern here.
+# Instead of hardcoding target names (like 'get_career_outcomes'), we should be able to dynamically
+# register and resolve target extractors based on config strings
+# (e.g., `TARGET_REGISTRY["career_value"]()`).
 from .loader import FOF8Loader
 from .targets_replacements import ReplacementStrategy, strategy_hybrid_baseline
 
@@ -311,7 +314,7 @@ def get_merit_cap_share(loader: FOF8Loader) -> pl.DataFrame:
 
 def get_awards(
     loader: FOF8Loader,
-    award_names: Optional[List[str]] = None,
+    award_names: list[str] | None = None,
     target_name: str = "Award_Count",
 ) -> pl.DataFrame:
     """

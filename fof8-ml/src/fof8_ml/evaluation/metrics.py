@@ -1,12 +1,12 @@
 from sklearn.metrics import (
-    precision_recall_curve,
     auc,
+    brier_score_loss,
     fbeta_score,
-    roc_auc_score,
+    log_loss,
+    precision_recall_curve,
     precision_score,
     recall_score,
-    log_loss,
-    brier_score_loss,
+    roc_auc_score,
 )
 
 
