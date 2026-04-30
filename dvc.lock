@@ -41,8 +41,8 @@ stages:
       nfiles: 18
     - path: pipelines/train.py
       hash: md5
-      md5: f17c4389910832f116125d55a0e11bf4
-      size: 34473
+      md5: 2067005599125681142ac5bbaa8f2747
+      size: 35982
       isexec: true
     outs:
     - path: outputs/metrics.json

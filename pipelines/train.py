@@ -464,19 +464,50 @@ def main(cfg: DictConfig):
                     summary_metrics[f"mean_{key}"] = np.mean(values)
                 mlflow.log_metrics(summary_metrics)
 
-                # Threshold Optimization
+                # --- 1. Calibration Audit (Pre) ---
+                pre_audit_results = run_calibration_audit(y_cls, oof_probs)
+                mlflow.log_metrics({f"s1_pre_audit_{k}": v for k, v in pre_audit_results.items()})
+
+                # --- 2. Fit Calibrator ---
+                if not (is_sweep and cfg.quiet_sweep):
+                    print("\nFitting Beta Calibrator...")
+
+                calibrator = BetaCalibrator()
+                calibrator.fit(oof_probs, y_cls)
+
+                # Save calibrator artifact
+                calibrator_path = "stage1_beta_calibrator.joblib"
+                joblib.dump(calibrator, calibrator_path)
+                mlflow.log_artifact(calibrator_path)
+
+                # Apply Calibration
+                calibrated_oof_probs = calibrator.predict(oof_probs)
+
+                # --- 3. Calibration Audit (Post) ---
+                audit_results = run_calibration_audit(y_cls, calibrated_oof_probs)
+                mlflow.log_metrics({f"s1_audit_{k}": v for k, v in audit_results.items()})
+
                 if not (is_sweep and cfg.quiet_sweep):
                     print(
-                        f"\nOptimizing Stage 1 Threshold (Constraint: Min Survivor "
+                        f"Calibration Audit: Intercept={audit_results['cox_intercept']:.4f}, "
+                        f"Slope={audit_results['cox_slope']:.4f}, "
+                        f"p={audit_results['spiegelhalter_p']:.4f}"
+                    )
+
+                # --- 4. Threshold Optimization (On Calibrated Probs) ---
+                if not (is_sweep and cfg.quiet_sweep):
+                    print(
+                        f"\nOptimizing Stage 1 Threshold (Calibrated) (Constraint: Min Survivor "
                         f"Recall >= {cfg.target.stage1_sieve.min_survivor_recall})..."
                     )
+
                 best_threshold = 0.5
                 best_f1_0 = -1.0
                 y_true = y_cls
 
                 thresholds = np.linspace(0.01, 0.99, 99)
                 for thresh in thresholds:
-                    current_preds = (oof_probs >= thresh).astype(int)
+                    current_preds = (calibrated_oof_probs >= thresh).astype(int)
                     f1_0 = f1_score(y_true, current_preds, pos_label=0)
                     recall_1 = recall_score(y_true, current_preds)
 
@@ -487,19 +518,20 @@ def main(cfg: DictConfig):
 
                 if best_f1_0 == -1.0:
                     best_threshold = thresholds[0]
-                    final_preds = (oof_probs >= best_threshold).astype(int)
+                    final_preds = (calibrated_oof_probs >= best_threshold).astype(int)
                     best_f1_0 = f1_score(y_true, final_preds, pos_label=0)
                 else:
-                    final_preds = (oof_probs >= best_threshold).astype(int)
+                    final_preds = (calibrated_oof_probs >= best_threshold).astype(int)
 
+                # --- 5. Log Final Stage 1 Metrics & Artifacts ---
                 busts_filtered = np.sum((y_true == 0) & (final_preds == 0))
                 hit_recall = recall_score(y_true, final_preds)
                 bust_precision = precision_score(y_true, final_preds, pos_label=0)
                 bust_recall = recall_score(y_true, final_preds, pos_label=0)
 
-                p, r, _ = precision_recall_curve(y_true, oof_probs)
+                p, r, _ = precision_recall_curve(y_true, calibrated_oof_probs)
                 s1_oof_pr_auc = auc(r, p)
-                s1_oof_roc_auc = roc_auc_score(y_true, oof_probs)
+                s1_oof_roc_auc = roc_auc_score(y_true, calibrated_oof_probs)
 
                 mlflow.log_params({"s1_optimal_threshold": best_threshold})
                 mlflow.log_metrics(
@@ -519,42 +551,13 @@ def main(cfg: DictConfig):
                 oof_df = meta_train.with_columns(
                     [
                         pl.Series("y_true", y_cls),
-                        pl.Series("oof_prob", oof_probs),
+                        pl.Series("oof_prob_raw", oof_probs),
+                        pl.Series("oof_prob", calibrated_oof_probs),
                         pl.Series("cleared_sieve", final_preds),
                     ]
                 )
                 oof_df.write_csv("stage1_oof_results.csv")
                 mlflow.log_artifact("stage1_oof_results.csv")
-
-                # Run and log Pre-Calibration Audit
-                pre_audit_results = run_calibration_audit(y_cls, oof_probs)
-                mlflow.log_metrics({f"s1_pre_audit_{k}": v for k, v in pre_audit_results.items()})
-
-                # --- Stage 1 Calibration ---
-                if not (is_sweep and cfg.quiet_sweep):
-                    print("\nFitting Beta Calibrator and running Audit...")
-
-                calibrator = BetaCalibrator()
-                calibrator.fit(oof_probs, y_cls)
-
-                # Save and log calibrator
-                calibrator_path = "stage1_beta_calibrator.joblib"
-                joblib.dump(calibrator, calibrator_path)
-                mlflow.log_artifact(calibrator_path)
-
-                # Run and log Audit
-                calibrated_oof_probs = calibrator.predict(oof_probs)
-                audit_results = run_calibration_audit(y_cls, calibrated_oof_probs)
-
-                # Log audit metrics with prefix
-                mlflow.log_metrics({f"s1_audit_{k}": v for k, v in audit_results.items()})
-
-                if not (is_sweep and cfg.quiet_sweep):
-                    print(
-                        f"Calibration Audit: Intercept={audit_results['cox_intercept']:.4f}, "
-                        f"Slope={audit_results['cox_slope']:.4f}, "
-                        f"p={audit_results['spiegelhalter_p']:.4f}"
-                    )
 
                 # Train Final Stage 1 Model
                 avg_best_iters = int(np.mean(best_iterations))
