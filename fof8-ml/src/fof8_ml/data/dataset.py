@@ -144,7 +144,8 @@ def build_economic_dataset(
         )
         .with_columns(
             # Stage 2 Target: Intensity is Peak multiplied by Pure Financial Merit
-            (pl.col("Peak_Overall") * pl.col("Career_Merit_Cap_Share")).alias("DGO"),
+            # DPO = Draft Prospect Outcome
+            (pl.col("Peak_Overall") * pl.col("Career_Merit_Cap_Share")).alias("DPO"),
             # Stage 1 Target: Did they earn more than they were handed? (> 0)
             (pl.col("Career_Merit_Cap_Share") > merit_threshold)
             .alias("Cleared_Sieve")
@@ -154,7 +155,7 @@ def build_economic_dataset(
             [
                 "Player_ID",
                 "Cleared_Sieve",
-                "DGO",
+                "DPO",
                 "Career_Merit_Cap_Share",
                 "Peak_Overall",
                 "Career_Games_Played",
@@ -199,7 +200,7 @@ def build_economic_dataset(
         # If they didn't make the target table, they didn't clear the sieve
         pl.col("Cleared_Sieve").fill_null(0).cast(pl.Int8),
         # Undrafted players generated 0 financial merit
-        pl.col("DGO").fill_null(0.0),
+        pl.col("DPO").fill_null(0.0),
         pl.col("Career_Merit_Cap_Share").fill_null(0.0),
     )
 
@@ -229,8 +230,8 @@ def build_economic_dataset(
         unique_categories = df_model.get_column(col).unique().sort().cast(pl.String)
         df_model = df_model.with_columns(pl.col(col).cast(pl.Enum(unique_categories)))
 
-    X = df_model.drop(["Cleared_Sieve", "DGO", "Career_Merit_Cap_Share"])
-    y = df_model.select(["Cleared_Sieve", "DGO", "Career_Merit_Cap_Share"])
+    X = df_model.drop(["Cleared_Sieve", "DPO", "Career_Merit_Cap_Share"])
+    y = df_model.select(["Cleared_Sieve", "DPO", "Career_Merit_Cap_Share"])
     metadata = df_master.select(["Player_ID", "Year", "First_Name", "Last_Name"])
 
     return X, y, metadata

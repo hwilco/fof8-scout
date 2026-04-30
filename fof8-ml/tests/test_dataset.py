@@ -205,10 +205,10 @@ def test_build_economic_dataset_preserves_undrafted_peak(mock_loader):
         )
 
         assert len(X) == 3
-        # Jane Smith (ID 2) should have DGO = 0 (because merit is 0)
+        # Jane Smith (ID 2) should have DPO = 0 (because merit is 0)
         # But her target row should exist.
         assert y["Cleared_Sieve"][1] == 0
-        assert y["DGO"][1] == 0.0
+        assert y["DPO"][1] == 0.0
 
         # Verify metadata
         assert metadata["First_Name"][1] == "Jane"
