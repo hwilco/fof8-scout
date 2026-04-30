@@ -238,12 +238,13 @@ def main(cfg: DictConfig):
     # Detect Sweep / Multirun context
     is_sweep = False
     try:
-        is_sweep = (
-            HydraConfig.get().mode == RunMode.MULTIRUN or HydraConfig.get().sweep.dir is not None
-        )
+        # Robust check for multirun mode
+        is_sweep = HydraConfig.get().mode == RunMode.MULTIRUN
+        if not is_sweep and "--multirun" not in sys.argv and "-m" not in sys.argv:
+            print(f">>> Single Run Mode Detected (Hydra Mode: {HydraConfig.get().mode})")
     except Exception:
-        # Fallback for older Hydra or non-standard environments
-        is_sweep = cfg.get("experiment") is not None and "--multirun" in str(sys.argv)
+        # Fallback for non-standard environments
+        is_sweep = "--multirun" in sys.argv or "-m" in sys.argv
 
     sweep_run_id = None
     sweep_name = None
@@ -475,9 +476,13 @@ def main(cfg: DictConfig):
         tags["sweep_name"] = sweep_name
 
     if is_sweep:
-        trial_num = HydraConfig.get().job.num + 1
-        n_trials = HydraConfig.get().sweeper.n_trials
-        print("\n" + ">" * 10 + f" STARTING TRIAL {trial_num}/{n_trials} " + "<" * 10)
+        try:
+            trial_num = HydraConfig.get().job.num + 1
+            n_trials = HydraConfig.get().sweeper.n_trials
+            print("\n" + ">" * 10 + f" STARTING TRIAL {trial_num}/{n_trials} " + "<" * 10)
+        except Exception:
+            # Fallback if job.num is unexpectedly missing despite being in MULTIRUN mode
+            pass
 
     # --- Pipeline State Initialization ---
     is_new_best = False

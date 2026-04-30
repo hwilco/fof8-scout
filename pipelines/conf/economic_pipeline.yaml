@@ -25,7 +25,7 @@ seed: 42                     # Global random seed for reproducibility
 positions: "all"             # Position groups to include (e.g., "QB", ["WR", "TE"]) or "all" for everyone
 mask_positional_features: true # If true, zero out position-specific stats to prevent leakage in mixed-position models
 include_features: null       # Optional list of feature names (or wildcards) to keep. If null, all are used.
-exclude_features: null       # Optional list of feature names (or wildcards) to drop.
+exclude_features: ["Position", "Scout_*", "Delta_*", "Interviewed"]  # Optional list of feature names (or wildcards) to drop.
 
 # --- Optimization Targets ---
 optimization:
