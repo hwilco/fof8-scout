@@ -9,6 +9,7 @@ import warnings
 import dagshub
 import dvc.api
 import hydra
+import joblib
 import matplotlib
 import mlflow
 import mlflow.data
@@ -25,6 +26,7 @@ from fof8_ml.models import (
     XGBoostClassifierWrapper,
     XGBoostRegressorWrapper,
 )
+from fof8_ml.models.calibration import BetaCalibrator, run_calibration_audit
 from hydra.core.hydra_config import HydraConfig
 from hydra.types import RunMode
 from omegaconf import DictConfig, OmegaConf
@@ -523,6 +525,36 @@ def main(cfg: DictConfig):
                 )
                 oof_df.write_csv("stage1_oof_results.csv")
                 mlflow.log_artifact("stage1_oof_results.csv")
+
+                # Run and log Pre-Calibration Audit
+                pre_audit_results = run_calibration_audit(y_cls, oof_probs)
+                mlflow.log_metrics({f"s1_pre_audit_{k}": v for k, v in pre_audit_results.items()})
+
+                # --- Stage 1 Calibration ---
+                if not (is_sweep and cfg.quiet_sweep):
+                    print("\nFitting Beta Calibrator and running Audit...")
+
+                calibrator = BetaCalibrator()
+                calibrator.fit(oof_probs, y_cls)
+
+                # Save and log calibrator
+                calibrator_path = "stage1_beta_calibrator.joblib"
+                joblib.dump(calibrator, calibrator_path)
+                mlflow.log_artifact(calibrator_path)
+
+                # Run and log Audit
+                calibrated_oof_probs = calibrator.predict(oof_probs)
+                audit_results = run_calibration_audit(y_cls, calibrated_oof_probs)
+
+                # Log audit metrics with prefix
+                mlflow.log_metrics({f"s1_audit_{k}": v for k, v in audit_results.items()})
+
+                if not (is_sweep and cfg.quiet_sweep):
+                    print(
+                        f"Calibration Audit: Intercept={audit_results['cox_intercept']:.4f}, "
+                        f"Slope={audit_results['cox_slope']:.4f}, "
+                        f"p={audit_results['spiegelhalter_p']:.4f}"
+                    )
 
                 # Train Final Stage 1 Model
                 avg_best_iters = int(np.mean(best_iterations))
