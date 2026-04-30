@@ -9,7 +9,10 @@
         "--gpus", "all"
     ],
     "containerEnv": {
-        "EDITOR": "nano"
+        "EDITOR": "nano",
+        "GIT_CONFIG_COUNT": "1",
+        "GIT_CONFIG_KEY_0": "safe.directory",
+        "GIT_CONFIG_VALUE_0": "*"
     },
     "features": {
         "ghcr.io/devcontainers/features/python:1": {
@@ -33,14 +36,6 @@
     },
     "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
     // Only install the experimentation package, but include the root dev tools
-    "postCreateCommand": [
-        "git config --global --add safe.directory ${containerWorkspaceFolder}",
-        "if ! command -v nvidia-smi &> /dev/null; then echo 'WARNING: NVIDIA GPU not detected. Ensure the NVIDIA Container Toolkit is installed on your host.'; fi",
-        "uv sync --package fof8-ml",
-        "uv run nbstripout --install",
-        "git config filter.nbstripout.clean 'uv run nbstripout'",
-        "git config diff.ipynb.textconv 'uv run nbstripout -t'",
-        "uv run pre-commit install"
-    ],
+    "postCreateCommand": "bash .devcontainer/experimentation/setup.sh",
     "remoteUser": "vscode"
 }

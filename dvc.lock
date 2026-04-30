@@ -24,24 +24,26 @@ stages:
     outs:
     - path: fof8-ml/data/processed/features.parquet
       hash: md5
-      md5: d804eda47f9e6e1ec5055aaffffd4b9d
+      md5: 2151e8ca10580443191d0a32ac1f95b7
       size: 5548829
   train_model:
     cmd: uv run python pipelines/train.py
     deps:
     - path: fof8-ml/data/processed/features.parquet
       hash: md5
-      md5: d804eda47f9e6e1ec5055aaffffd4b9d
+      md5: 2151e8ca10580443191d0a32ac1f95b7
       size: 5548829
+      isexec: true
     - path: pipelines/conf/
       hash: md5
-      md5: f707aec8ab6be109ce2e83ae2d5cc0db.dir
+      md5: a363266e311a999ac71e1e096c9c64a1.dir
       size: 7390
       nfiles: 18
     - path: pipelines/train.py
       hash: md5
       md5: f17c4389910832f116125d55a0e11bf4
       size: 34473
+      isexec: true
     outs:
     - path: outputs/metrics.json
       hash: md5

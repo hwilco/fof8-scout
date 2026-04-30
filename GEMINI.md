@@ -5,6 +5,7 @@
   - *Correct:* `uv run dvc repro process_features`
   - *Correct:* `uv run pytest fof8-core/tests`
   - *Incorrect:* `dvc repro` or `pytest`
+- **Shell Preference:** When running commands on Windows, ALWAYS use `pwsh -c` to wrap commands that require modern operators like `&&` if the default shell remains 5.1.
 
 ## 2. Code Generation Standards
 - **Type Hinting:** All new functions and methods MUST include complete Python type hints (PEP 484).
