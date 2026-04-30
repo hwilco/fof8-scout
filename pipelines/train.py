@@ -67,6 +67,8 @@ GLOBAL_DATA_CACHE = {
     "meta_train": None,
     "last_cfg_hash": None,
     "git_commit": None,
+    "tracking_initialized": False,
+    "using_remote": None,  # True = DagsHub, False = local SQLite
 }
 
 
@@ -145,31 +147,93 @@ def get_model_wrapper(
             raise ValueError(f"Unknown model for stage 2: {model_name}")
 
 
+def _init_tracking(
+    exp_root: str, experiment_name: str
+) -> tuple[mlflow.tracking.MlflowClient, mlflow.entities.Experiment]:
+    """Initialize MLflow tracking, preferring DagsHub with a local SQLite fallback.
+
+    The decision is made *once* per process (cached in GLOBAL_DATA_CACHE) and
+    committed before any run is created, so MLflow's internal singleton state
+    is never mutated mid-run.
+
+    The actual write-capability test happens at ``mlflow.start_run()`` time in
+    ``_start_pipeline_run()``, where a local fallback is attempted if the remote
+    rejects the run creation (e.g. quota exceeded).
+
+    Args:
+        exp_root: Absolute path to the repository root.
+        experiment_name: Name of the MLflow experiment to create/select.
+
+    Returns:
+        An ``MlflowClient`` pointed at the active tracking store.
+    """
+    if not GLOBAL_DATA_CACHE["tracking_initialized"]:
+        if not os.environ.get("MLFLOW_TRACKING_URI"):
+            dagshub.init(repo_owner="hwilco", repo_name="fof8-scout", mlflow=True)
+            GLOBAL_DATA_CACHE["using_remote"] = True
+        mlflow.autolog(log_models=False)
+        GLOBAL_DATA_CACHE["tracking_initialized"] = True
+
+    client = mlflow.tracking.MlflowClient()
+    exp = client.get_experiment_by_name(experiment_name)
+    if exp is None:
+        try:
+            client.create_experiment(experiment_name)
+        except Exception:
+            pass  # Race condition: another parallel trial created it first
+    mlflow.set_experiment(experiment_name)
+    return client, client.get_experiment_by_name(experiment_name)
+
+
+def _start_pipeline_run(
+    exp_root: str,
+    experiment_name: str,
+    run_name: str,
+    tags: dict,
+):
+    """Start the top-level pipeline MLflow run, falling back to local SQLite on write failure.
+
+    This is the critical write-test: if DagsHub rejects run creation (quota exceeded,
+    storage full, etc.), we redirect to local storage *before* any trial data is logged.
+
+    Args:
+        exp_root: Absolute path to the repository root.
+        experiment_name: Name of the MLflow experiment.
+        run_name: Display name for the run.
+        tags: Tags to attach to the run at creation time.
+
+    Returns:
+        An active ``mlflow.ActiveRun`` context manager.
+    """
+    try:
+        return mlflow.start_run(run_name=run_name, tags=tags)
+    except Exception as e:
+        if GLOBAL_DATA_CACHE.get("using_remote"):
+            logging.warning(
+                f">>> Remote MLflow rejected run creation ({e}). "
+                "Falling back to local SQLite storage for this trial."
+            )
+            db_path = os.path.abspath(os.path.join(exp_root, "fof8-ml", "mlflow.db"))
+            mlflow.set_tracking_uri(f"sqlite:///{db_path}")
+            GLOBAL_DATA_CACHE["using_remote"] = False
+
+            # Re-select experiment on the local store
+            local_client = mlflow.tracking.MlflowClient()
+            if local_client.get_experiment_by_name(experiment_name) is None:
+                local_client.create_experiment(experiment_name)
+            mlflow.set_experiment(experiment_name)
+
+            return mlflow.start_run(run_name=run_name, tags=tags)
+        raise
+
+
 @hydra.main(version_base=None, config_path="conf", config_name="economic_pipeline")
 def main(cfg: DictConfig):
-    # Initialize DagsHub tracking once per session
-    if not mlflow.active_run():
-        dagshub.init(repo_owner="hwilco", repo_name="fof8-scout", mlflow=True)
-        mlflow.autolog(log_models=False)
-
     script_dir = os.path.dirname(os.path.abspath(__file__))
     exp_root = os.path.abspath(os.path.join(script_dir, ".."))
     absolute_raw_path = os.path.abspath(os.path.join(exp_root, cfg.data.raw_path))
 
-    # Use local SQLite only if DagsHub/Remote URI is not set
-    # if not os.environ.get("MLFLOW_TRACKING_URI"):
-    #     mlflow.set_tracking_uri(f"sqlite:///{db_path}")
-
-    client = mlflow.tracking.MlflowClient()
-    exp = client.get_experiment_by_name(cfg.experiment_name)
-    if exp is None:
-        try:
-            client.create_experiment(cfg.experiment_name)
-        except Exception:
-            # Handle race condition where experiment is created by another process
-            pass
-
-    exp = mlflow.set_experiment(cfg.experiment_name)
+    client, exp = _init_tracking(exp_root, cfg.experiment_name)
 
     # Detect Sweep / Multirun context
     is_sweep = False
@@ -421,7 +485,9 @@ def main(cfg: DictConfig):
 
     s1_name = cfg.stage1_model.name
     s2_name = cfg.stage2_model.name if cfg.stage2_model else "None"
-    with mlflow.start_run(run_name=f"Pipeline_{s1_name}_{s2_name}", tags=tags) as pipeline_run:
+    with _start_pipeline_run(
+        exp_root, cfg.experiment_name, f"Pipeline_{s1_name}_{s2_name}", tags
+    ) as pipeline_run:
         # Log DagsHub and dataset metadata
         mlflow.set_tag("data.league", cfg.data.league_name)
         mlflow.set_tag("data.raw_path", cfg.data.raw_path)
