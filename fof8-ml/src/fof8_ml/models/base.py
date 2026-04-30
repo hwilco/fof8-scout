@@ -41,3 +41,20 @@ class ModelWrapper(ABC):
     def log_model(self, name: str):
         """Log the model to MLflow."""
         pass
+
+    def transform(self, X: pl.DataFrame) -> pl.DataFrame:
+        """
+        Transform the features before prediction or evaluation.
+        Default implementation returns X unchanged.
+        """
+        return X
+
+    @abstractmethod
+    def get_feature_importance(self) -> tuple[list[str], np.ndarray]:
+        """
+        Return the feature names and their corresponding importance values.
+
+        Returns:
+            A tuple of (feature_names, importance_values).
+        """
+        pass

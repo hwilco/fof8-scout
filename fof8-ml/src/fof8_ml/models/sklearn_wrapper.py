@@ -62,3 +62,17 @@ class SklearnRegressorWrapper(ModelWrapper):
         with open(f"{name}_features.txt", "w") as f:
             f.write("\n".join(self.columns))
         mlflow.log_artifact(f"{name}_features.txt")
+
+    def transform(self, X: pl.DataFrame) -> pl.DataFrame:
+        """Apply the same preprocessing used during training."""
+        X_sk, _, _ = preprocess_for_sklearn(X, scaler=self.scaler, expected_columns=self.columns)
+        return X_sk
+
+    def get_feature_importance(self) -> tuple[list[str], np.ndarray]:
+        """Returns the one-hot encoded feature names and absolute coefficients."""
+        if hasattr(self.model, "coef_"):
+            return self.columns, np.abs(self.model.coef_)
+        elif hasattr(self.model, "feature_importances_"):
+            return self.columns, self.model.feature_importances_
+        else:
+            return self.columns, np.zeros(len(self.columns))

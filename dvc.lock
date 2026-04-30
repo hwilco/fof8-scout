@@ -10,8 +10,8 @@ stages:
       nfiles: 2854
     - path: pipelines/conf/data/
       hash: md5
-      md5: dcf7fe0ce583997d0385afe432c3ce8c.dir
-      size: 221
+      md5: ce5e47686d8a8898837b4d5388cde78b.dir
+      size: 583
       nfiles: 1
     - path: pipelines/conf/transform.yaml
       hash: md5
@@ -19,10 +19,31 @@ stages:
       size: 175
     - path: pipelines/process_features.py
       hash: md5
-      md5: 64b2f11a853ac05f143db747f399788f
-      size: 1673
+      md5: b3d5554f15752e16586b9ced62fb68e7
+      size: 1618
     outs:
     - path: fof8-ml/data/processed/features.parquet
       hash: md5
-      md5: 9c3fde0e1bbc5b37821e9a501cb671cb
-      size: 5323358
+      md5: d804eda47f9e6e1ec5055aaffffd4b9d
+      size: 5548829
+  train_model:
+    cmd: uv run python pipelines/train.py
+    deps:
+    - path: fof8-ml/data/processed/features.parquet
+      hash: md5
+      md5: d804eda47f9e6e1ec5055aaffffd4b9d
+      size: 5548829
+    - path: pipelines/conf/
+      hash: md5
+      md5: f707aec8ab6be109ce2e83ae2d5cc0db.dir
+      size: 7390
+      nfiles: 18
+    - path: pipelines/train.py
+      hash: md5
+      md5: f17c4389910832f116125d55a0e11bf4
+      size: 34473
+    outs:
+    - path: outputs/metrics.json
+      hash: md5
+      md5: 4d9ed883b66672be5428d53cac6c1b9e
+      size: 37

@@ -122,14 +122,25 @@ def build_economic_dataset(
     # 1. Fetch Targets
     df_peak = get_peak_overall(loader)
     df_merit = get_merit_cap_share(loader)
+    df_outcomes = get_career_outcomes(loader)
 
-    # 2. Join Target components directly.
-    # We don't join against the survivor-only cumulative file (df_info) because
-    # that would drop undrafted rookies who were purged from the game.
+    # 2. Join Target components into a single truth table.
+    # We use a union of all Player_IDs to ensure we don't lose anyone during the join,
+    # then left join the specific target dataframes.
+    all_ids = pl.concat(
+        [df_peak.select("Player_ID"), df_merit.select("Player_ID"), df_outcomes.select("Player_ID")]
+    ).unique()
+
     df_targets = (
-        df_peak.join(df_merit, on="Player_ID", how="full")
+        all_ids.join(df_peak.select(["Player_ID", "Peak_Overall"]), on="Player_ID", how="left")
+        .join(df_merit.select(["Player_ID", "Career_Merit_Cap_Share"]), on="Player_ID", how="left")
+        .join(df_outcomes.select(["Player_ID", "Career_Games_Played"]), on="Player_ID", how="left")
         .with_columns(
-            pl.col("Peak_Overall").fill_null(0), pl.col("Career_Merit_Cap_Share").fill_null(0)
+            [
+                pl.col("Peak_Overall").fill_null(0),
+                pl.col("Career_Merit_Cap_Share").fill_null(0),
+                pl.col("Career_Games_Played").fill_null(0),
+            ]
         )
         .with_columns(
             # Stage 2 Target: Intensity is Peak multiplied by Pure Financial Merit
@@ -139,7 +150,16 @@ def build_economic_dataset(
             .alias("Cleared_Sieve")
             .cast(pl.Int8),
         )
-        .select(["Player_ID", "Cleared_Sieve", "DGO", "Career_Merit_Cap_Share"])
+        .select(
+            [
+                "Player_ID",
+                "Cleared_Sieve",
+                "DGO",
+                "Career_Merit_Cap_Share",
+                "Peak_Overall",
+                "Career_Games_Played",
+            ]
+        )
     )
 
     # 3. Fetch Features for the requested years
@@ -165,6 +185,14 @@ def build_economic_dataset(
         on="Player_ID",
         how="left",  # Preserve all rookies
     )
+
+    # 4.5 Check for duplicate columns (join collisions)
+    duplicate_cols = [col for col in df_master.columns if col.endswith("_right")]
+    if duplicate_cols:
+        raise ValueError(
+            f"Detected duplicate columns with '_right' suffix after join: {duplicate_cols}. "
+            "Check for overlapping metadata in features and targets."
+        )
 
     # 3.5 Handle the missing outcomes for undrafted busts
     df_master = df_master.with_columns(

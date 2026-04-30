@@ -9,18 +9,27 @@ defaults:
   - override hydra/sweeper: optuna
   - _self_
 
+# --- Experiment Metadata ---
 experiment_name: "Economic_Talent_Engine_v3"
-train_stage2: true
-use_gpu: false
-seed: 42
+# version: "3.0" # Managed in tags below
 
-mask_positional_features: true
-include_features: null
-exclude_features: null
+# --- Execution Flow ---
+train_stage2: true           # If true, trains the Stage 2 Intensity Regressor
+stage1_run_id: null          # If provided (e.g., "abcdef123"), skips Stage 1 training and loads results from this run
+quiet_sweep: false           # If true, suppresses non-essential console output during hyperparameter sweeps
+use_gpu: false               # Enable GPU acceleration for supported models (CatBoost/XGBoost)
+seed: 42                     # Global random seed for reproducibility
 
+# --- Data Slicing & Feature Logic ---
+positions: "all"             # Position groups to include (e.g., "QB", ["WR", "TE"]) or "all" for everyone
+mask_positional_features: true # If true, zero out position-specific stats to prevent leakage in mixed-position models
+include_features: null       # Optional list of feature names (or wildcards) to keep. If null, all are used.
+exclude_features: null       # Optional list of feature names (or wildcards) to drop.
+
+# --- Optimization Targets ---
 optimization:
-  metric: "s1_oof_pr_auc"
-  direction: "maximize"
+  metric: "s1_oof_pr_auc"    # Metric used to determine the "Champion" in sweeps (s1_oof_pr_auc, s2_oof_rmse, etc.)
+  direction: "maximize"      # "maximize" or "minimize" depending on the metric
 
 diagnostics:
   log_importance: true

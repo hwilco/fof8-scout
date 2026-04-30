@@ -30,6 +30,10 @@ class CatBoostWrapper(ModelWrapper):
     def log_model(self, name: str):
         mlflow.catboost.log_model(self.model, name=name)
 
+    def get_feature_importance(self) -> tuple[list[str], np.ndarray]:
+        """Returns feature names and importance values from CatBoost."""
+        return self.model.feature_names_, self.model.get_feature_importance()
+
 
 class CatBoostClassifierWrapper(CatBoostWrapper):
     def __init__(self, random_seed: int, use_gpu: bool = False, thread_count: int = -1, **params):

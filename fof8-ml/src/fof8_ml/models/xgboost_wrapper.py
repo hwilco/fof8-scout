@@ -16,6 +16,10 @@ class XGBoostWrapper(ModelWrapper):
     def log_model(self, name: str):
         mlflow.xgboost.log_model(self.model, name=name)
 
+    def get_feature_importance(self) -> tuple[list[str], np.ndarray]:
+        """Returns feature names and importance values from XGBoost."""
+        return self.model.feature_names_in_.tolist(), self.model.feature_importances_
+
 
 class XGBoostClassifierWrapper(XGBoostWrapper):
     def __init__(self, random_seed: int, use_gpu: bool = False, **params):

@@ -242,7 +242,7 @@ def main(cfg: DictConfig):
     train_year_range = [valid_start_year, train_end_year]
     test_year_range = [train_end_year + 1, valid_end_year]
 
-    if not (is_sweep and cfg.get("quiet_sweep", False)):
+    if not (is_sweep and cfg.quiet_sweep):
         print(f"Simulation Range: {initial_year} to {final_sim_year}")
         print(
             f"Active Range: {valid_start_year} to {valid_end_year} "
@@ -282,8 +282,8 @@ def main(cfg: DictConfig):
     y_test_df = test_df.select(target_cols)
     meta_test = test_df.select(metadata_cols)
 
-    if cfg.get("mask_positional_features", False):
-        if not (is_sweep and cfg.get("quiet_sweep", False)):
+    if cfg.mask_positional_features:
+        if not (is_sweep and cfg.quiet_sweep):
             print("Applying In-Memory Positional Feature Masking...")
         X_train = apply_position_mask(X_train)
         X_test = apply_position_mask(X_test)
@@ -345,6 +345,10 @@ def main(cfg: DictConfig):
         n_trials = HydraConfig.get().sweeper.n_trials
         print("\n" + ">" * 10 + f" STARTING TRIAL {trial_num}/{n_trials} " + "<" * 10)
 
+    # --- Pipeline State Initialization ---
+    is_new_best = False
+    trial_params = {}
+
     with mlflow.start_run(
         run_name=f"Pipeline_{cfg.stage1_model.name}_{cfg.stage2_model.name}", tags=tags
     ) as pipeline_run:
@@ -354,7 +358,7 @@ def main(cfg: DictConfig):
 
         # Log Git Commit and DVC Data Version
         try:
-            repo_root = os.path.abspath(os.path.join(exp_root, ".."))
+            repo_root = exp_root
             relative_data_path = os.path.relpath(absolute_raw_path, repo_root)
             with preserve_cwd(repo_root):
                 git_commit = (
@@ -381,7 +385,7 @@ def main(cfg: DictConfig):
         n_pos = int(y_cls.sum())
         n_neg = len(y_cls) - n_pos
         pos_weight = n_neg / n_pos if n_pos > 0 else 1.0
-        if not (is_sweep and cfg.get("quiet_sweep", False)):
+        if not (is_sweep and cfg.quiet_sweep):
             print(
                 f"Stage 1 Class Balance - Positive Merit (Hits): {n_pos}, "
                 f"Negative Merit (Busts): {n_neg}, Ratio: {pos_weight:.2f}"
@@ -409,7 +413,7 @@ def main(cfg: DictConfig):
                 # Log Stage 1 specific parameters for easier comparison
                 s1_params = OmegaConf.to_container(cfg.stage1_model.params, resolve=True)
                 mlflow.log_params(flatten_dict(s1_params, parent_key="s1"))
-                if not (is_sweep and cfg.get("quiet_sweep", False)):
+                if not (is_sweep and cfg.quiet_sweep):
                     print("\n" + "=" * 40)
                     print("STAGE 1: SIEVE CLASSIFIER")
                     print("=" * 40)
@@ -424,13 +428,13 @@ def main(cfg: DictConfig):
                 best_iterations = []
 
                 for fold, (train_idx, val_idx) in enumerate(skf.split(indices, y_cls)):
-                    if not (is_sweep and cfg.get("quiet_sweep", False)):
+                    if not (is_sweep and cfg.quiet_sweep):
                         print(f"--- S1 Fold {fold} ---")
                     X_cv_train, X_cv_val = X_train[train_idx], X_train[val_idx]
                     y_cv_train, y_cv_val = y_cls[train_idx], y_cls[val_idx]
 
                     params = OmegaConf.to_container(cfg.stage1_model.params, resolve=True)
-                    use_gpu = cfg.get("use_gpu", False)
+                    use_gpu = cfg.use_gpu
                     thread_count = cfg.stage1_model.params.get("thread_count", -1)
                     model = get_model_wrapper(
                         cfg.stage1_model.name,
@@ -459,7 +463,7 @@ def main(cfg: DictConfig):
                 mlflow.log_metrics(summary_metrics)
 
                 # Threshold Optimization
-                if not (is_sweep and cfg.get("quiet_sweep", False)):
+                if not (is_sweep and cfg.quiet_sweep):
                     print(
                         f"\nOptimizing Stage 1 Threshold (Constraint: Min Survivor "
                         f"Recall >= {cfg.target.stage1_sieve.min_survivor_recall})..."
@@ -535,20 +539,17 @@ def main(cfg: DictConfig):
                     "stage1",
                     cfg.seed,
                     final_params_s1,
-                    use_gpu=cfg.get("use_gpu", False),
+                    use_gpu=cfg.use_gpu,
                     thread_count=cfg.stage1_model.params.get("thread_count", -1),
                 )
                 stage1_model.fit(X_train, y_cls)
                 stage1_model.log_model("stage1_model")
 
                 if cfg.diagnostics.log_importance or cfg.diagnostics.log_shap:
-                    is_cb = "catboost" in cfg.stage1_model.name.lower()
                     log_feature_importance(
-                        stage1_model.model,
-                        X_train.columns,
+                        stage1_model,
                         "Stage 1 Importance",
-                        is_cb,
-                        X=X_train.to_pandas(),
+                        X=X_train,
                         log_shap=cfg.diagnostics.log_shap,
                     )
 
@@ -577,7 +578,7 @@ def main(cfg: DictConfig):
         # ---------------------------------------------------------
         # STAGE 2: INTENSITY REGRESSOR
         # ---------------------------------------------------------
-        if cfg.get("train_stage2", True):
+        if cfg.train_stage2:
             with mlflow.start_run(run_name="Stage2_Intensity_Regressor", nested=True) as stage2_run:
                 mlflow.set_tag("model_stage", "stage2")
                 if sweep_name:
@@ -588,7 +589,7 @@ def main(cfg: DictConfig):
                 # Log Stage 2 specific parameters for easier comparison
                 s2_params = OmegaConf.to_container(cfg.stage2_model.params, resolve=True)
                 mlflow.log_params(flatten_dict(s2_params, parent_key="s2"))
-                if not (is_sweep and cfg.get("quiet_sweep", False)):
+                if not (is_sweep and cfg.quiet_sweep):
                     print("\n" + "=" * 40)
                     print("STAGE 2: INTENSITY REGRESSOR")
                     print("=" * 40)
@@ -605,13 +606,13 @@ def main(cfg: DictConfig):
                 best_iters_reg = []
 
                 for fold, (train_idx, val_idx) in enumerate(kf.split(indices_reg)):
-                    if not (is_sweep and cfg.get("quiet_sweep", False)):
+                    if not (is_sweep and cfg.quiet_sweep):
                         print(f"--- S2 Fold {fold} ---")
                     X_cv_train, X_cv_val = X_reg[train_idx], X_reg[val_idx]
                     y_cv_train, y_cv_val = y_reg_target[train_idx], y_reg_target[val_idx]
 
                     params = OmegaConf.to_container(cfg.stage2_model.params, resolve=True)
-                    use_gpu = cfg.get("use_gpu", False)
+                    use_gpu = cfg.use_gpu
                     thread_count = cfg.stage2_model.params.get("thread_count", -1)
                     model = get_model_wrapper(
                         cfg.stage2_model.name,
@@ -669,20 +670,17 @@ def main(cfg: DictConfig):
                     "stage2",
                     cfg.seed,
                     final_params_s2,
-                    use_gpu=cfg.get("use_gpu", False),
+                    use_gpu=cfg.use_gpu,
                     thread_count=cfg.stage2_model.params.get("thread_count", -1),
                 )
                 stage2_model.fit(X_reg, y_reg_target)
                 stage2_model.log_model("stage2_model")
 
                 if cfg.diagnostics.log_importance or cfg.diagnostics.log_shap:
-                    is_cb = "catboost" in cfg.stage2_model.name.lower()
                     log_feature_importance(
-                        stage2_model.model,
-                        X_reg.columns,
+                        stage2_model,
                         "Stage 2 Importance",
-                        is_cb,
-                        X=X_reg.to_pandas(),
+                        X=X_reg,
                         log_shap=cfg.diagnostics.log_shap,
                     )
 
@@ -696,11 +694,8 @@ def main(cfg: DictConfig):
             "s2_oof_rmse": s2_oof_rmse,
         }
 
-        # Fetch the target metric from the Hydra config
-        opt_metric = cfg.get("optimization", {}).get(
-            "metric", "s2_oof_rmse" if cfg.get("train_stage2", True) else "s1_oof_pr_auc"
-        )
-        higher_is_better = cfg.get("optimization", {}).get("direction", "maximize") == "maximize"
+        opt_metric = cfg.optimization.metric
+        higher_is_better = cfg.optimization.direction == "maximize"
 
         current_score = available_metrics.get(opt_metric)
         if current_score is None:
@@ -762,7 +757,7 @@ def main(cfg: DictConfig):
                 client.set_tag(sweep_run_id, "best_params", str(trial_params))
 
                 # Register the model to the DagsHub Model Registry
-                if cfg.get("train_stage2", True):
+                if cfg.train_stage2:
                     mlflow.register_model(
                         model_uri=f"runs:/{pipeline_run.info.run_id}/stage2_model",
                         name="fof8-scout-regressor",
@@ -800,12 +795,23 @@ def main(cfg: DictConfig):
                 print(f"NEW CHAMPION PARAMS: {trial_params}")
             print("=" * 60 + "\n")
 
-        # Write lightweight outputs/metrics.json to satisfy DVC
-        out_dir = os.path.abspath(os.path.join(script_dir, "..", "..", "outputs"))
-        os.makedirs(out_dir, exist_ok=True)
-        metrics_file = os.path.join(out_dir, "metrics.json")
-        with open(metrics_file, "w") as f:
-            json.dump({opt_metric: current_score}, f)
+        # --- Write DVC Metrics ---
+        # We ensure this goes to the root outputs/ folder regardless of Hydra's chdir
+        try:
+            out_dir = os.path.join(exp_root, "outputs")
+            os.makedirs(out_dir, exist_ok=True)
+            metrics_file = os.path.join(out_dir, "metrics.json")
+
+            # Ensure current_score is a standard float for JSON serializability
+            export_score = float(current_score) if current_score is not None else 0.0
+
+            with open(metrics_file, "w") as f:
+                json.dump({opt_metric: export_score}, f)
+
+            print(f"\n[DVC] Metrics successfully written to: {metrics_file}")
+            print(f"[DVC] Final {opt_metric.upper()}: {export_score:.4f}")
+        except Exception as e:
+            print(f"\n[WARNING] Could not write DVC metrics.json: {e}")
 
         return current_score
 

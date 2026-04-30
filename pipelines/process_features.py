@@ -12,9 +12,7 @@ def main(cfg: DictConfig):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     exp_root = os.path.abspath(os.path.join(script_dir, ".."))
     absolute_raw_path = os.path.abspath(os.path.join(exp_root, cfg.data.raw_path))
-    processed_path = os.path.abspath(
-        os.path.join(exp_root, cfg.data.get("processed_path", "fof8-ml/data/processed"))
-    )
+    processed_path = os.path.abspath(os.path.join(exp_root, cfg.data.processed_dir))
 
     os.makedirs(processed_path, exist_ok=True)
     out_file = os.path.join(processed_path, "features.parquet")
@@ -36,7 +34,7 @@ def main(cfg: DictConfig):
         year_range,
         final_sim_year,
         positions="all",
-        active_team_id=cfg.data.get("active_team_id"),
+        active_team_id=cfg.data.active_team_id,
         merit_threshold=0,
     )
 

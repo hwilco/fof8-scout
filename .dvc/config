@@ -1,5 +1,6 @@
 [core]
     remote = origin
+    autostage = true
 ['remote "local_remote"']
     url = C:\Users\hwilco\dvc_remotes\fof8-scout
 ['remote "origin"']

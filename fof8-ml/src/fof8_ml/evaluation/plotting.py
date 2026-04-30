@@ -4,45 +4,49 @@ import tempfile
 
 import matplotlib.pyplot as plt
 import mlflow
-import numpy as np
-import pandas as pd
+import polars as pl
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 
 
-def log_feature_importance(model, feature_names, stage_name, is_catboost, X=None, log_shap=False):
+def log_feature_importance(
+    wrapper, stage_name: str, X: pl.DataFrame | None = None, log_shap: bool = False
+):
     """
     Helper to generate and log feature importance plots to MLflow.
 
     Args:
-        model: The trained model wrapper.
-        feature_names: List of feature names.
+        wrapper: The trained model wrapper (ModelWrapper).
         stage_name: Name of the pipeline stage.
-        is_catboost: Boolean indicating if model is CatBoost.
         X: Optional feature data for SHAP values.
         log_shap: Boolean indicating whether to log SHAP plots.
     """
+    import polars as pl
 
-    # 1. Main Importance Plot (PredictionValuesChange or Weights)
-    if is_catboost:
-        importances = model.get_feature_importance()
+    # 1. Main Importance Plot
+    feature_names, importances = wrapper.get_feature_importance()
+
+    # Determine title suffix based on model type
+    model_type = str(type(wrapper)).lower()
+    if "catboost" in model_type:
         title_suffix = " (PredictionValuesChange)"
+    elif "xgboost" in model_type:
+        title_suffix = " (Gain)"
     else:
-        # Works for XGBoost and Sklearn
-        importances = getattr(model, "feature_importances_", None)
-        if importances is not None:
-            title_suffix = " (Gain)"
-        else:
-            importances = np.abs(getattr(model, "coef_", np.zeros(len(feature_names))))
-            title_suffix = " (Normalized Weights)"
+        title_suffix = " (Importance/Weight)"
 
-    fi_df = pd.DataFrame({"Feature": feature_names, "Importance": importances})
-    fi_df = fi_df.sort_values(by="Importance", ascending=False)
+    fi_df = pl.DataFrame({"Feature": feature_names, "Importance": importances})
+    fi_df = fi_df.sort("Importance", descending=True)
 
     # For plotting, we only want the top N features
     fi_plot_df = fi_df.head(20)
 
     fig, ax = plt.subplots(figsize=(10, 8))
-    ax.barh(fi_plot_df["Feature"][::-1], fi_plot_df["Importance"][::-1], color="steelblue")
+    # Reverse for horizontal bar chart (top at the top)
+    ax.barh(
+        fi_plot_df.get_column("Feature").to_list()[::-1],
+        fi_plot_df.get_column("Importance").to_list()[::-1],
+        color="steelblue",
+    )
     ax.set_title(f"{stage_name}{title_suffix}")
     plt.tight_layout()
 
@@ -53,18 +57,33 @@ def log_feature_importance(model, feature_names, stage_name, is_catboost, X=None
         mlflow.log_artifact(plot_path)
 
         csv_path = os.path.join(tmpdir, f"{plot_name_base}_importance.csv")
-        fi_df.to_csv(csv_path, index=False)
+        fi_df.write_csv(csv_path)
         mlflow.log_artifact(csv_path)
 
         # 2. SHAP Summary Plots (Global and Per-Position)
-        if log_shap and X is not None and (is_catboost or "XGB" in str(type(model))):
+        if log_shap and X is not None:
             try:
                 import shap
 
-                explainer = shap.TreeExplainer(model)
+                # Preprocess X using the wrapper's transformation
+                X_transformed = wrapper.transform(X)
+
+                # SHAP often prefers Pandas or Numpy
+                # For CatBoost, we MUST use the Pandas format it was trained on
+                if "catboost" in model_type:
+                    X_transformed_pd = X_transformed.to_pandas()
+                else:
+                    X_transformed_pd = X_transformed.to_pandas()
+
+                explainer = shap.TreeExplainer(wrapper.model)
 
                 # Global SHAP
-                X_sample = X.sample(min(1000, len(X)), random_state=42) if len(X) > 1000 else X
+                sample_size = min(1000, len(X_transformed_pd))
+                X_sample = (
+                    X_transformed_pd.sample(sample_size, random_state=42)
+                    if len(X_transformed_pd) > sample_size
+                    else X_transformed_pd
+                )
                 shap_values = explainer.shap_values(X_sample)
 
                 fig_shap = plt.figure(figsize=(12, 8))
@@ -78,38 +97,43 @@ def log_feature_importance(model, feature_names, stage_name, is_catboost, X=None
                 plt.close(fig_shap)
 
                 # Per-Position SHAP
+                # Note: We use the ORIGINAL X to find positions, but SHAP uses the TRANSFORMED X
                 if "Position_Group" in X.columns:
-                    positions = X["Position_Group"].unique()
+                    positions = X.get_column("Position_Group").unique().to_list()
                     for pos in positions:
-                        X_pos = X[X["Position_Group"] == pos]
-                        if len(X_pos) < 30:  # Minimum sample threshold for meaningful SHAP
+                        # Get indices for this position
+                        pos_mask = X.get_column("Position_Group") == pos
+                        X_pos_transformed = X_transformed.filter(pos_mask)
+
+                        if len(X_pos_transformed) < 30:
                             continue
 
+                        X_pos_pd = X_pos_transformed.to_pandas()
+                        pos_sample_size = min(500, len(X_pos_pd))
                         X_pos_sample = (
-                            X_pos.sample(min(500, len(X_pos)), random_state=42)
-                            if len(X_pos) > 500
-                            else X_pos
+                            X_pos_pd.sample(pos_sample_size, random_state=42)
+                            if len(X_pos_pd) > pos_sample_size
+                            else X_pos_pd
                         )
 
-                        # Calculate SHAP values on the FULL feature set
-                        # (required for model compatibility)
                         shap_pos = explainer.shap_values(X_pos_sample)
 
-                        # Identify columns that are NOT all-NaN to avoid plotting warnings
-                        valid_cols_idx = [
-                            i
-                            for i, c in enumerate(X_pos_sample.columns)
-                            if not X_pos_sample[c].isna().all()
+                        # Filter out all-NaN columns for cleaner plots
+                        valid_cols = [
+                            c for c in X_pos_sample.columns if not X_pos_sample[c].isna().all()
                         ]
-
-                        if not valid_cols_idx:
+                        if not valid_cols:
                             continue
 
-                        # Filter both the SHAP values and the dataframe for the plot
-                        shap_pos_filtered = shap_pos[:, valid_cols_idx]
-                        X_pos_filtered = X_pos_sample[
-                            [X_pos_sample.columns[i] for i in valid_cols_idx]
-                        ]
+                        X_pos_filtered = X_pos_sample[valid_cols]
+                        # Correctly slice shap_pos if it's a 2D array
+                        if isinstance(shap_values, list):  # Multi-class
+                            # We take the first class for simplicity or handle as needed
+                            cols_idx = [X_pos_sample.columns.get_loc(c) for c in valid_cols]
+                            shap_pos_filtered = shap_pos[0][:, cols_idx]
+                        else:
+                            cols_idx = [X_pos_sample.columns.get_loc(c) for c in valid_cols]
+                            shap_pos_filtered = shap_pos[:, cols_idx]
 
                         fig_pos = plt.figure(figsize=(12, 8))
                         shap.summary_plot(shap_pos_filtered, X_pos_filtered, show=False)
