@@ -6,6 +6,7 @@ defaults:
   - model@stage1_model: s1_catboost
   - model@stage2_model: reg_tweedie
   - hparams_search: s1_catboost_survival
+  - experiment: null
   - override hydra/sweeper: optuna
   - _self_
 

@@ -42,7 +42,7 @@ search_space:
     high: 5.0
   # -----------------------------------------------
 
-  data.exclude_features:
+  exclude_features:
     type: categorical
     choices:
       - ["Interviewed"]                                # Use all features

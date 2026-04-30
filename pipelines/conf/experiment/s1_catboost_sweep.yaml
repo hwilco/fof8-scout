@@ -1,0 +1,26 @@
+# @package _global_
+
+# This experiment focuses purely on optimizing the Stage 1 Sieve Classifier.
+
+defaults:
+  - override /hparams_search: s1_catboost_survival
+
+# --- Metadata & Logging ---
+experiment_name: "S1_Catboost_Hyperopt_v1"
+quiet_sweep: true
+
+# --- Execution Flow ---
+stage2_model: null
+train_stage2: false
+
+# --- Optimization Target ---
+optimization:
+  metric: "s1_oof_pr_auc"
+  direction: "maximize"
+
+# --- Hydra Sweeper Settings ---
+hydra:
+  sweeper:
+    n_trials: 100
+    direction: ${optimization.direction}
+    study_name: s1_catboost_tuning_v1

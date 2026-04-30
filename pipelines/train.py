@@ -355,8 +355,10 @@ def main(cfg: DictConfig):
     is_new_best = False
     trial_params = {}
 
+    s1_name = cfg.stage1_model.name
+    s2_name = cfg.stage2_model.name if cfg.stage2_model else "None"
     with mlflow.start_run(
-        run_name=f"Pipeline_{cfg.stage1_model.name}_{cfg.stage2_model.name}", tags=tags
+        run_name=f"Pipeline_{s1_name}_{s2_name}", tags=tags
     ) as pipeline_run:
         # Log DagsHub and dataset metadata
         mlflow.set_tag("data.league", cfg.data.league_name)
@@ -482,7 +484,9 @@ def main(cfg: DictConfig):
                 # Save calibrator artifact
                 calibrator_path = "stage1_beta_calibrator.joblib"
                 joblib.dump(calibrator, calibrator_path)
-                mlflow.log_artifact(calibrator_path)
+
+                if not (is_sweep and cfg.quiet_sweep):
+                    mlflow.log_artifact(calibrator_path)
 
                 # Apply Calibration
                 calibrated_oof_probs = calibrator.predict(oof_probs)
@@ -491,8 +495,9 @@ def main(cfg: DictConfig):
                 audit_results = run_calibration_audit(y_cls, calibrated_oof_probs)
                 mlflow.log_metrics({f"s1_audit_{k}": v for k, v in audit_results.items()})
 
-                # Log Reliability Diagram Comparison
-                log_calibration_comparison(y_cls, oof_probs, calibrated_oof_probs)
+                # Log Reliability Diagram Comparison (Skip if quiet sweep)
+                if not (is_sweep and cfg.quiet_sweep):
+                    log_calibration_comparison(y_cls, oof_probs, calibrated_oof_probs)
 
                 if not (is_sweep and cfg.quiet_sweep):
                     print(
@@ -555,16 +560,17 @@ def main(cfg: DictConfig):
 
                 log_confusion_matrix(y_cls, final_preds, best_threshold)
 
-                oof_df = meta_train.with_columns(
-                    [
-                        pl.Series("y_true", y_cls),
-                        pl.Series("oof_prob_raw", oof_probs),
-                        pl.Series("oof_prob", calibrated_oof_probs),
-                        pl.Series("cleared_sieve", final_preds),
-                    ]
-                )
-                oof_df.write_csv("stage1_oof_results.csv")
-                mlflow.log_artifact("stage1_oof_results.csv")
+                if not (is_sweep and cfg.quiet_sweep):
+                    oof_df = meta_train.with_columns(
+                        [
+                            pl.Series("y_true", y_cls),
+                            pl.Series("oof_prob_raw", oof_probs),
+                            pl.Series("oof_prob", calibrated_oof_probs),
+                            pl.Series("cleared_sieve", final_preds),
+                        ]
+                    )
+                    oof_df.write_csv("stage1_oof_results.csv")
+                    mlflow.log_artifact("stage1_oof_results.csv")
 
                 # Train Final Stage 1 Model
                 avg_best_iters = int(np.mean(best_iterations))
