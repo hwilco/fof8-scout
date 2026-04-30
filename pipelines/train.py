@@ -18,7 +18,11 @@ import polars as pl
 from fof8_core.features import apply_position_mask
 from fof8_core.loader import FOF8Loader
 from fof8_ml.evaluation.metrics import calculate_survival_metrics
-from fof8_ml.evaluation.plotting import log_confusion_matrix, log_feature_importance
+from fof8_ml.evaluation.plotting import (
+    log_calibration_comparison,
+    log_confusion_matrix,
+    log_feature_importance,
+)
 from fof8_ml.models import (
     CatBoostClassifierWrapper,
     CatBoostRegressorWrapper,
@@ -486,6 +490,9 @@ def main(cfg: DictConfig):
                 # --- 3. Calibration Audit (Post) ---
                 audit_results = run_calibration_audit(y_cls, calibrated_oof_probs)
                 mlflow.log_metrics({f"s1_audit_{k}": v for k, v in audit_results.items()})
+
+                # Log Reliability Diagram Comparison
+                log_calibration_comparison(y_cls, oof_probs, calibrated_oof_probs)
 
                 if not (is_sweep and cfg.quiet_sweep):
                     print(

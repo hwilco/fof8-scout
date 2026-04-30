@@ -173,3 +173,40 @@ def log_confusion_matrix(y_true, y_pred, threshold: float):
         fig.savefig(path)
         mlflow.log_artifact(path)
     plt.close(fig)
+
+
+def log_calibration_comparison(y_true, y_prob_raw, y_prob_cal, n_bins: int = 10):
+    """
+    Generates and logs a reliability diagram comparing raw and calibrated probabilities.
+
+    Args:
+        y_true: Ground truth binary labels.
+        y_prob_raw: Uncalibrated probabilities.
+        y_prob_cal: Calibrated probabilities.
+        n_bins: Number of bins for the calibration curve.
+    """
+    from sklearn.calibration import calibration_curve
+
+    prob_true_raw, prob_pred_raw = calibration_curve(y_true, y_prob_raw, n_bins=n_bins)
+    prob_true_cal, prob_pred_cal = calibration_curve(y_true, y_prob_cal, n_bins=n_bins)
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    ax.plot([0, 1], [0, 1], "k:", label="Perfectly calibrated")
+    ax.plot(prob_pred_raw, prob_true_raw, "s-", label="Raw (Uncalibrated)", alpha=0.6)
+    ax.plot(prob_pred_cal, prob_true_cal, "d-", label="Calibrated (Beta)", color="darkorange")
+
+    ax.set_ylabel("Fraction of Positives (Actual)")
+    ax.set_xlabel("Mean Predicted Probability")
+    ax.set_ylim([-0.05, 1.05])
+    ax.legend(loc="lower right")
+    ax.set_title("Calibration Reliability Diagram (Pre vs Post)")
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "calibration_reliability_plot.png")
+        fig.savefig(path)
+        mlflow.log_artifact(path)
+
+    plt.close(fig)
