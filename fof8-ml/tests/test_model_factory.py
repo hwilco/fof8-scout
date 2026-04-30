@@ -11,7 +11,7 @@ from fof8_ml.models import (
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(script_dir, "../../")))
 
-from pipelines.train import get_model_wrapper  # noqa: E402
+from fof8_ml.models.factory import get_model_wrapper  # noqa: E402
 
 
 def test_get_model_wrapper_stage1_catboost():

@@ -1,51 +1,27 @@
-import contextlib
-import fnmatch
-import json
 import logging
 import os
-import subprocess
-import sys
 import warnings
 
-import dagshub
-import dvc.api
 import hydra
 import joblib
 import matplotlib
-import mlflow
-import mlflow.data
 import numpy as np
 import polars as pl
-from fof8_core.features import apply_position_mask
-from fof8_core.loader import FOF8Loader
-from fof8_ml.evaluation.metrics import calculate_survival_metrics
-from fof8_ml.evaluation.plotting import (
-    log_calibration_comparison,
-    log_confusion_matrix,
-    log_feature_importance,
-)
-from fof8_ml.models import (
-    CatBoostClassifierWrapper,
-    CatBoostRegressorWrapper,
-    SklearnRegressorWrapper,
-    XGBoostClassifierWrapper,
-    XGBoostRegressorWrapper,
-)
 from fof8_ml.models.calibration import BetaCalibrator, run_calibration_audit
-from hydra.core.hydra_config import HydraConfig
-from hydra.types import RunMode
-from omegaconf import DictConfig, OmegaConf
-from sklearn.metrics import (
-    auc,
-    f1_score,
-    mean_absolute_error,
-    mean_squared_error,
-    precision_recall_curve,
-    precision_score,
-    recall_score,
-    roc_auc_score,
+from fof8_ml.orchestration import (
+    DataLoader,
+    ExperimentLogger,
+    Stage1Result,
+    SweepManager,
+    compute_stage1_final_metrics,
+    compute_stage2_oof_metrics,
+    optimize_threshold,
+    run_cv_classifier,
+    run_cv_regressor,
+    train_final_model,
 )
-from sklearn.model_selection import KFold, StratifiedKFold
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig
 
 # Suppress Optuna deprecation warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="optuna.distributions")
@@ -58,861 +34,298 @@ warnings.filterwarnings("ignore", message=".*multivariate.*experimental feature.
 matplotlib.use("Agg")
 logging.getLogger("matplotlib").setLevel(logging.ERROR)
 
-# --- Global Data Cache ---
-# This prevents reloading/reprocessing 100+ draft classes for every trial in a sweep.
-GLOBAL_DATA_CACHE = {
-    "X_train": None,
-    "y_cls": None,
-    "y_reg": None,
-    "meta_train": None,
-    "last_cfg_hash": None,
-    "git_commit": None,
-    "tracking_initialized": False,
-    "using_remote": None,  # True = DagsHub, False = local SQLite
-}
 
-
-def flatten_dict(d: dict, parent_key: str = "", sep: str = ".") -> dict:
-    items = []
-    for k, v in d.items():
-        new_key = f"{parent_key}{sep}{k}" if parent_key else k
-        if isinstance(v, dict):
-            items.extend(flatten_dict(v, new_key, sep=sep).items())
-        else:
-            items.append((new_key, v))
-    return dict(items)
-
-
-def log_params_safe(params: dict):
-    """Log parameters to MLflow in chunks of 100 to avoid limits."""
-    items = list(params.items())
-    for i in range(0, len(items), 100):
-        mlflow.log_params(dict(items[i : i + 100]))
-
-
-@contextlib.contextmanager
-def preserve_cwd(new_cwd: str = None):
-    """Temporarily change the working directory."""
-    old_cwd = os.getcwd()
-    if new_cwd:
-        os.chdir(new_cwd)
-    try:
-        yield
-    finally:
-        os.chdir(old_cwd)
-
-
-def get_model_wrapper(
-    model_name: str,
-    stage: str,
-    random_seed: int,
-    params: dict,
-    use_gpu: bool = False,
-    thread_count: int = -1,
-):
-    """
-    Factory function to instantiate the appropriate model wrapper based on config.
-
-    Args:
-        model_name: Name of the model (e.g., 's1_catboost', 'xgb').
-        stage: Pipeline stage ('stage1' or 'stage2').
-        random_seed: Random seed for reproducibility.
-        params: Dictionary of model hyperparameters.
-        use_gpu: Whether to enable GPU acceleration.
-        thread_count: Number of threads to use (-1 for all cores).
-
-    Returns:
-        An instantiated subclass of ModelWrapper.
-    """
-    model_name = model_name.lower()
-    if stage == "stage1":
-        if "catboost" in model_name:
-            return CatBoostClassifierWrapper(
-                random_seed=random_seed, use_gpu=use_gpu, thread_count=thread_count, **params
-            )
-        elif "xgb" in model_name:
-            return XGBoostClassifierWrapper(random_seed=random_seed, use_gpu=use_gpu, **params)
-        else:
-            raise ValueError(f"Unknown model for stage 1: {model_name}")
-    elif stage == "stage2":
-        if "catboost" in model_name:
-            return CatBoostRegressorWrapper(
-                random_seed=random_seed, use_gpu=use_gpu, thread_count=thread_count, **params
-            )
-        elif "xgb" in model_name:
-            return XGBoostRegressorWrapper(random_seed=random_seed, use_gpu=use_gpu, **params)
-        elif "sklearn" in model_name or "tweedie" in model_name or "gamma" in model_name:
-            return SklearnRegressorWrapper(model_name=model_name, use_gpu=use_gpu, **params)
-        else:
-            raise ValueError(f"Unknown model for stage 2: {model_name}")
-
-
-def _init_tracking(
-    exp_root: str, experiment_name: str
-) -> tuple[mlflow.tracking.MlflowClient, mlflow.entities.Experiment]:
-    """Initialize MLflow tracking, preferring DagsHub with a local SQLite fallback.
-
-    The decision is made *once* per process (cached in GLOBAL_DATA_CACHE) and
-    committed before any run is created, so MLflow's internal singleton state
-    is never mutated mid-run.
-
-    The actual write-capability test happens at ``mlflow.start_run()`` time in
-    ``_start_pipeline_run()``, where a local fallback is attempted if the remote
-    rejects the run creation (e.g. quota exceeded).
-
-    Args:
-        exp_root: Absolute path to the repository root.
-        experiment_name: Name of the MLflow experiment to create/select.
-
-    Returns:
-        An ``MlflowClient`` pointed at the active tracking store.
-    """
-    if not GLOBAL_DATA_CACHE["tracking_initialized"]:
-        if not os.environ.get("MLFLOW_TRACKING_URI"):
-            dagshub.init(repo_owner="hwilco", repo_name="fof8-scout", mlflow=True)
-            GLOBAL_DATA_CACHE["using_remote"] = True
-        mlflow.autolog(log_models=False)
-        GLOBAL_DATA_CACHE["tracking_initialized"] = True
-
-    client = mlflow.tracking.MlflowClient()
-    exp = client.get_experiment_by_name(experiment_name)
-    if exp is None:
-        try:
-            client.create_experiment(experiment_name)
-        except Exception:
-            pass  # Race condition: another parallel trial created it first
-    mlflow.set_experiment(experiment_name)
-    return client, client.get_experiment_by_name(experiment_name)
-
-
-def _start_pipeline_run(
-    exp_root: str,
-    experiment_name: str,
-    run_name: str,
-    tags: dict,
-):
-    """Start the top-level pipeline MLflow run, falling back to local SQLite on write failure.
-
-    This is the critical write-test: if DagsHub rejects run creation (quota exceeded,
-    storage full, etc.), we redirect to local storage *before* any trial data is logged.
-
-    Args:
-        exp_root: Absolute path to the repository root.
-        experiment_name: Name of the MLflow experiment.
-        run_name: Display name for the run.
-        tags: Tags to attach to the run at creation time.
-
-    Returns:
-        An active ``mlflow.ActiveRun`` context manager.
-    """
-    try:
-        return mlflow.start_run(run_name=run_name, tags=tags)
-    except Exception as e:
-        if GLOBAL_DATA_CACHE.get("using_remote"):
-            logging.warning(
-                f">>> Remote MLflow rejected run creation ({e}). "
-                "Falling back to local SQLite storage for this trial."
-            )
-            db_path = os.path.abspath(os.path.join(exp_root, "fof8-ml", "mlflow.db"))
-            mlflow.set_tracking_uri(f"sqlite:///{db_path}")
-            GLOBAL_DATA_CACHE["using_remote"] = False
-
-            # Re-select experiment on the local store
-            local_client = mlflow.tracking.MlflowClient()
-            if local_client.get_experiment_by_name(experiment_name) is None:
-                local_client.create_experiment(experiment_name)
-            mlflow.set_experiment(experiment_name)
-
-            return mlflow.start_run(run_name=run_name, tags=tags)
-        raise
+def _resolve_exp_root() -> str:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.abspath(os.path.join(script_dir, ".."))
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="economic_pipeline")
-def main(cfg: DictConfig):
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    exp_root = os.path.abspath(os.path.join(script_dir, ".."))
+def main(cfg: DictConfig) -> float:
+    exp_root = _resolve_exp_root()
     absolute_raw_path = os.path.abspath(os.path.join(exp_root, cfg.data.raw_path))
 
-    client, exp = _init_tracking(exp_root, cfg.experiment_name)
+    # 1. Infrastructure
+    logger = ExperimentLogger(exp_root, cfg.experiment_name)
+    logger.init_tracking()
+    sweep_mgr = SweepManager(logger.client, logger.experiment_id, exp_root)
+    ctx = sweep_mgr.detect_sweep(cfg)
 
-    # Detect Sweep / Multirun context
-    is_sweep = False
-    try:
-        # Robust check for multirun mode
-        is_sweep = HydraConfig.get().mode == RunMode.MULTIRUN
-        if not is_sweep and "--multirun" not in sys.argv and "-m" not in sys.argv:
-            print(f">>> Single Run Mode Detected (Hydra Mode: {HydraConfig.get().mode})")
-    except Exception:
-        # Fallback for non-standard environments
-        is_sweep = "--multirun" in sys.argv or "-m" in sys.argv
+    # 2. Data
+    loader = DataLoader(exp_root, quiet=ctx.quiet)
+    data = loader.load(cfg)
 
-    sweep_run_id = None
-    sweep_name = None
-    sweep_git_commit = None
-    if is_sweep or cfg.get("sweep_name"):
-        # Determine sweep name
-        if cfg.get("sweep_name"):
-            sweep_name = cfg.sweep_name
-        else:
-            # Fallback to date-based name if in multirun
-            sweep_name = f"Sweep_{os.path.basename(HydraConfig.get().sweep.dir)}"
-
-        # Get/Create Parent Run (Idempotent for parallel trials)
-        existing_runs = client.search_runs(
-            experiment_ids=[exp.experiment_id],
-            filter_string=f"tags.mlflow.runName = '{sweep_name}'",
-            max_results=1,
-        )
-        if existing_runs:
-            sweep_run_id = existing_runs[0].info.run_id
-            sweep_git_commit = existing_runs[0].data.tags.get("git_commit")
-        else:
-            try:
-                # Fetch commit once for the whole sweep
-                with preserve_cwd(exp_root):
-                    sweep_git_commit = (
-                        subprocess.check_output(["git", "rev-parse", "HEAD"])
-                        .decode("utf-8")
-                        .strip()
-                    )
-
-                with mlflow.start_run(run_name=sweep_name) as sweep_parent:
-                    sweep_run_id = sweep_parent.info.run_id
-                    mlflow.set_tag("git_commit", sweep_git_commit)
-
-                    # Log Search Space to Parent for visibility
-                    if (
-                        "hydra" in cfg
-                        and "sweeper" in cfg.hydra
-                        and "search_space" in cfg.hydra.sweeper
-                    ):
-                        search_space = OmegaConf.to_container(
-                            cfg.hydra.sweeper.search_space, resolve=True
-                        )
-                        log_params_safe(flatten_dict(search_space, parent_key="search_space"))
-            except Exception:
-                # Handle race condition in parallel starts
-                existing_runs = client.search_runs(
-                    experiment_ids=[exp.experiment_id],
-                    filter_string=f"tags.mlflow.runName = '{sweep_name}'",
-                    max_results=1,
-                )
-                if existing_runs:
-                    sweep_run_id = existing_runs[0].info.run_id
-                    sweep_git_commit = existing_runs[0].data.tags.get("git_commit")
-
-    # Sync sweep commit to global cache if found
-    if sweep_git_commit:
-        GLOBAL_DATA_CACHE["git_commit"] = sweep_git_commit
-
-    # --- Data Loading & Caching Logic ---
-    # We only reload data if the core data-related config has changed.
-    data_cfg = {
-        "league": cfg.data.league_name,
-        "features": cfg.data.features_path,
-        "threshold": cfg.target.stage1_sieve.merit_threshold,
-        "positions": cfg.positions,
-        "buffer": cfg.split.right_censor_buffer,
-        "test_pct": cfg.split.test_split_pct,
-        "mask": cfg.mask_positional_features,
-    }
-    cfg_hash = str(hash(str(data_cfg)))
-
-    if GLOBAL_DATA_CACHE["last_cfg_hash"] == cfg_hash and GLOBAL_DATA_CACHE["X_train"] is not None:
-        if not (is_sweep and cfg.quiet_sweep):
-            print(">>> Reusing pre-loaded data from Global Cache...")
-        X_train = GLOBAL_DATA_CACHE["X_train"]
-        X_test = GLOBAL_DATA_CACHE["X_test"]
-        y_cls = GLOBAL_DATA_CACHE["y_cls"]
-        y_reg = GLOBAL_DATA_CACHE["y_reg"]
-        meta_train = GLOBAL_DATA_CACHE["meta_train"]
-        meta_test = GLOBAL_DATA_CACHE["meta_test"]
-        # Retrieve metadata for printing
-        initial_year = GLOBAL_DATA_CACHE["initial_year"]
-        final_sim_year = GLOBAL_DATA_CACHE["final_sim_year"]
-        valid_start_year = GLOBAL_DATA_CACHE["valid_start_year"]
-        valid_end_year = GLOBAL_DATA_CACHE["valid_end_year"]
-        train_year_range = GLOBAL_DATA_CACHE["train_year_range"]
-        test_year_range = GLOBAL_DATA_CACHE["test_year_range"]
-    else:
-        loader = FOF8Loader(base_path=absolute_raw_path, league_name=cfg.data.league_name)
-
-        # 1. Automate Timeline Discovery
-        initial_year = loader.initial_sim_year
-        final_sim_year = loader.final_sim_year
-        valid_start_year = initial_year + 1
-
-        # 2. Load Preprocessed Data
-        features_file = os.path.abspath(os.path.join(exp_root, cfg.data.features_path))
-        if not os.path.exists(features_file):
-            raise FileNotFoundError(f"Processed features not found at {features_file}.")
-
-        df = pl.read_parquet(features_file)
-
-        # --- Runtime Filtering & Target Labeling ---
-        df = df.with_columns(
-            (pl.col("Career_Merit_Cap_Share") > cfg.target.stage1_sieve.merit_threshold)
-            .alias("Cleared_Sieve")
-            .cast(pl.Int8)
-        )
-
-        if cfg.positions and cfg.positions != "all":
-            pos_list = [cfg.positions] if isinstance(cfg.positions, str) else cfg.positions
-            df = df.filter(pl.col("Position_Group").is_in(pos_list))
-
-        valid_end_year = final_sim_year - cfg.split.right_censor_buffer
-        df = df.filter(pl.col("Year") <= valid_end_year)
-
-        total_valid_years = valid_end_year - valid_start_year + 1
-        test_years_count = int(total_valid_years * cfg.split.test_split_pct)
-        train_end_year = valid_end_year - test_years_count
-        train_year_range = [valid_start_year, train_end_year]
-        test_year_range = [train_end_year + 1, valid_end_year]
-
-        train_df = df.filter(
-            (pl.col("Year") >= train_year_range[0]) & (pl.col("Year") <= train_year_range[1])
-        )
-        test_df = df.filter(
-            (pl.col("Year") >= test_year_range[0]) & (pl.col("Year") <= test_year_range[1])
-        )
-
-        metadata_cols = ["Player_ID", "Year", "First_Name", "Last_Name"]
-        target_cols = [
-            cfg.target.stage1_sieve.target_col,
-            cfg.target.stage2_intensity.target_col,
-        ] + list(cfg.target.leakage_prevention.drop_cols)
-        feature_cols = [c for c in df.columns if c not in metadata_cols and c not in target_cols]
-
-        X_train = train_df.select(feature_cols)
-        y_train_df = train_df.select(target_cols)
-        meta_train = train_df.select(metadata_cols)
-        X_test = test_df.select(feature_cols)
-        y_test_df = test_df.select(target_cols)
-        meta_test = test_df.select(metadata_cols)
-
-        if cfg.mask_positional_features:
-            X_train = apply_position_mask(X_train)
-            X_test = apply_position_mask(X_test)
-
-        y_cls = y_train_df.get_column(cfg.target.stage1_sieve.target_col).to_numpy()
-        y_reg = y_train_df.get_column(cfg.target.stage2_intensity.target_col).to_numpy()
-
-        # Store in Global Cache for next trial
-        GLOBAL_DATA_CACHE.update(
-            {
-                "X_train": X_train,
-                "X_test": X_test,
-                "y_cls": y_cls,
-                "y_reg": y_reg,
-                "meta_train": meta_train,
-                "meta_test": meta_test,
-                "initial_year": initial_year,
-                "final_sim_year": final_sim_year,
-                "valid_start_year": valid_start_year,
-                "valid_end_year": valid_end_year,
-                "train_year_range": train_year_range,
-                "test_year_range": test_year_range,
-                "last_cfg_hash": cfg_hash,
-            }
-        )
-
-    # --- Always Print Data Summary (unless quiet sweep) ---
-    if not (is_sweep and cfg.quiet_sweep):
-        print(f"Simulation Range: {initial_year} to {final_sim_year}")
+    # Always print data summary unless quiet sweep
+    if not ctx.quiet:
+        print(f"Simulation Range: {data.timeline.initial_year} to {data.timeline.final_sim_year}")
         print(
-            f"Active Range: {valid_start_year} to {valid_end_year} "
+            f"Active Range: {data.timeline.valid_start_year} to {data.timeline.valid_end_year} "
             f"(Buffer: {cfg.split.right_censor_buffer} years)"
         )
         print(
-            f"Training Set: {train_year_range} "
-            f"({train_year_range[1] - train_year_range[0] + 1} classes)"
+            f"Training Set: {data.timeline.train_year_range} "
+            f"({data.timeline.train_year_range[1] - data.timeline.train_year_range[0] + 1} classes)"
         )
         print(
-            f"Holdout Set: {test_year_range} "
-            f"({test_year_range[1] - test_year_range[0] + 1} classes)"
+            f"Holdout Set: {data.timeline.test_year_range} "
+            f"({data.timeline.test_year_range[1] - data.timeline.test_year_range[0] + 1} classes)"
         )
         if cfg.mask_positional_features:
             print("Applying In-Memory Positional Feature Masking...")
 
-    # --- TRIAL-SPECIFIC ABLATION ---
-    # These must happen fresh every trial as they are part of the search space
-    include_features = cfg.get("include_features")
-    if include_features:
-        all_cols = X_train.columns
-        expanded_include = []
-        for p in include_features:
-            expanded_include.extend(fnmatch.filter(all_cols, p) if "*" in p or "?" in p else [p])
-        include_cols = [c for c in list(dict.fromkeys(expanded_include)) if c in all_cols]
-        if not (is_sweep and cfg.quiet_sweep):
-            print(
-                f"Applying Feature Ablation: Keeping {len(include_cols)} features "
-                f"matching {include_features}"
-            )
-        X_train = X_train.select(include_cols)
-        X_test = X_test.select(include_cols)
+    # Trial-specific feature ablation
+    data = loader.apply_feature_ablation(
+        data, cfg.get("include_features"), cfg.get("exclude_features")
+    )
 
-    exclude_features = cfg.get("exclude_features")
-    if exclude_features:
-        all_cols = X_train.columns
-        expanded_exclude = []
-        for p in exclude_features:
-            expanded_exclude.extend(fnmatch.filter(all_cols, p) if "*" in p or "?" in p else [p])
-        cols_to_drop = [c for c in list(dict.fromkeys(expanded_exclude)) if c in all_cols]
-        if cols_to_drop:
-            if not (is_sweep and cfg.quiet_sweep):
-                print(
-                    f"Applying Feature Ablation: Excluding {len(cols_to_drop)} features "
-                    f"matching {exclude_features}"
-                )
-            X_train = X_train.drop(cols_to_drop)
-            X_test = X_test.drop(cols_to_drop)
-
-    # If in a sweep, we link to the sweep_run_id via tags
-    tags = {}
-    if sweep_run_id:
-        tags["mlflow.parentRunId"] = sweep_run_id
-        tags["sweep_run_id"] = sweep_run_id
-    if sweep_name:
-        tags["sweep_name"] = sweep_name
-
-    if is_sweep:
+    # Determine trial number for logging
+    trial_num = None
+    if ctx.is_sweep:
         try:
-            trial_num = HydraConfig.get().job.num + 1
-            n_trials = HydraConfig.get().sweeper.n_trials
-            print("\n" + ">" * 10 + f" STARTING TRIAL {trial_num}/{n_trials} " + "<" * 10)
+            trial_num = HydraConfig.get().job.num
         except Exception:
-            # Fallback if job.num is unexpectedly missing despite being in MULTIRUN mode
             pass
 
-    # --- Pipeline State Initialization ---
-    is_new_best = False
-    trial_params = {}
-
+    # 3. Train & Evaluate
     s1_name = cfg.stage1_model.name
     s2_name = cfg.stage2_model.name if cfg.stage2_model else "None"
-    with _start_pipeline_run(
-        exp_root, cfg.experiment_name, f"Pipeline_{s1_name}_{s2_name}", tags
-    ) as pipeline_run:
-        # Log DagsHub and dataset metadata
-        mlflow.set_tag("data.league", cfg.data.league_name)
-        mlflow.set_tag("data.raw_path", cfg.data.raw_path)
 
-        # Log Git Commit and DVC Data Version
-        try:
-            repo_root = exp_root
-            relative_data_path = os.path.relpath(absolute_raw_path, repo_root)
-
-            git_commit = GLOBAL_DATA_CACHE.get("git_commit")
-            with preserve_cwd(repo_root):
-                if not git_commit:
-                    git_commit = (
-                        subprocess.check_output(["git", "rev-parse", "HEAD"])
-                        .decode("utf-8")
-                        .strip()
-                    )
-                    GLOBAL_DATA_CACHE["git_commit"] = git_commit
-
-                mlflow.set_tag("git_commit", git_commit)
-
-                try:
-                    data_url = dvc.api.get_url(path=relative_data_path, remote="origin")
-                    mlflow.set_tag("dvc.data_url", data_url)
-                except Exception:
-                    pass
-        except Exception as e:
-            logging.warning(f"Could not log Git commit / DVC version: {e}")
-        cfg_container = OmegaConf.to_container(cfg, resolve=True)
-        log_params_safe(flatten_dict(cfg_container))
-
-        if "tags" in cfg and cfg.tags:
-            mlflow.set_tags(OmegaConf.to_container(cfg.tags, resolve=True))
-
-        if is_sweep:
-            mlflow.set_tag("trial_num", str(HydraConfig.get().job.num))
-
-        n_pos = int(y_cls.sum())
-        n_neg = len(y_cls) - n_pos
-        pos_weight = n_neg / n_pos if n_pos > 0 else 1.0
-        if not (is_sweep and cfg.quiet_sweep):
-            print(
-                f"Stage 1 Class Balance - Positive Merit (Hits): {n_pos}, "
-                f"Negative Merit (Busts): {n_neg}, Ratio: {pos_weight:.2f}"
-            )
-        mlflow.log_params({"data.n_pos": n_pos, "data.n_neg": n_neg})
-
-        stage1_run_id = cfg.get("stage1_run_id")
-        best_f1_0 = 0.0
-        hit_recall = 0.0
-        best_threshold = 0.5
-        s1_oof_pr_auc = 0.0
-        s2_oof_rmse = 0.0
+    with logger.start_pipeline_run(f"Pipeline_{s1_name}_{s2_name}", tags=ctx.tags) as pipeline_run:
+        logger.log_data_summary(data, cfg, absolute_raw_path, ctx.is_sweep, trial_num)
 
         # ---------------------------------------------------------
         # STAGE 1: SIEVE CLASSIFIER
         # ---------------------------------------------------------
+        stage1_run_id = cfg.get("stage1_run_id")
+
         if not stage1_run_id:
-            if not (is_sweep and cfg.quiet_sweep):
+            if not ctx.quiet:
                 print("\n" + "=" * 40)
                 print("STAGE 1: SIEVE CLASSIFIER")
                 print("=" * 40)
-            with mlflow.start_run(run_name="Stage1_Sieve_Classifier", nested=True) as stage1_run:
-                mlflow.set_tag("model_stage", "stage1")
-                if sweep_name:
-                    mlflow.set_tag("sweep_name", sweep_name)
-                if sweep_run_id:
-                    mlflow.set_tag("sweep_run_id", sweep_run_id)
 
-                # Log Stage 1 specific parameters for easier comparison
+            import mlflow
+
+            with mlflow.start_run(run_name="Stage1_Sieve_Classifier", nested=True):
+                mlflow.set_tag("model_stage", "stage1")
+                if ctx.sweep_name:
+                    mlflow.set_tag("sweep_name", ctx.sweep_name)
+                if ctx.sweep_run_id:
+                    mlflow.set_tag("sweep_run_id", ctx.sweep_run_id)
+
+                # Log Stage 1 specific parameters
+                from fof8_ml.orchestration.experiment_logger import flatten_dict, log_params_safe
+                from omegaconf import OmegaConf
+
                 s1_params = OmegaConf.to_container(cfg.stage1_model.params, resolve=True)
                 log_params_safe(flatten_dict(s1_params, parent_key="s1"))
 
-                skf = StratifiedKFold(
-                    n_splits=cfg.cv.n_folds, shuffle=cfg.cv.shuffle, random_state=cfg.seed
+                # Cross-validation
+                cv_result = run_cv_classifier(
+                    X=data.X_train,
+                    y=data.y_cls,
+                    model_cfg=cfg.stage1_model,
+                    cv_cfg=cfg.cv,
+                    seed=cfg.seed,
+                    use_gpu=cfg.use_gpu,
+                    quiet=ctx.quiet,
                 )
-                indices = np.arange(len(X_train))
-                oof_probs = np.zeros(len(X_train))
 
-                cv_metrics = []
-                best_iterations = []
-
-                for fold, (train_idx, val_idx) in enumerate(skf.split(indices, y_cls)):
-                    if not (is_sweep and cfg.quiet_sweep):
-                        print(f"--- S1 Fold {fold} ---")
-                    X_cv_train, X_cv_val = X_train[train_idx], X_train[val_idx]
-                    y_cv_train, y_cv_val = y_cls[train_idx], y_cls[val_idx]
-
-                    params = OmegaConf.to_container(cfg.stage1_model.params, resolve=True)
-                    if is_sweep and cfg.quiet_sweep:
-                        if "catboost" in cfg.stage1_model.name.lower():
-                            params["logging_level"] = "Silent"
-                        elif "xgb" in cfg.stage1_model.name.lower():
-                            params["verbosity"] = 0
-
-                    use_gpu = cfg.use_gpu
-                    thread_count = cfg.stage1_model.params.get("thread_count", -1)
-                    model = get_model_wrapper(
-                        cfg.stage1_model.name,
-                        "stage1",
-                        cfg.seed,
-                        params,
-                        use_gpu=use_gpu,
-                        thread_count=thread_count,
-                    )
-
-                    model.fit(X_cv_train, y_cv_train, X_cv_val, y_cv_val)
-                    best_iterations.append(model.get_best_iteration())
-                    y_val_prob = model.predict_proba(X_cv_val)
-
-                    oof_probs[val_idx] = y_val_prob
-
-                    metrics = calculate_survival_metrics(y_cv_val, y_val_prob)
-                    cv_metrics.append(metrics)
-                    for m_name, m_val in metrics.items():
-                        mlflow.log_metric(f"fold_{fold}_{m_name}", m_val)
-
-                summary_metrics = {}
-                for key in cv_metrics[0].keys():
-                    values = [m[key] for m in cv_metrics]
-                    summary_metrics[f"mean_{key}"] = np.mean(values)
-                mlflow.log_metrics(summary_metrics)
-
-                # --- 1. Calibration Audit (Pre) ---
-                pre_audit_results = run_calibration_audit(y_cls, oof_probs)
+                # Calibration Audit (Pre)
+                pre_audit_results = run_calibration_audit(data.y_cls, cv_result.oof_predictions)
                 mlflow.log_metrics({f"s1_pre_audit_{k}": v for k, v in pre_audit_results.items()})
 
-                # --- 2. Fit Calibrator ---
-                if not (is_sweep and cfg.quiet_sweep):
+                # Fit Calibrator
+                if not ctx.quiet:
                     print("\nFitting Beta Calibrator...")
-
                 calibrator = BetaCalibrator()
-                calibrator.fit(oof_probs, y_cls)
-
-                # Save calibrator artifact
+                calibrator.fit(cv_result.oof_predictions, data.y_cls)
                 calibrator_path = "stage1_beta_calibrator.joblib"
                 joblib.dump(calibrator, calibrator_path)
-
-                if not (is_sweep and cfg.quiet_sweep):
+                if not ctx.quiet:
                     mlflow.log_artifact(calibrator_path)
 
-                # Apply Calibration
-                calibrated_oof_probs = calibrator.predict(oof_probs)
+                calibrated_oof_probs = calibrator.predict(cv_result.oof_predictions)
 
-                # --- 3. Calibration Audit (Post) ---
-                audit_results = run_calibration_audit(y_cls, calibrated_oof_probs)
+                # Calibration Audit (Post)
+                audit_results = run_calibration_audit(data.y_cls, calibrated_oof_probs)
                 mlflow.log_metrics({f"s1_audit_{k}": v for k, v in audit_results.items()})
-
-                # Log Reliability Diagram Comparison (Skip if quiet sweep)
-                if not (is_sweep and cfg.quiet_sweep):
-                    log_calibration_comparison(y_cls, oof_probs, calibrated_oof_probs)
-
-                if not (is_sweep and cfg.quiet_sweep):
+                if not ctx.quiet:
                     print(
                         f"Calibration Audit: Intercept={audit_results['cox_intercept']:.4f}, "
                         f"Slope={audit_results['cox_slope']:.4f}, "
                         f"p={audit_results['spiegelhalter_p']:.4f}"
                     )
 
-                # --- 4. Threshold Optimization (On Calibrated Probs) ---
-                if not (is_sweep and cfg.quiet_sweep):
+                # Threshold Optimization
+                if not ctx.quiet:
                     print(
                         f"\nOptimizing Stage 1 Threshold (Calibrated) (Constraint: Min Survivor "
                         f"Recall >= {cfg.target.stage1_sieve.min_survivor_recall})..."
                     )
+                best_threshold, best_f1_0 = optimize_threshold(
+                    y_true=data.y_cls,
+                    calibrated_probs=calibrated_oof_probs,
+                    min_survivor_recall=cfg.target.stage1_sieve.min_survivor_recall,
+                )
 
-                best_threshold = 0.5
-                best_f1_0 = -1.0
-                y_true = y_cls
+                # Final Metrics computation
+                s1_metrics = compute_stage1_final_metrics(
+                    y_true=data.y_cls,
+                    calibrated_probs=calibrated_oof_probs,
+                    threshold=best_threshold,
+                )
 
-                thresholds = np.linspace(0.01, 0.99, 99)
-                for thresh in thresholds:
-                    current_preds = (calibrated_oof_probs >= thresh).astype(int)
-                    f1_0 = f1_score(y_true, current_preds, pos_label=0)
-                    recall_1 = recall_score(y_true, current_preds)
+                final_preds = (calibrated_oof_probs >= best_threshold).astype(int)
 
-                    if recall_1 >= cfg.target.stage1_sieve.min_survivor_recall:
-                        if f1_0 > best_f1_0:
-                            best_f1_0 = f1_0
-                            best_threshold = thresh
+                s1_result = Stage1Result(
+                    cv_result=cv_result,
+                    calibrated_oof_probs=calibrated_oof_probs,
+                    raw_oof_probs=cv_result.oof_predictions,
+                    optimal_threshold=best_threshold,
+                    final_predictions=final_preds,
+                    metrics=s1_metrics,
+                    calibrator=calibrator,
+                )
 
-                if best_f1_0 == -1.0:
-                    best_threshold = thresholds[0]
-                    final_preds = (calibrated_oof_probs >= best_threshold).astype(int)
-                    best_f1_0 = f1_score(y_true, final_preds, pos_label=0)
-                else:
-                    final_preds = (calibrated_oof_probs >= best_threshold).astype(int)
+                # Train Final Stage 1 Model
+                avg_best_iters = int(np.mean(cv_result.best_iterations))
+                s1_model = train_final_model(
+                    model_cfg=cfg.stage1_model,
+                    stage="stage1",
+                    X=data.X_train,
+                    y=data.y_cls,
+                    avg_best_iterations=avg_best_iters,
+                    seed=cfg.seed,
+                    use_gpu=cfg.use_gpu,
+                    quiet=ctx.quiet,
+                )
 
-                # --- 5. Log Final Stage 1 Metrics & Artifacts ---
-                busts_filtered = np.sum((y_true == 0) & (final_preds == 0))
-                hit_recall = recall_score(y_true, final_preds)
-                bust_precision = precision_score(y_true, final_preds, pos_label=0)
-                bust_recall = recall_score(y_true, final_preds, pos_label=0)
+                # Log everything
+                logger.log_stage1_results(s1_result, s1_model, data, cfg, ctx.quiet)
 
-                p, r, _ = precision_recall_curve(y_true, calibrated_oof_probs)
-                s1_oof_pr_auc = auc(r, p)
-                s1_oof_roc_auc = roc_auc_score(y_true, calibrated_oof_probs)
-
-                mlflow.log_params({"s1_optimal_threshold": best_threshold})
+                # Bubble up metrics
                 mlflow.log_metrics(
                     {
-                        "s1_oof_busts_filtered": busts_filtered,
-                        "s1_oof_hit_recall": hit_recall,
-                        "s1_oof_f1_bust": best_f1_0,
-                        "s1_oof_precision_bust": bust_precision,
-                        "s1_oof_recall_bust": bust_recall,
-                        "s1_oof_pr_auc": s1_oof_pr_auc,
-                        "s1_oof_roc_auc": s1_oof_roc_auc,
+                        "s1_oof_f1_bust": s1_metrics["s1_oof_f1_bust"],
+                        "s1_oof_hit_recall": s1_metrics["s1_oof_hit_recall"],
+                        "s1_optimal_threshold": best_threshold,
+                        "s1_oof_pr_auc": s1_metrics["s1_oof_pr_auc"],
                     }
                 )
 
-                log_confusion_matrix(y_cls, final_preds, best_threshold)
-
-                if not (is_sweep and cfg.quiet_sweep):
-                    oof_df = meta_train.with_columns(
-                        [
-                            pl.Series("y_true", y_cls),
-                            pl.Series("oof_prob_raw", oof_probs),
-                            pl.Series("oof_prob", calibrated_oof_probs),
-                            pl.Series("cleared_sieve", final_preds),
-                        ]
-                    )
-                    oof_df.write_csv("stage1_oof_results.csv")
-                    mlflow.log_artifact("stage1_oof_results.csv")
-
-                # Train Final Stage 1 Model
-                avg_best_iters = int(np.mean(best_iterations))
-                final_params_s1 = OmegaConf.to_container(cfg.stage1_model.params, resolve=True)
-                final_params_s1.pop("early_stopping_rounds", None)
-
-                if "catboost" in cfg.stage1_model.name.lower():
-                    final_params_s1["iterations"] = avg_best_iters
-                elif "xgb" in cfg.stage1_model.name.lower():
-                    final_params_s1["n_estimators"] = avg_best_iters
-
-                if is_sweep and cfg.quiet_sweep:
-                    if "catboost" in cfg.stage1_model.name.lower():
-                        final_params_s1["logging_level"] = "Silent"
-                    elif "xgb" in cfg.stage1_model.name.lower():
-                        final_params_s1["verbosity"] = 0
-
-                stage1_model = get_model_wrapper(
-                    cfg.stage1_model.name,
-                    "stage1",
-                    cfg.seed,
-                    final_params_s1,
-                    use_gpu=cfg.use_gpu,
-                    thread_count=cfg.stage1_model.params.get("thread_count", -1),
-                )
-                stage1_model.fit(X_train, y_cls)
-                stage1_model.log_model("stage1_model")
-
-                if not (is_sweep and cfg.quiet_sweep):
-                    if cfg.diagnostics.log_importance or cfg.diagnostics.log_shap:
-                        log_feature_importance(
-                            stage1_model,
-                            "Stage 1 Importance",
-                            X=X_train,
-                            log_shap=cfg.diagnostics.log_shap,
-                        )
-
-            mlflow.log_metrics(
-                {
-                    "s1_oof_f1_bust": best_f1_0,
-                    "s1_oof_hit_recall": hit_recall,
-                    "s1_optimal_threshold": best_threshold,
-                    "s1_oof_pr_auc": s1_oof_pr_auc,
-                }
-            )
-
-            mask = (y_cls == 1).astype(bool)
+                s1_mask = (data.y_cls == 1).astype(bool)
+                s1_oof_pr_auc = s1_metrics["s1_oof_pr_auc"]
+                best_f1_0 = s1_metrics["s1_oof_f1_bust"]
+                bust_recall = s1_metrics["s1_oof_recall_bust"]
         else:
             print(f"\nSKIPPING STAGE 1: Using results from Run {stage1_run_id}")
-            oof_path = client.download_artifacts(stage1_run_id, "stage1_oof_results.csv")
-            oof_df = pl.read_csv(oof_path)
-            mask = (y_cls == 1).astype(bool)
+            import mlflow
+
+            logger.client.download_artifacts(stage1_run_id, "stage1_oof_results.csv")
+            s1_mask = (data.y_cls == 1).astype(bool)
 
             mlflow.set_tag("stage1_source_run", stage1_run_id)
             try:
-                best_f1_0 = client.get_run(stage1_run_id).data.metrics.get("s1_oof_f1_bust", 0.0)
+                best_f1_0 = logger.client.get_run(stage1_run_id).data.metrics.get(
+                    "s1_oof_f1_bust", 0.0
+                )
+                s1_oof_pr_auc = logger.client.get_run(stage1_run_id).data.metrics.get(
+                    "s1_oof_pr_auc", 0.0
+                )
+                bust_recall = logger.client.get_run(stage1_run_id).data.metrics.get(
+                    "s1_oof_recall_bust", 0.0
+                )
             except Exception:
                 best_f1_0 = 0.0
+                s1_oof_pr_auc = 0.0
+                bust_recall = 0.0
 
         # ---------------------------------------------------------
         # STAGE 2: INTENSITY REGRESSOR
         # ---------------------------------------------------------
+        s2_metrics_dict = {}
         if cfg.train_stage2 and cfg.stage2_model is not None:
-            with mlflow.start_run(run_name="Stage2_Intensity_Regressor", nested=True) as stage2_run:
-                mlflow.set_tag("model_stage", "stage2")
-                if sweep_name:
-                    mlflow.set_tag("sweep_name", sweep_name)
-                if sweep_run_id:
-                    mlflow.set_tag("sweep_run_id", sweep_run_id)
+            if not ctx.quiet:
+                print("\n" + "=" * 40)
+                print("STAGE 2: INTENSITY REGRESSOR")
+                print("=" * 40)
 
-                # Log Stage 2 specific parameters for easier comparison
+            with mlflow.start_run(run_name="Stage2_Intensity_Regressor", nested=True):
+                mlflow.set_tag("model_stage", "stage2")
+                if ctx.sweep_name:
+                    mlflow.set_tag("sweep_name", ctx.sweep_name)
+                if ctx.sweep_run_id:
+                    mlflow.set_tag("sweep_run_id", ctx.sweep_run_id)
+
+                from fof8_ml.orchestration.experiment_logger import flatten_dict, log_params_safe
+                from omegaconf import OmegaConf
+
                 s2_params = OmegaConf.to_container(cfg.stage2_model.params, resolve=True)
                 log_params_safe(flatten_dict(s2_params, parent_key="s2"))
-                if not (is_sweep and cfg.quiet_sweep):
-                    print("\n" + "=" * 40)
-                    print("STAGE 2: INTENSITY REGRESSOR")
-                    print("=" * 40)
 
-                X_reg = X_train.filter(pl.Series(mask))
-                y_reg_target = np.log1p(y_reg[mask])
+                X_reg = data.X_train.filter(pl.Series(s1_mask))
+                y_reg_target = np.log1p(data.y_reg[s1_mask])
 
-                kf = KFold(n_splits=cfg.cv.n_folds, shuffle=cfg.cv.shuffle, random_state=cfg.seed)
-                indices_reg = np.arange(len(X_reg))
-                oof_preds_reg = np.zeros(len(X_reg))
-
-                cv_rmse = []
-                cv_mae = []
-                best_iters_reg = []
-
-                for fold, (train_idx, val_idx) in enumerate(kf.split(indices_reg)):
-                    if not (is_sweep and cfg.quiet_sweep):
-                        print(f"--- S2 Fold {fold} ---")
-                    X_cv_train, X_cv_val = X_reg[train_idx], X_reg[val_idx]
-                    y_cv_train, y_cv_val = y_reg_target[train_idx], y_reg_target[val_idx]
-
-                    params = OmegaConf.to_container(cfg.stage2_model.params, resolve=True)
-                    if is_sweep and cfg.quiet_sweep:
-                        if "catboost" in cfg.stage2_model.name.lower():
-                            params["logging_level"] = "Silent"
-                        elif "xgb" in cfg.stage2_model.name.lower():
-                            params["verbosity"] = 0
-
-                    use_gpu = cfg.use_gpu
-                    thread_count = cfg.stage2_model.params.get("thread_count", -1)
-                    model = get_model_wrapper(
-                        cfg.stage2_model.name,
-                        "stage2",
-                        cfg.seed,
-                        params,
-                        use_gpu=use_gpu,
-                        thread_count=thread_count,
-                    )
-
-                    model.fit(X_cv_train, y_cv_train, X_cv_val, y_cv_val)
-                    best_iters_reg.append(model.get_best_iteration())
-                    y_val_pred = model.predict(X_cv_val)
-
-                    oof_preds_reg[val_idx] = y_val_pred
-
-                    y_val_real = np.expm1(y_cv_val)
-                    y_val_pred_real = np.expm1(y_val_pred)
-
-                    rmse = np.sqrt(mean_squared_error(y_val_real, y_val_pred_real))
-                    mae = mean_absolute_error(y_val_real, y_val_pred_real)
-
-                    cv_rmse.append(rmse)
-                    cv_mae.append(mae)
-
-                    mlflow.log_metric(f"fold_{fold}_rmse", rmse)
-                    mlflow.log_metric(f"fold_{fold}_mae", mae)
-
-                s2_oof_rmse = np.sqrt(
-                    mean_squared_error(np.expm1(y_reg_target), np.expm1(oof_preds_reg))
+                s2_cv_result = run_cv_regressor(
+                    X=X_reg,
+                    y=y_reg_target,
+                    model_cfg=cfg.stage2_model,
+                    cv_cfg=cfg.cv,
+                    seed=cfg.seed,
+                    use_gpu=cfg.use_gpu,
+                    quiet=ctx.quiet,
                 )
-                s2_oof_mae = mean_absolute_error(np.expm1(y_reg_target), np.expm1(oof_preds_reg))
 
+                s2_metrics_dict = compute_stage2_oof_metrics(
+                    y_true_log=y_reg_target,
+                    oof_predictions_log=s2_cv_result.oof_predictions,
+                )
+
+                # Add mean CV metrics
+                cv_rmse = [m["rmse"] for m in s2_cv_result.fold_metrics]
+                cv_mae = [m["mae"] for m in s2_cv_result.fold_metrics]
+                s2_metrics_dict["s2_mean_rmse"] = float(np.mean(cv_rmse))
+                s2_metrics_dict["s2_mean_mae"] = float(np.mean(cv_mae))
+
+                avg_best_iters_reg = (
+                    int(np.mean(s2_cv_result.best_iterations))
+                    if s2_cv_result.best_iterations
+                    else 100
+                )
+                s2_model = train_final_model(
+                    model_cfg=cfg.stage2_model,
+                    stage="stage2",
+                    X=X_reg,
+                    y=y_reg_target,
+                    avg_best_iterations=avg_best_iters_reg,
+                    seed=cfg.seed,
+                    use_gpu=cfg.use_gpu,
+                    quiet=ctx.quiet,
+                )
+
+                logger.log_stage2_results(s2_metrics_dict, s2_model, X_reg, cfg, ctx.quiet)
+                # Bubble up s2 metrics
                 mlflow.log_metrics(
                     {
-                        "s2_oof_rmse": s2_oof_rmse,
-                        "s2_oof_mae": s2_oof_mae,
-                        "s2_mean_rmse": np.mean(cv_rmse),
-                        "s2_mean_mae": np.mean(cv_mae),
+                        "s2_oof_rmse": s2_metrics_dict["s2_oof_rmse"],
+                        "s2_oof_mae": s2_metrics_dict["s2_oof_mae"],
                     }
                 )
 
-                # Train Final Stage 2 Model
-                avg_best_iters_reg = int(np.mean(best_iters_reg)) if best_iters_reg else 100
-                final_params_s2 = OmegaConf.to_container(cfg.stage2_model.params, resolve=True)
-                final_params_s2.pop("early_stopping_rounds", None)
-
-                if "catboost" in cfg.stage2_model.name.lower():
-                    final_params_s2["iterations"] = avg_best_iters_reg
-                elif "xgb" in cfg.stage2_model.name.lower():
-                    final_params_s2["n_estimators"] = avg_best_iters_reg
-
-                if is_sweep and cfg.quiet_sweep:
-                    if "catboost" in cfg.stage2_model.name.lower():
-                        final_params_s2["logging_level"] = "Silent"
-                    elif "xgb" in cfg.stage2_model.name.lower():
-                        final_params_s2["verbosity"] = 0
-
-                stage2_model = get_model_wrapper(
-                    cfg.stage2_model.name,
-                    "stage2",
-                    cfg.seed,
-                    final_params_s2,
-                    use_gpu=cfg.use_gpu,
-                    thread_count=cfg.stage2_model.params.get("thread_count", -1),
-                )
-                stage2_model.fit(X_reg, y_reg_target)
-                stage2_model.log_model("stage2_model")
-
-                if not (is_sweep and cfg.quiet_sweep):
-                    if cfg.diagnostics.log_importance or cfg.diagnostics.log_shap:
-                        log_feature_importance(
-                            stage2_model,
-                            "Stage 2 Importance",
-                            X=X_reg,
-                            log_shap=cfg.diagnostics.log_shap,
-                        )
-
-        if not (is_sweep and cfg.quiet_sweep):
+        if not ctx.quiet:
             print("\nFull Pipeline Training Complete. Models saved to MLflow.")
 
         # --- Metric Consolidation for Optimization/Return ---
         available_metrics = {
             "s1_oof_f1_bust": best_f1_0,
-            "s1_oof_recall_bust": bust_recall if "bust_recall" in locals() else 0.0,
+            "s1_oof_recall_bust": bust_recall,
             "s1_oof_pr_auc": s1_oof_pr_auc,
         }
-        if "s2_oof_rmse" in locals():
-            available_metrics["s2_oof_rmse"] = s2_oof_rmse
+        if "s2_oof_rmse" in s2_metrics_dict:
+            available_metrics["s2_oof_rmse"] = s2_metrics_dict["s2_oof_rmse"]
 
         opt_metric = cfg.optimization.metric
-        higher_is_better = cfg.optimization.direction == "maximize"
-
         current_score = available_metrics.get(opt_metric)
         if current_score is None:
             raise ValueError(
@@ -920,116 +333,17 @@ def main(cfg: DictConfig):
                 f"Available metrics: {list(available_metrics.keys())}"
             )
 
-        score_name = f"best_{opt_metric}"
-        score_label = score_name.replace("best_", "").upper()
-
         # --- Update Sweep Parent with Best Results ---
-        if sweep_run_id:
-            # Compare against the parent champion
-            parent_run_data = client.get_run(sweep_run_id).data
-            previous_best = parent_run_data.metrics.get(score_name)
-
-            is_new_best = False
-            if previous_best is None:
-                is_new_best = True
-            elif higher_is_better and current_score > previous_best:
-                is_new_best = True
-            elif not higher_is_better and current_score < previous_best:
-                is_new_best = True
-
-            if is_new_best:
-                previous_champion_id = parent_run_data.tags.get("best_trial_id")
-                trial_num = HydraConfig.get().job.num
-
-                # 1. Update Parent Metrics/Tags
-                client.log_metric(sweep_run_id, score_name, current_score)
-                client.set_tag(sweep_run_id, "best_trial_id", pipeline_run.info.run_id)
-
-                # 2. Log a Note (Markdown) on the Parent with a link
-                # Note: This uses a relative link that works within the MLflow UI
-                champ_params = {
-                    k: v for k, v in cfg_container.items() if k in ["stage1_model", "stage2_model"]
-                }
-                note_content = (
-                    f"### 🏆 Current Sweep Champion\n"
-                    f"- **Run ID:** `{pipeline_run.info.run_id}`\n"
-                    f"- **{score_label}:** {current_score:.4f}\n"
-                    f"- **Params:** {json.dumps(champ_params, indent=2)}"
-                )
-                client.set_tag(sweep_run_id, "mlflow.note.content", note_content)
-
-                # 3. "Bubble Up" the Champion Tag on the child run
-                if previous_champion_id:
-                    try:
-                        client.delete_tag(previous_champion_id, "champion")
-                    except Exception:
-                        pass  # Might fail if the run was deleted or tag missing
-                client.set_tag(pipeline_run.info.run_id, "champion", "true")
-
-                # Log trial params as a clean summary
-                trial_params = {
-                    k: v for k, v in cfg_container.items() if k in ["stage1_model", "stage2_model"]
-                }
-                client.set_tag(sweep_run_id, "best_params", str(trial_params))
-
-                # Register the model to the DagsHub Model Registry
-                if cfg.train_stage2 and cfg.stage2_model is not None:
-                    mlflow.register_model(
-                        model_uri=f"runs:/{pipeline_run.info.run_id}/stage2_model",
-                        name="fof8-scout-regressor",
-                    )
-
-            # --- Live Leaderboard Dashboard ---
-            trial_num = HydraConfig.get().job.num + 1
-            n_trials = HydraConfig.get().sweeper.n_trials
-
-            # Refresh champion data from parent for the dashboard
-            parent_run = client.get_run(sweep_run_id)
-            best_score = parent_run.data.metrics.get(score_name)
-            best_trial_id = parent_run.data.tags.get("best_trial_id")
-
-            best_trial_num = "?"
-            if best_trial_id:
-                try:
-                    best_trial_run = client.get_run(best_trial_id)
-                    best_trial_num = best_trial_run.data.tags.get("trial_num", "?")
-                except Exception:
-                    pass
-
-            # Dynamic Label for display: Convert 'best_s1_f1_bust' -> 'S1_F1_BUST'
-            score_label = score_name.replace("best_", "").upper()
-
-            print("\n" + "=" * 60)
-            print(f"🏆 SWEEP LEADERBOARD | Trial [{trial_num}/{n_trials}]")
-            print("-" * 60)
-            print(
-                f"LATEST TRIAL RESULT: {current_score:.4f} ({score_label}) "
-                f"({'IMPROVEMENT' if is_new_best else 'No improvement'})"
+        if ctx.is_sweep:
+            is_new_best = sweep_mgr.update_champion(
+                ctx, pipeline_run.info.run_id, current_score, cfg
             )
-            print(f"BEST SO FAR:         {best_score:.4f} ({score_label}) [Trial {best_trial_num}]")
-            if is_new_best:
-                print(f"NEW CHAMPION PARAMS: {trial_params}")
-            print("=" * 60 + "\n")
+            sweep_mgr.print_leaderboard(ctx, current_score, is_new_best, cfg)
 
         # --- Write DVC Metrics ---
-        # We ensure this goes to the root outputs/ folder regardless of Hydra's chdir
-        try:
-            out_dir = os.path.join(exp_root, "outputs")
-            os.makedirs(out_dir, exist_ok=True)
-            metrics_file = os.path.join(out_dir, "metrics.json")
+        logger.write_dvc_metrics(opt_metric, current_score)
 
-            # Ensure current_score is a standard float for JSON serializability
-            export_score = float(current_score) if current_score is not None else 0.0
-
-            with open(metrics_file, "w") as f:
-                json.dump({opt_metric: export_score}, f)
-
-            print(f"\n[DVC] Metrics successfully written to: {metrics_file}")
-            print(f"[DVC] Final {opt_metric.upper()}: {export_score:.4f}")
-        except Exception as e:
-            print(f"\n[WARNING] Could not write DVC metrics.json: {e}")
-
-        return current_score
+        return float(current_score)
 
 
 if __name__ == "__main__":

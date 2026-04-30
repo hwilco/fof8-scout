@@ -33,12 +33,13 @@ fof8-scout/
 │   ├── optuna.db             # Optuna persistent study storage
 │   ├── src/fof8_ml/          # Modular ML pipeline components
 │   │   ├── data/             # Dataset & Transform logic
-│   │   ├── models/           # Multi-library Model Wrappers (XGB, CatBoost)
-│   │   └── evaluation/       # Metrics & Plotting
+│   │   ├── models/           # Multi-library Model Wrappers & Factory
+│   │   ├── evaluation/       # Metrics & Plotting
+│   │   └── orchestration/    # Pipeline Orchestration (DataLoader, Trainer, Logger)
 ├── pipelines/                # ML Orchestration Scripts (DVC Stages)
 │   ├── conf/                 # Hydra Hierarchical Configs
 │   ├── process_features.py   # Feature store builder
-│   ├── train.py              # Model training & HPO
+│   ├── train.py              # Model training orchestration
 │   └── batch_inference.py    # Prediction pipeline
 ├── notebooks/                # Analysis and exploration notebooks
 ├── docs/                     # Detailed technical documentation

@@ -36,16 +36,16 @@ stages:
       isexec: true
     - path: pipelines/conf/
       hash: md5
-      md5: a363266e311a999ac71e1e096c9c64a1.dir
-      size: 7390
-      nfiles: 18
+      md5: db14f758bf9b31ac1694536f36f6332c.dir
+      size: 8224
+      nfiles: 19
     - path: pipelines/train.py
       hash: md5
-      md5: 0d6aeadc3440bf5c862ac8b34930aadf
-      size: 36676
+      md5: 55c60f748b7be5baa11723c4437084ac
+      size: 13614
       isexec: true
     outs:
     - path: outputs/metrics.json
       hash: md5
-      md5: 4d9ed883b66672be5428d53cac6c1b9e
+      md5: ae29b755f0b4caeb9635ef475e133f00
       size: 37

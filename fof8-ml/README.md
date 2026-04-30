@@ -7,9 +7,9 @@ This package contains the formal machine learning training pipeline and experime
 The `fof8_ml` source code is organized into modular components to support scalability and easy experimentation with different model architectures:
 
 - **`data/`**: Dataset construction, caching, and ML-specific feature transformations.
-- **`models/`**: Wrapper classes that provide a unified API for different ML libraries (XGBoost, CatBoost, Scikit-Learn).
+- **`models/`**: Wrapper classes that provide a unified API for different ML libraries (XGBoost, CatBoost, Scikit-Learn) and a **Model Factory**.
 - **`evaluation/`**: Metrics calculation and standardized plotting (Feature Importance, Confusion Matrices, SHAP).
-- **`train_pipeline.py`**: The main orchestrator for multi-stage hurdle modeling and cross-validation.
+- **`orchestration/`**: The core logic for pipeline execution (DataLoader, Trainer, Logger, and Sweep Management).
 
 ## Machine Learning Pipeline
 
@@ -34,7 +34,7 @@ The training pipeline is decoupled from the data transformation. You can still r
 
 ```bash
 # Run with specific Hydra overrides (still utilizes the DVC-processed features.parquet)
-uv run --package fof8-ml python src/fof8_ml/train_pipeline.py experiment_name="Testing_DagsHub_Setup"
+uv run python pipelines/train.py experiment_name="Testing_DagsHub_Setup"
 ```
 
 > [!IMPORTANT]
@@ -48,13 +48,13 @@ You can experiment with different feature subsets using the `include_features` a
 
 ```bash
 # Only use specific features
-uv run --package fof8-ml python src/fof8_ml/train_pipeline.py data.include_features="[Combine_40, Combine_Bench]"
+uv run python pipelines/train.py data.include_features="[Combine_40, Combine_Bench]"
 
 # Use all features EXCEPT specific ones
-uv run --package fof8-ml python src/fof8_ml/train_pipeline.py data.exclude_features="[Weight, Age]"
+uv run python pipelines/train.py data.exclude_features="[Weight, Age]"
 
 # Wildcard support
-uv run --package fof8-ml python src/fof8_ml/train_pipeline.py data.exclude_features="[Delta_*]"
+uv run python pipelines/train.py data.exclude_features="[Delta_*]"
 ```
 
 ### 3. Viewing Results (MLflow)
