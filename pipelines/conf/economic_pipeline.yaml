@@ -1,4 +1,5 @@
 defaults:
+  - _self_
   - data: fof8_base
   - target: economic
   - split: chronological
@@ -8,7 +9,6 @@ defaults:
   - hparams_search: s1_catboost_survival
   - experiment: null
   - override hydra/sweeper: optuna
-  - _self_
 
 # --- Experiment Metadata ---
 experiment_name: "Economic_Talent_Engine_v3"
@@ -52,6 +52,7 @@ hydra:
     direction: ${optimization.direction}
     study_name: economic_optimization_v1
     n_trials: 20
+    # storage: sqlite:///fof8-ml/optuna.db # Enable this to warm-start/resume sweeps
     sampler:
       _target_: optuna.samplers.TPESampler
       seed: 42

@@ -24,3 +24,4 @@ hydra:
     n_trials: 100
     direction: ${optimization.direction}
     study_name: s1_catboost_tuning_v1
+    storage: sqlite:///fof8-ml/optuna.db

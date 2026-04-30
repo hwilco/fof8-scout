@@ -45,8 +45,14 @@ class CatBoostClassifierWrapper(CatBoostWrapper):
             self.params["task_type"] = "GPU"
             self.params["devices"] = "0"
 
+        # Prevent verbosity conflict
+        if not any(
+            k in self.params for k in ["verbose", "logging_level", "verbose_eval", "silent"]
+        ):
+            self.params["verbose"] = False
+
         self.model = cb.CatBoostClassifier(
-            **self.params, random_seed=random_seed, thread_count=self.thread_count, verbose=False
+            **self.params, random_seed=random_seed, thread_count=self.thread_count
         )
         self.early_stopping_rounds = self.params.pop("early_stopping_rounds", 10)
 
@@ -97,8 +103,14 @@ class CatBoostRegressorWrapper(CatBoostWrapper):
             clean_params.pop(key, None)
         clean_params["loss_function"] = "RMSE"
 
+        # Prevent verbosity conflict
+        if not any(
+            k in clean_params for k in ["verbose", "logging_level", "verbose_eval", "silent"]
+        ):
+            clean_params["verbose"] = False
+
         self.model = cb.CatBoostRegressor(
-            **clean_params, random_seed=random_seed, thread_count=self.thread_count, verbose=False
+            **clean_params, random_seed=random_seed, thread_count=self.thread_count
         )
         self.early_stopping_rounds = self.params.get("early_stopping_rounds", 10)
 

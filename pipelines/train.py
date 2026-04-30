@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 import warnings
 
 import dagshub
@@ -57,6 +58,17 @@ warnings.filterwarnings("ignore", message=".*multivariate.*experimental feature.
 matplotlib.use("Agg")
 logging.getLogger("matplotlib").setLevel(logging.ERROR)
 
+# --- Global Data Cache ---
+# This prevents reloading/reprocessing 100+ draft classes for every trial in a sweep.
+GLOBAL_DATA_CACHE = {
+    "X_train": None,
+    "y_cls": None,
+    "y_reg": None,
+    "meta_train": None,
+    "last_cfg_hash": None,
+    "git_commit": None,
+}
+
 
 def flatten_dict(d: dict, parent_key: str = "", sep: str = ".") -> dict:
     items = []
@@ -67,6 +79,13 @@ def flatten_dict(d: dict, parent_key: str = "", sep: str = ".") -> dict:
         else:
             items.append((new_key, v))
     return dict(items)
+
+
+def log_params_safe(params: dict):
+    """Log parameters to MLflow in chunks of 100 to avoid limits."""
+    items = list(params.items())
+    for i in range(0, len(items), 100):
+        mlflow.log_params(dict(items[i : i + 100]))
 
 
 @contextlib.contextmanager
@@ -128,17 +147,14 @@ def get_model_wrapper(
 
 @hydra.main(version_base=None, config_path="conf", config_name="economic_pipeline")
 def main(cfg: DictConfig):
-    # Initialize DagsHub tracking
-    # This automatically sets MLFLOW_TRACKING_URI and credentials
-    dagshub.init(repo_owner="hwilco", repo_name="fof8-scout", mlflow=True)
+    # Initialize DagsHub tracking once per session
+    if not mlflow.active_run():
+        dagshub.init(repo_owner="hwilco", repo_name="fof8-scout", mlflow=True)
+        mlflow.autolog(log_models=False)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
     exp_root = os.path.abspath(os.path.join(script_dir, ".."))
-    # db_path = os.path.join(exp_root, "mlflow.db")
-    # artifact_root = os.path.join(exp_root, "mlruns")
-
-    # Universal autologging for CatBoost, XGBoost, Sklearn
-    mlflow.autolog(log_models=False)  # We log models manually for better control
+    absolute_raw_path = os.path.abspath(os.path.join(exp_root, cfg.data.raw_path))
 
     # Use local SQLite only if DagsHub/Remote URI is not set
     # if not os.environ.get("MLFLOW_TRACKING_URI"):
@@ -158,12 +174,16 @@ def main(cfg: DictConfig):
     # Detect Sweep / Multirun context
     is_sweep = False
     try:
-        is_sweep = HydraConfig.get().mode == RunMode.MULTIRUN
+        is_sweep = (
+            HydraConfig.get().mode == RunMode.MULTIRUN or HydraConfig.get().sweep.dir is not None
+        )
     except Exception:
-        pass
+        # Fallback for older Hydra or non-standard environments
+        is_sweep = cfg.get("experiment") is not None and "--multirun" in str(sys.argv)
 
     sweep_run_id = None
     sweep_name = None
+    sweep_git_commit = None
     if is_sweep or cfg.get("sweep_name"):
         # Determine sweep name
         if cfg.get("sweep_name"):
@@ -180,10 +200,21 @@ def main(cfg: DictConfig):
         )
         if existing_runs:
             sweep_run_id = existing_runs[0].info.run_id
+            sweep_git_commit = existing_runs[0].data.tags.get("git_commit")
         else:
             try:
+                # Fetch commit once for the whole sweep
+                with preserve_cwd(exp_root):
+                    sweep_git_commit = (
+                        subprocess.check_output(["git", "rev-parse", "HEAD"])
+                        .decode("utf-8")
+                        .strip()
+                    )
+
                 with mlflow.start_run(run_name=sweep_name) as sweep_parent:
                     sweep_run_id = sweep_parent.info.run_id
+                    mlflow.set_tag("git_commit", sweep_git_commit)
+
                     # Log Search Space to Parent for visibility
                     if (
                         "hydra" in cfg
@@ -193,7 +224,7 @@ def main(cfg: DictConfig):
                         search_space = OmegaConf.to_container(
                             cfg.hydra.sweeper.search_space, resolve=True
                         )
-                        mlflow.log_params(flatten_dict(search_space, parent_key="search_space"))
+                        log_params_safe(flatten_dict(search_space, parent_key="search_space"))
             except Exception:
                 # Handle race condition in parallel starts
                 existing_runs = client.search_runs(
@@ -203,51 +234,124 @@ def main(cfg: DictConfig):
                 )
                 if existing_runs:
                     sweep_run_id = existing_runs[0].info.run_id
+                    sweep_git_commit = existing_runs[0].data.tags.get("git_commit")
 
-    # Resolve paths relative to experiment root to allow running from any directory
-    absolute_raw_path = os.path.abspath(os.path.join(exp_root, cfg.data.raw_path))
-    loader = FOF8Loader(base_path=absolute_raw_path, league_name=cfg.data.league_name)
+    # Sync sweep commit to global cache if found
+    if sweep_git_commit:
+        GLOBAL_DATA_CACHE["git_commit"] = sweep_git_commit
 
-    # 1. Automate Timeline Discovery
-    initial_year = loader.initial_sim_year
-    final_sim_year = loader.final_sim_year
-    valid_start_year = initial_year + 1
+    # --- Data Loading & Caching Logic ---
+    # We only reload data if the core data-related config has changed.
+    data_cfg = {
+        "league": cfg.data.league_name,
+        "features": cfg.data.features_path,
+        "threshold": cfg.target.stage1_sieve.merit_threshold,
+        "positions": cfg.positions,
+        "buffer": cfg.split.right_censor_buffer,
+        "test_pct": cfg.split.test_split_pct,
+        "mask": cfg.mask_positional_features,
+    }
+    cfg_hash = str(hash(str(data_cfg)))
 
-    # 2. Load Preprocessed Data
-    features_file = os.path.abspath(os.path.join(exp_root, cfg.data.features_path))
+    if GLOBAL_DATA_CACHE["last_cfg_hash"] == cfg_hash and GLOBAL_DATA_CACHE["X_train"] is not None:
+        if not (is_sweep and cfg.quiet_sweep):
+            print(">>> Reusing pre-loaded data from Global Cache...")
+        X_train = GLOBAL_DATA_CACHE["X_train"]
+        X_test = GLOBAL_DATA_CACHE["X_test"]
+        y_cls = GLOBAL_DATA_CACHE["y_cls"]
+        y_reg = GLOBAL_DATA_CACHE["y_reg"]
+        meta_train = GLOBAL_DATA_CACHE["meta_train"]
+        meta_test = GLOBAL_DATA_CACHE["meta_test"]
+        # Retrieve metadata for printing
+        initial_year = GLOBAL_DATA_CACHE["initial_year"]
+        final_sim_year = GLOBAL_DATA_CACHE["final_sim_year"]
+        valid_start_year = GLOBAL_DATA_CACHE["valid_start_year"]
+        valid_end_year = GLOBAL_DATA_CACHE["valid_end_year"]
+        train_year_range = GLOBAL_DATA_CACHE["train_year_range"]
+        test_year_range = GLOBAL_DATA_CACHE["test_year_range"]
+    else:
+        loader = FOF8Loader(base_path=absolute_raw_path, league_name=cfg.data.league_name)
 
-    if not os.path.exists(features_file):
-        raise FileNotFoundError(
-            f"Processed features not found at {features_file}. Run transform.py first."
+        # 1. Automate Timeline Discovery
+        initial_year = loader.initial_sim_year
+        final_sim_year = loader.final_sim_year
+        valid_start_year = initial_year + 1
+
+        # 2. Load Preprocessed Data
+        features_file = os.path.abspath(os.path.join(exp_root, cfg.data.features_path))
+        if not os.path.exists(features_file):
+            raise FileNotFoundError(f"Processed features not found at {features_file}.")
+
+        df = pl.read_parquet(features_file)
+
+        # --- Runtime Filtering & Target Labeling ---
+        df = df.with_columns(
+            (pl.col("Career_Merit_Cap_Share") > cfg.target.stage1_sieve.merit_threshold)
+            .alias("Cleared_Sieve")
+            .cast(pl.Int8)
         )
 
-    df = pl.read_parquet(features_file)
+        if cfg.positions and cfg.positions != "all":
+            pos_list = [cfg.positions] if isinstance(cfg.positions, str) else cfg.positions
+            df = df.filter(pl.col("Position_Group").is_in(pos_list))
 
-    # --- Runtime Filtering & Target Labeling ---
-    # 1. Apply Merit Threshold to define the binary target
-    df = df.with_columns(
-        (pl.col("Career_Merit_Cap_Share") > cfg.target.stage1_sieve.merit_threshold)
-        .alias("Cleared_Sieve")
-        .cast(pl.Int8)
-    )
+        valid_end_year = final_sim_year - cfg.split.right_censor_buffer
+        df = df.filter(pl.col("Year") <= valid_end_year)
 
-    # 2. Filter by Positions
-    if cfg.positions and cfg.positions != "all":
-        pos_list = [cfg.positions] if isinstance(cfg.positions, str) else cfg.positions
-        df = df.filter(pl.col("Position_Group").is_in(pos_list))
+        total_valid_years = valid_end_year - valid_start_year + 1
+        test_years_count = int(total_valid_years * cfg.split.test_split_pct)
+        train_end_year = valid_end_year - test_years_count
+        train_year_range = [valid_start_year, train_end_year]
+        test_year_range = [train_end_year + 1, valid_end_year]
 
-    # 3. Apply Right Censor Buffer (Years where players haven't finished careers)
-    valid_end_year = final_sim_year - cfg.split.right_censor_buffer
-    df = df.filter(pl.col("Year") <= valid_end_year)
+        train_df = df.filter(
+            (pl.col("Year") >= train_year_range[0]) & (pl.col("Year") <= train_year_range[1])
+        )
+        test_df = df.filter(
+            (pl.col("Year") >= test_year_range[0]) & (pl.col("Year") <= test_year_range[1])
+        )
 
-    # --- In-Memory Chronological Split ---
-    total_valid_years = valid_end_year - valid_start_year + 1
-    test_years_count = int(total_valid_years * cfg.split.test_split_pct)
-    train_end_year = valid_end_year - test_years_count
+        metadata_cols = ["Player_ID", "Year", "First_Name", "Last_Name"]
+        target_cols = [
+            cfg.target.stage1_sieve.target_col,
+            cfg.target.stage2_intensity.target_col,
+        ] + list(cfg.target.leakage_prevention.drop_cols)
+        feature_cols = [c for c in df.columns if c not in metadata_cols and c not in target_cols]
 
-    train_year_range = [valid_start_year, train_end_year]
-    test_year_range = [train_end_year + 1, valid_end_year]
+        X_train = train_df.select(feature_cols)
+        y_train_df = train_df.select(target_cols)
+        meta_train = train_df.select(metadata_cols)
+        X_test = test_df.select(feature_cols)
+        y_test_df = test_df.select(target_cols)
+        meta_test = test_df.select(metadata_cols)
 
+        if cfg.mask_positional_features:
+            X_train = apply_position_mask(X_train)
+            X_test = apply_position_mask(X_test)
+
+        y_cls = y_train_df.get_column(cfg.target.stage1_sieve.target_col).to_numpy()
+        y_reg = y_train_df.get_column(cfg.target.stage2_intensity.target_col).to_numpy()
+
+        # Store in Global Cache for next trial
+        GLOBAL_DATA_CACHE.update(
+            {
+                "X_train": X_train,
+                "X_test": X_test,
+                "y_cls": y_cls,
+                "y_reg": y_reg,
+                "meta_train": meta_train,
+                "meta_test": meta_test,
+                "initial_year": initial_year,
+                "final_sim_year": final_sim_year,
+                "valid_start_year": valid_start_year,
+                "valid_end_year": valid_end_year,
+                "train_year_range": train_year_range,
+                "test_year_range": test_year_range,
+                "last_cfg_hash": cfg_hash,
+            }
+        )
+
+    # --- Always Print Data Summary (unless quiet sweep) ---
     if not (is_sweep and cfg.quiet_sweep):
         print(f"Simulation Range: {initial_year} to {final_sim_year}")
         print(
@@ -256,87 +360,47 @@ def main(cfg: DictConfig):
         )
         print(
             f"Training Set: {train_year_range} "
-            f"({train_year_range[1] - train_year_range[0] + 1} draft classes)"
+            f"({train_year_range[1] - train_year_range[0] + 1} classes)"
         )
         print(
             f"Holdout Set: {test_year_range} "
-            f"({test_year_range[1] - test_year_range[0] + 1} draft classes)"
+            f"({test_year_range[1] - test_year_range[0] + 1} classes)"
         )
-
-    train_df = df.filter(
-        (pl.col("Year") >= train_year_range[0]) & (pl.col("Year") <= train_year_range[1])
-    )
-    test_df = df.filter(
-        (pl.col("Year") >= test_year_range[0]) & (pl.col("Year") <= test_year_range[1])
-    )
-
-    metadata_cols = ["Player_ID", "Year", "First_Name", "Last_Name"]
-    # Phase 1 & 2: Dynamic Target & Leakage Prevention
-    # We strip out both our learning targets and any manually defined leakage columns
-    target_cols = [
-        cfg.target.stage1_sieve.target_col,
-        cfg.target.stage2_intensity.target_col,
-    ] + list(cfg.target.leakage_prevention.drop_cols)
-
-    feature_cols = [c for c in df.columns if c not in metadata_cols and c not in target_cols]
-
-    X_train = train_df.select(feature_cols)
-    y_train_df = train_df.select(target_cols)
-    meta_train = train_df.select(metadata_cols)
-
-    X_test = test_df.select(feature_cols)
-    y_test_df = test_df.select(target_cols)
-    meta_test = test_df.select(metadata_cols)
-
-    if cfg.mask_positional_features:
-        if not (is_sweep and cfg.quiet_sweep):
+        if cfg.mask_positional_features:
             print("Applying In-Memory Positional Feature Masking...")
-        X_train = apply_position_mask(X_train)
-        X_test = apply_position_mask(X_test)
 
+    # --- TRIAL-SPECIFIC ABLATION ---
+    # These must happen fresh every trial as they are part of the search space
     include_features = cfg.get("include_features")
     if include_features:
-        # Expand wildcards for inclusion
         all_cols = X_train.columns
         expanded_include = []
         for p in include_features:
-            if "*" in p or "?" in p:
-                expanded_include.extend(fnmatch.filter(all_cols, p))
-            else:
-                expanded_include.append(p)
-
-        # Unique features that actually exist
+            expanded_include.extend(fnmatch.filter(all_cols, p) if "*" in p or "?" in p else [p])
         include_cols = [c for c in list(dict.fromkeys(expanded_include)) if c in all_cols]
-
-        print(
-            f"Applying Feature Ablation: Keeping {len(include_cols)} "
-            f"features matching {include_features}"
-        )
+        if not (is_sweep and cfg.quiet_sweep):
+            print(
+                f"Applying Feature Ablation: Keeping {len(include_cols)} features "
+                f"matching {include_features}"
+            )
         X_train = X_train.select(include_cols)
         X_test = X_test.select(include_cols)
 
     exclude_features = cfg.get("exclude_features")
     if exclude_features:
-        # Expand wildcards for exclusion
         all_cols = X_train.columns
         expanded_exclude = []
         for p in exclude_features:
-            if "*" in p or "?" in p:
-                expanded_exclude.extend(fnmatch.filter(all_cols, p))
-            else:
-                expanded_exclude.append(p)
-
+            expanded_exclude.extend(fnmatch.filter(all_cols, p) if "*" in p or "?" in p else [p])
         cols_to_drop = [c for c in list(dict.fromkeys(expanded_exclude)) if c in all_cols]
         if cols_to_drop:
-            print(
-                f"Applying Feature Ablation: Excluding {len(cols_to_drop)} "
-                f"features matching {exclude_features}"
-            )
+            if not (is_sweep and cfg.quiet_sweep):
+                print(
+                    f"Applying Feature Ablation: Excluding {len(cols_to_drop)} features "
+                    f"matching {exclude_features}"
+                )
             X_train = X_train.drop(cols_to_drop)
             X_test = X_test.drop(cols_to_drop)
-
-    y_cls = y_train_df.get_column(cfg.target.stage1_sieve.target_col).to_numpy()
-    y_reg = y_train_df.get_column(cfg.target.stage2_intensity.target_col).to_numpy()
 
     # If in a sweep, we link to the sweep_run_id via tags
     tags = {}
@@ -357,9 +421,7 @@ def main(cfg: DictConfig):
 
     s1_name = cfg.stage1_model.name
     s2_name = cfg.stage2_model.name if cfg.stage2_model else "None"
-    with mlflow.start_run(
-        run_name=f"Pipeline_{s1_name}_{s2_name}", tags=tags
-    ) as pipeline_run:
+    with mlflow.start_run(run_name=f"Pipeline_{s1_name}_{s2_name}", tags=tags) as pipeline_run:
         # Log DagsHub and dataset metadata
         mlflow.set_tag("data.league", cfg.data.league_name)
         mlflow.set_tag("data.raw_path", cfg.data.raw_path)
@@ -368,10 +430,17 @@ def main(cfg: DictConfig):
         try:
             repo_root = exp_root
             relative_data_path = os.path.relpath(absolute_raw_path, repo_root)
+
+            git_commit = GLOBAL_DATA_CACHE.get("git_commit")
             with preserve_cwd(repo_root):
-                git_commit = (
-                    subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("utf-8").strip()
-                )
+                if not git_commit:
+                    git_commit = (
+                        subprocess.check_output(["git", "rev-parse", "HEAD"])
+                        .decode("utf-8")
+                        .strip()
+                    )
+                    GLOBAL_DATA_CACHE["git_commit"] = git_commit
+
                 mlflow.set_tag("git_commit", git_commit)
 
                 try:
@@ -382,7 +451,7 @@ def main(cfg: DictConfig):
         except Exception as e:
             logging.warning(f"Could not log Git commit / DVC version: {e}")
         cfg_container = OmegaConf.to_container(cfg, resolve=True)
-        mlflow.log_params(flatten_dict(cfg_container))
+        log_params_safe(flatten_dict(cfg_container))
 
         if "tags" in cfg and cfg.tags:
             mlflow.set_tags(OmegaConf.to_container(cfg.tags, resolve=True))
@@ -411,6 +480,10 @@ def main(cfg: DictConfig):
         # STAGE 1: SIEVE CLASSIFIER
         # ---------------------------------------------------------
         if not stage1_run_id:
+            if not (is_sweep and cfg.quiet_sweep):
+                print("\n" + "=" * 40)
+                print("STAGE 1: SIEVE CLASSIFIER")
+                print("=" * 40)
             with mlflow.start_run(run_name="Stage1_Sieve_Classifier", nested=True) as stage1_run:
                 mlflow.set_tag("model_stage", "stage1")
                 if sweep_name:
@@ -420,11 +493,7 @@ def main(cfg: DictConfig):
 
                 # Log Stage 1 specific parameters for easier comparison
                 s1_params = OmegaConf.to_container(cfg.stage1_model.params, resolve=True)
-                mlflow.log_params(flatten_dict(s1_params, parent_key="s1"))
-                if not (is_sweep and cfg.quiet_sweep):
-                    print("\n" + "=" * 40)
-                    print("STAGE 1: SIEVE CLASSIFIER")
-                    print("=" * 40)
+                log_params_safe(flatten_dict(s1_params, parent_key="s1"))
 
                 skf = StratifiedKFold(
                     n_splits=cfg.cv.n_folds, shuffle=cfg.cv.shuffle, random_state=cfg.seed
@@ -442,6 +511,12 @@ def main(cfg: DictConfig):
                     y_cv_train, y_cv_val = y_cls[train_idx], y_cls[val_idx]
 
                     params = OmegaConf.to_container(cfg.stage1_model.params, resolve=True)
+                    if is_sweep and cfg.quiet_sweep:
+                        if "catboost" in cfg.stage1_model.name.lower():
+                            params["logging_level"] = "Silent"
+                        elif "xgb" in cfg.stage1_model.name.lower():
+                            params["verbosity"] = 0
+
                     use_gpu = cfg.use_gpu
                     thread_count = cfg.stage1_model.params.get("thread_count", -1)
                     model = get_model_wrapper(
@@ -582,6 +657,12 @@ def main(cfg: DictConfig):
                 elif "xgb" in cfg.stage1_model.name.lower():
                     final_params_s1["n_estimators"] = avg_best_iters
 
+                if is_sweep and cfg.quiet_sweep:
+                    if "catboost" in cfg.stage1_model.name.lower():
+                        final_params_s1["logging_level"] = "Silent"
+                    elif "xgb" in cfg.stage1_model.name.lower():
+                        final_params_s1["verbosity"] = 0
+
                 stage1_model = get_model_wrapper(
                     cfg.stage1_model.name,
                     "stage1",
@@ -593,13 +674,14 @@ def main(cfg: DictConfig):
                 stage1_model.fit(X_train, y_cls)
                 stage1_model.log_model("stage1_model")
 
-                if cfg.diagnostics.log_importance or cfg.diagnostics.log_shap:
-                    log_feature_importance(
-                        stage1_model,
-                        "Stage 1 Importance",
-                        X=X_train,
-                        log_shap=cfg.diagnostics.log_shap,
-                    )
+                if not (is_sweep and cfg.quiet_sweep):
+                    if cfg.diagnostics.log_importance or cfg.diagnostics.log_shap:
+                        log_feature_importance(
+                            stage1_model,
+                            "Stage 1 Importance",
+                            X=X_train,
+                            log_shap=cfg.diagnostics.log_shap,
+                        )
 
             mlflow.log_metrics(
                 {
@@ -626,7 +708,7 @@ def main(cfg: DictConfig):
         # ---------------------------------------------------------
         # STAGE 2: INTENSITY REGRESSOR
         # ---------------------------------------------------------
-        if cfg.train_stage2:
+        if cfg.train_stage2 and cfg.stage2_model is not None:
             with mlflow.start_run(run_name="Stage2_Intensity_Regressor", nested=True) as stage2_run:
                 mlflow.set_tag("model_stage", "stage2")
                 if sweep_name:
@@ -636,7 +718,7 @@ def main(cfg: DictConfig):
 
                 # Log Stage 2 specific parameters for easier comparison
                 s2_params = OmegaConf.to_container(cfg.stage2_model.params, resolve=True)
-                mlflow.log_params(flatten_dict(s2_params, parent_key="s2"))
+                log_params_safe(flatten_dict(s2_params, parent_key="s2"))
                 if not (is_sweep and cfg.quiet_sweep):
                     print("\n" + "=" * 40)
                     print("STAGE 2: INTENSITY REGRESSOR")
@@ -660,6 +742,12 @@ def main(cfg: DictConfig):
                     y_cv_train, y_cv_val = y_reg_target[train_idx], y_reg_target[val_idx]
 
                     params = OmegaConf.to_container(cfg.stage2_model.params, resolve=True)
+                    if is_sweep and cfg.quiet_sweep:
+                        if "catboost" in cfg.stage2_model.name.lower():
+                            params["logging_level"] = "Silent"
+                        elif "xgb" in cfg.stage2_model.name.lower():
+                            params["verbosity"] = 0
+
                     use_gpu = cfg.use_gpu
                     thread_count = cfg.stage2_model.params.get("thread_count", -1)
                     model = get_model_wrapper(
@@ -713,6 +801,12 @@ def main(cfg: DictConfig):
                 elif "xgb" in cfg.stage2_model.name.lower():
                     final_params_s2["n_estimators"] = avg_best_iters_reg
 
+                if is_sweep and cfg.quiet_sweep:
+                    if "catboost" in cfg.stage2_model.name.lower():
+                        final_params_s2["logging_level"] = "Silent"
+                    elif "xgb" in cfg.stage2_model.name.lower():
+                        final_params_s2["verbosity"] = 0
+
                 stage2_model = get_model_wrapper(
                     cfg.stage2_model.name,
                     "stage2",
@@ -724,23 +818,26 @@ def main(cfg: DictConfig):
                 stage2_model.fit(X_reg, y_reg_target)
                 stage2_model.log_model("stage2_model")
 
-                if cfg.diagnostics.log_importance or cfg.diagnostics.log_shap:
-                    log_feature_importance(
-                        stage2_model,
-                        "Stage 2 Importance",
-                        X=X_reg,
-                        log_shap=cfg.diagnostics.log_shap,
-                    )
+                if not (is_sweep and cfg.quiet_sweep):
+                    if cfg.diagnostics.log_importance or cfg.diagnostics.log_shap:
+                        log_feature_importance(
+                            stage2_model,
+                            "Stage 2 Importance",
+                            X=X_reg,
+                            log_shap=cfg.diagnostics.log_shap,
+                        )
 
-        print("\nFull Pipeline Training Complete. Models saved to MLflow.")
+        if not (is_sweep and cfg.quiet_sweep):
+            print("\nFull Pipeline Training Complete. Models saved to MLflow.")
 
         # --- Metric Consolidation for Optimization/Return ---
         available_metrics = {
             "s1_oof_f1_bust": best_f1_0,
             "s1_oof_recall_bust": bust_recall if "bust_recall" in locals() else 0.0,
             "s1_oof_pr_auc": s1_oof_pr_auc,
-            "s2_oof_rmse": s2_oof_rmse,
         }
+        if "s2_oof_rmse" in locals():
+            available_metrics["s2_oof_rmse"] = s2_oof_rmse
 
         opt_metric = cfg.optimization.metric
         higher_is_better = cfg.optimization.direction == "maximize"
@@ -805,7 +902,7 @@ def main(cfg: DictConfig):
                 client.set_tag(sweep_run_id, "best_params", str(trial_params))
 
                 # Register the model to the DagsHub Model Registry
-                if cfg.train_stage2:
+                if cfg.train_stage2 and cfg.stage2_model is not None:
                     mlflow.register_model(
                         model_uri=f"runs:/{pipeline_run.info.run_id}/stage2_model",
                         name="fof8-scout-regressor",

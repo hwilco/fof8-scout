@@ -8,7 +8,7 @@ A `uv` workspace monorepo for scouting FOF8 draft prospects — automating data 
 |---|---|---|
 | [`fof8-gen/`](./fof8-gen/README.md) | RPA automation to simulate FOF8 seasons and export CSVs | **Windows host** |
 | [`fof8-core/`](./fof8-core/README.md) | Shared domain logic, Polars pipelines, and schemas | **Hybrid** |
-| [`fof8-ml/`](./fof8-ml/) | Modular ML modeling pipeline | **Dev Container** |
+| [`fof8-ml/`](./fof8-ml/README.md) | Modular ML modeling pipeline | **Dev Container** |
 | [`notebooks/`](./notebooks/) | Jupyter data exploration and analysis | **Dev Container** |
 
 > [!IMPORTANT]
@@ -20,30 +20,33 @@ A `uv` workspace monorepo for scouting FOF8 draft prospects — automating data 
 
 ```
 fof8-scout/
-├── fof8-gen/                 # RPA automation & data collection
+├── fof8-gen/                 # RPA automation & data collection (Windows)
+│   ├── data/                 # Raw exported CSVs (DVC tracked)
 │   ├── pyproject.toml
-│   └── src/
-├── fof8-core/                # Shared logic, schemas, and pipelines
+│   └── src/                  # GUI automation logic
+├── fof8-core/                # Shared logic, schemas, and pipelines (Hybrid)
 │   ├── pyproject.toml
-│   └── src/
-├── fof8-ml/                 # Data science & ML modeling
-│   ├── conf/                # Hydra hierarchical configurations
-│   ├── mlruns/              # MLflow centralized artifact store
-│   ├── mlflow.db            # MLflow experiment metadata
-│   ├── outputs/             # Organized run logs & local files
-│   ├── multirun/            # Results from hyperparameter sweeps
-│   ├── src/fof8_ml/         # Modular ML pipeline
-│   │   ├── data/            # Dataset & Transform logic
-│   │   ├── models/          # Multi-library Model Wrappers
-│   │   ├── evaluation/      # Metrics & Plotting
-├── notebooks/               # Analysis and exploration notebooks
-├── pipelines/               # ML Orchestration Scripts
-│   ├── process_features.py
-│   └── train.py
-│   └── pyproject.toml
-
-├── .devcontainer/
-│   └── experimentation/      # Dev Container config for experimentation only
+│   └── src/fof8_core/        # Shared Polars logic & feature engineering
+├── fof8-ml/                  # Data science & ML modeling (Dev Container)
+│   ├── mlruns/               # MLflow centralized artifact store
+│   ├── mlflow.db             # MLflow experiment metadata
+│   ├── optuna.db             # Optuna persistent study storage
+│   ├── src/fof8_ml/          # Modular ML pipeline components
+│   │   ├── data/             # Dataset & Transform logic
+│   │   ├── models/           # Multi-library Model Wrappers (XGB, CatBoost)
+│   │   └── evaluation/       # Metrics & Plotting
+├── pipelines/                # ML Orchestration Scripts (DVC Stages)
+│   ├── conf/                 # Hydra Hierarchical Configs
+│   ├── process_features.py   # Feature store builder
+│   ├── train.py              # Model training & HPO
+│   └── batch_inference.py    # Prediction pipeline
+├── notebooks/                # Analysis and exploration notebooks
+├── docs/                     # Detailed technical documentation
+├── scripts/                  # Utility scripts and validation tools
+├── outputs/                  # Hydra local run logs (root-level by default)
+├── multirun/                 # Hydra multirun/sweep logs
+├── .devcontainer/            # Reproducible experimentation environment
+├── dvc.yaml                  # DVC pipeline definition
 ├── pyproject.toml            # uv workspace root
 └── uv.lock                   # Shared lock file for all members
 ```
@@ -89,6 +92,18 @@ This project uses a hybrid DagsHub/DVC architecture to ensure data lineage acros
 > [!TIP]
 > The `git_commit` is automatically logged as a tag in MLflow, allowing you to trace any model run back to its exact data and code version.
 
+---
+
+## Hyperparameter Tuning & Warm Starting
+
+This project uses **Optuna** for hyperparameter sweeps. By default, sweeps start with no prior knowledge. To enable "Warm Starting" (learning from past results) and "Resuming" interrupted sweeps:
+
+1.  **Persistent Storage**: Sweeps use a local SQLite database at `fof8-ml/optuna.db` to store the optimizer's state.
+2.  **How to Warm Start**:
+    - Ensure your experiment config (e.g., `s1_catboost_sweep.yaml`) has `storage: sqlite:///fof8-ml/optuna.db`.
+    - Use a consistent `study_name`.
+    - When you rerun the sweep, Optuna will automatically load previous trials from the DB and use them to inform the next sampling decision.
+3.  **Resetting**: To start a sweep completely fresh, delete the `fof8-ml/optuna.db` file.
 
 ---
 
