@@ -222,7 +222,7 @@ def get_target(name: str, loader: FOF8Loader, **kwargs) -> pl.DataFrame:
 
 ### Problem
 
-`fof8-ml/src/fof8_ml/data/dataset.py` mixes durable feature-store construction with training-time concerns. It also contains legacy survival dataset code with an unresolved TODO.
+`fof8-ml/src/fof8_ml/data/dataset.py` mixes durable feature-store construction with training-time concerns. It also contains legacy career-threshold dataset code with an unresolved TODO.
 
 ### Proposed Structure
 
@@ -230,7 +230,7 @@ def get_target(name: str, loader: FOF8Loader, **kwargs) -> pl.DataFrame:
 fof8-ml/src/fof8_ml/data/
   dataset.py                  # remove or keep only if it remains the intended facade
   economic_dataset.py
-  survival_dataset.py         # deprecated or explicitly supported
+  career_threshold_dataset.py # deprecated or explicitly supported
   categorical.py
 ```
 
@@ -239,8 +239,8 @@ fof8-ml/src/fof8_ml/data/
 1. Extract shared categorical preparation:
    - rare college bucketing
    - string/categorical to `pl.Enum`
-2. Decide whether `build_survival_dataset` is supported or deprecated:
-   - If supported, move to `survival_dataset.py` and add tests.
+2. Decide whether `build_career_threshold_dataset` is supported or deprecated:
+   - If supported, move to `career_threshold_dataset.py` and add tests.
    - If deprecated, remove internal usage and update scripts such as `scripts/plot_probs.py`.
    - Do not keep a deprecation wrapper unless there is a concrete short-term reason.
 3. Keep `build_economic_dataset` focused on building the universal feature/target/metadata frame.
@@ -371,7 +371,7 @@ fof8-ml/src/fof8_ml/models/
    - stage2 sklearn/tweedie/gamma
 3. Replace substring matching with explicit aliases:
    - `s1_catboost`
-   - `survival_xgb`
+   - `career_threshold_xgb`
    - `reg_tweedie`
    - `reg_gamma`
 4. Keep friendly errors listing valid model names.
@@ -507,7 +507,7 @@ def prevent_system_sleep():
 1. `tests: align career outcome tests with current API`
 2. `refactor(core): split position mask constants from draft features`
 3. `refactor(core): add explicit target modules and registry`
-4. `refactor(ml): split economic and survival dataset builders`
+4. `refactor(ml): split economic and career-threshold dataset builders`
 5. `fix(ml): use deterministic data cache keys`
 6. `refactor(ml): introduce shared training pipeline context`
 7. `refactor(ml): add explicit model registry`

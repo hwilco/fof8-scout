@@ -24,13 +24,13 @@ Predicting raw Cap Share can overvalue compilers (players who hang around a long
 * **ML Application:** By using Career VORP as the ultimate regression target, the model natively learns positional positional leverage. A 0.08 Cap Share season for a Kicker might yield 0 VORP, while a 0.08 Cap Share for a Rookie QB might yield high VORP. The model learns to ignore positions with flat talent distributions.
 
 ## 4. Model Architecture: The Hurdle Pipeline
-Instead of a single "Generalist" model, the architecture splits the problem into two distinct tasks to isolate the "survivorship" signal from the "elite" signal.
+Instead of a single "Generalist" model, the architecture splits the problem into two distinct tasks to isolate the threshold-clearance signal from the elite-intensity signal.
 
-* **Stage 1: The Survival Classifier**
+* **Stage 1: The Career-Threshold Classifier**
     * **Goal:** Filter out the noise. Predict the probability (P) that a prospect will "survive" in the league (e.g., `Career_Starts > X` or `Was_Drafted == True`).
     * **Tech:** XGBoost or LightGBM (handles categorical position data well).
 * **Stage 2: The Outcome Regressor**
-    * **Goal:** Predict the intensity of success (Career VORP or Career Cap Share) for the survivors.
+    * **Goal:** Predict the intensity of success (Career VORP or Career Cap Share) for players who cleared the Stage 1 threshold.
     * **Tech:** A regressor utilizing a Log-Normal transformation or Tweedie loss to handle the extreme right-skew of the earnings data.
     * **Positional Handling:** Utilize shared embeddings with feature masking so the model only "pays attention" to passing ratings for QBs and pass-rush ratings for DEs, without atomizing the dataset into 15 separate tiny models.
 
@@ -46,7 +46,7 @@ The final output is a decision-support metric rooted in Expected Value, decoupli
 
 * **Talent Score (Tp):** The model's predicted percentile of success for the player *relative to their position group*. (e.g., 0.90 = 90th percentile Guard).
 * **Positional Leverage (W_pos):** If predicting raw Cap Share, multiply by the historical delta between an Elite player's Cap % and a Replacement Level player's Cap % at that specific position. (If predicting VORP, this weight is mathematically built into the target).
-* **The Output Metric (EDV):** `Tp * W_pos` (or simply `Predicted_VORP * P(Survival)`).
+* **The Output Metric (EDV):** `Tp * W_pos` (or simply `Predicted_VORP * P(Career Threshold)`).
 
 ## 7. The Draft Board Output
 When operationalized for a live draft, the pipeline will output a unified dashboard for each prospect featuring:

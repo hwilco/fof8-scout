@@ -26,7 +26,7 @@ A class or function responsible for executing the cross-validation loop.
 Decouple threshold optimization and metric calculation from the training loop.
 - Takes OOF predictions and ground truth.
 - Optimizes classification thresholds (e.g., maximizing F1 score).
-- Computes `calculate_survival_metrics`.
+- Computes `calculate_career_threshold_metrics`.
 **Output**: A clean dictionary of metrics and the optimal threshold.
 
 ### 4. Logger (`fof8_ml/orchestration/logger.py`)

@@ -2,7 +2,9 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
-from fof8_ml.data.dataset import build_economic_dataset, build_survival_dataset
+from fof8_ml.data.career_threshold_dataset import build_career_threshold_dataset
+from fof8_ml.data.categorical import bucket_rare_colleges, cast_categoricals_to_enum
+from fof8_ml.data.economic_dataset import build_economic_dataset
 
 
 @pytest.fixture
@@ -177,29 +179,29 @@ def mock_loader():
     return loader
 
 
-def test_build_survival_dataset_preserves_undrafted(mock_loader):
-    with patch("fof8_ml.data.dataset.FOF8Loader", return_value=mock_loader):
-        X, y = build_survival_dataset(
+def test_build_career_threshold_dataset_preserves_undrafted(mock_loader):
+    with patch("fof8_ml.data.career_threshold_dataset.FOF8Loader", return_value=mock_loader):
+        X, y = build_career_threshold_dataset(
             raw_path="fake",
             league_name="fake",
             year_range=[2024, 2024],
             final_sim_year=2024,
-            survival_threshold=20,  # Set higher than 2024 value (16) to check 2025 (32) used
+            career_threshold=20,  # Set higher than 2024 value (16) to check 2025 (32) used
         )
 
         # We expect 3 players (John Doe, Jane Smith, Low Peak)
         assert len(X) == 3
-        # John Doe (ID 1) should have Survived = 1 (Games Played 32 >= 20)
+        # John Doe (ID 1) should clear threshold (Games Played 32 >= 20)
         # If it incorrectly picked the 2024 record (50 games), this would fail.
         assert y[0] == 1
-        # Jane Smith (ID 2) should have Survived = 0 (Games Played 0 < 20)
+        # Jane Smith (ID 2) should not clear threshold (Games Played 0 < 20)
         assert y[1] == 0
-        # Low Peak (ID 3) should have Survived = 0 (Games Played 16 < 20)
+        # Low Peak (ID 3) should not clear threshold (Games Played 16 < 20)
         assert y[2] == 0
 
 
 def test_build_economic_dataset_preserves_undrafted_peak(mock_loader):
-    with patch("fof8_ml.data.dataset.FOF8Loader", return_value=mock_loader):
+    with patch("fof8_ml.data.economic_dataset.FOF8Loader", return_value=mock_loader):
         X, y, metadata = build_economic_dataset(
             raw_path="fake", league_name="fake", year_range=[2024, 2024], final_sim_year=2024
         )
@@ -213,6 +215,26 @@ def test_build_economic_dataset_preserves_undrafted_peak(mock_loader):
         # Verify metadata
         assert metadata["First_Name"][1] == "Jane"
         assert metadata["Last_Name"][1] == "Smith"
+
+
+def test_bucket_rare_colleges():
+    df = pl.DataFrame({"College": ["A", "A", "B", "C"], "n": [1, 2, 3, 4]})
+    out = bucket_rare_colleges(df, min_count=2)
+    assert out["College"].to_list() == ["A", "A", "Other", "Other"]
+
+
+def test_cast_categoricals_to_enum():
+    df = pl.DataFrame(
+        {
+            "Position_Group": ["QB", "WR"],
+            "College": ["A", "B"],
+            "Score": [1, 2],
+        }
+    ).with_columns(pl.col("Position_Group").cast(pl.Categorical))
+    out = cast_categoricals_to_enum(df)
+    assert out.schema["Position_Group"] == pl.Enum(["QB", "WR"])
+    assert out.schema["College"] == pl.Enum(["A", "B"])
+    assert out.schema["Score"] == pl.Int64
 
 
 if __name__ == "__main__":

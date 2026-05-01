@@ -3,7 +3,7 @@
 # This experiment focuses purely on optimizing the Stage 1 Sieve Classifier.
 
 defaults:
-  - override /hparams_search: s1_catboost_survival
+  - override /hparams_search: s1_catboost_career_threshold
 
 # --- Metadata & Logging ---
 experiment_name: "S1_Catboost_Hyperopt_v1"

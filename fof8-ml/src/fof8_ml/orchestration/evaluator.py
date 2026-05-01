@@ -16,14 +16,14 @@ from sklearn.metrics import (
 def optimize_threshold(
     y_true: np.ndarray,
     calibrated_probs: np.ndarray,
-    min_survivor_recall: float = 0.0,
+    min_positive_recall: float = 0.0,
 ) -> Tuple[float, float]:
     """Find threshold maximizing F1(bust) subject to min recall constraint.
 
     Args:
         y_true: Ground truth binary labels.
         calibrated_probs: Predicted probabilities.
-        min_survivor_recall: Minimum required recall for the positive class (survivors/hits).
+        min_positive_recall: Minimum required recall for the positive class.
 
     Returns:
         (optimal_threshold, best_f1_bust)
@@ -37,7 +37,7 @@ def optimize_threshold(
         f1_0 = f1_score(y_true, current_preds, pos_label=0)
         recall_1 = recall_score(y_true, current_preds)
 
-        if recall_1 >= min_survivor_recall:
+        if recall_1 >= min_positive_recall:
             if f1_0 > best_f1_0:
                 best_f1_0 = f1_0
                 best_threshold = thresh

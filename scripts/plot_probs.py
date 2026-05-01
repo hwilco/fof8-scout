@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import mlflow
 import polars as pl
 import seaborn as sns
-from fof8_ml.data.dataset import build_survival_dataset
+from fof8_ml.data.career_threshold_dataset import build_career_threshold_dataset
 
 
 def main():
@@ -31,7 +31,7 @@ def main():
         model = mlflow.xgboost.load_model(model_uri)
 
     # 4. Load Data (Using defaults from your last session)
-    X, y = build_survival_dataset(
+    X, y = build_career_threshold_dataset(
         "../fof8-gen/data/raw",
         "DRAFT003",
         [2021, 2100],
@@ -59,7 +59,7 @@ def main():
     sns.histplot(data=plot_df, x="Probability", hue="Actual", bins=50, kde=True, element="step")
 
     plt.title(f"Probability Distribution: {model_name}\nRun: {args.run_id}")
-    plt.xlabel("Predicted Probability of Survival")
+    plt.xlabel("Predicted Probability of Clearing Career Threshold")
     plt.ylabel("Frequency")
     plt.grid(axis="y", alpha=0.3)
 

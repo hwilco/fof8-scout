@@ -10,8 +10,8 @@ from sklearn.metrics import (
 )
 
 
-def calculate_survival_metrics(y_true, y_prob, threshold=0.5):
-    """Calculates comprehensive metrics for the survival task."""
+def calculate_career_threshold_metrics(y_true, y_prob, threshold=0.5):
+    """Calculates comprehensive metrics for the career-threshold classification task."""
     y_pred = (y_prob >= threshold).astype(int)
 
     # 1. Curve-based metrics (ranking quality)

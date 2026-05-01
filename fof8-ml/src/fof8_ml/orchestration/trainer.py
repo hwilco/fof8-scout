@@ -5,7 +5,7 @@ from omegaconf import DictConfig, OmegaConf
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.model_selection import KFold, StratifiedKFold
 
-from fof8_ml.evaluation.metrics import calculate_survival_metrics
+from fof8_ml.evaluation.metrics import calculate_career_threshold_metrics
 from fof8_ml.models.base import ModelWrapper
 from fof8_ml.models.factory import apply_quiet_params, get_model_wrapper
 from fof8_ml.orchestration.pipeline_types import CVResult
@@ -54,7 +54,7 @@ def run_cv_classifier(
 
         oof_probs[val_idx] = y_val_prob
 
-        metrics = calculate_survival_metrics(y_cv_val, y_val_prob)
+        metrics = calculate_career_threshold_metrics(y_cv_val, y_val_prob)
         cv_metrics.append(metrics)
         for m_name, m_val in metrics.items():
             mlflow.log_metric(f"fold_{fold}_{m_name}", m_val)

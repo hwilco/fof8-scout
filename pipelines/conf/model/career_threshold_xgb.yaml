@@ -1,4 +1,4 @@
-name: "xgboost_survival"
+name: "xgboost_career_threshold"
 params:
   objective: "binary:logistic"
   learning_rate: 0.07409677199434107

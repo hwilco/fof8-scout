@@ -5,7 +5,7 @@ defaults:
   - split: chronological
   - cv: kfold_5
   - model: s1_catboost
-  - hparams_search: s1_catboost_survival
+  - hparams_search: s1_catboost_career_threshold
   - experiment: null
   - override hydra/sweeper: optuna
 

@@ -65,14 +65,14 @@ def main(cfg: DictConfig) -> float:
         data, cfg.get("include_features"), cfg.get("exclude_features")
     )
 
-    # Filter to ground truth positive cases (survivors) for regressor training
+    # Filter to ground truth positive cases for regressor training
     s1_mask = (data.y_cls == 1).astype(bool)
     X_reg = data.X_train.filter(pl.Series(s1_mask))
     y_reg_target = np.log1p(data.y_reg[s1_mask])
 
     if not ctx.quiet:
         n_hits = int(s1_mask.sum())
-        print(f"\nFiltered to {n_hits} ground truth survivors for regressor training.")
+        print(f"\nFiltered to {n_hits} ground truth positive cases for regressor training.")
 
     # 3. Train & Evaluate
     with logger.start_pipeline_run(f"Regressor_{cfg.model.name}", tags=ctx.tags) as pipeline_run:

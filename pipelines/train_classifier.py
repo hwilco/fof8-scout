@@ -117,15 +117,15 @@ def main(cfg: DictConfig) -> float:
 
             # Threshold Optimization
             if not ctx.quiet:
-                target_recall = cfg.target.stage1_sieve.min_survivor_recall
+                target_recall = cfg.target.stage1_sieve.min_positive_recall
                 print(
                     f"\nOptimizing Stage 1 Threshold (Calibrated) (Constraint: "
-                    f"Min Survivor Recall >= {target_recall})..."
+                    f"Min Positive Recall >= {target_recall})..."
                 )
             best_threshold, best_f1_0 = optimize_threshold(
                 y_true=data.y_cls,
                 calibrated_probs=calibrated_oof_probs,
-                min_survivor_recall=cfg.target.stage1_sieve.min_survivor_recall,
+                min_positive_recall=cfg.target.stage1_sieve.min_positive_recall,
             )
 
             # Final Metrics
