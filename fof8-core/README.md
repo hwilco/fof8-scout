@@ -20,7 +20,8 @@ This package is a member of the `fof8-scout` uv workspace. It is automatically a
 
 ```python
 import polars as pl
-from fof8_core import FOF8Loader, get_draft_class, get_career_outcomes
+from fof8_core import FOF8Loader, get_career_outcomes
+from fof8_core.features.draft_class import get_draft_class
 
 # Initialize the loader
 loader = FOF8Loader(base_path="./data", league_name="DRAFT003")

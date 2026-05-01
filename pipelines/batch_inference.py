@@ -4,7 +4,7 @@ import random
 import hydra
 import mlflow
 import polars as pl
-from fof8_core.features import get_draft_class
+from fof8_core.features.draft_class import get_draft_class
 from fof8_core.loader import FOF8Loader
 from hydra.utils import to_absolute_path
 from omegaconf import DictConfig

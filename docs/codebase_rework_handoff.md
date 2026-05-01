@@ -29,12 +29,15 @@ Do not start large refactors until the baseline test mismatch is corrected.
 
 - Keep behavior-preserving refactors separate from behavior changes.
 - Prefer small PRs/commits by phase.
-- Preserve DVC/Hydra CLI compatibility unless a migration note is included.
+- Prefer clean internal architecture over compatibility shims. This repo is not supporting external users, so breaking internal import paths is acceptable when all repo callers, tests, docs, and notebooks are migrated in the same change.
+- Preserve behavior and data contracts unless a phase explicitly calls for behavior change.
+- Preserve DVC/Hydra command compatibility unless a migration note is included. CLI paths and pipeline commands are more expensive to break than Python import paths.
 - Do not move raw data, generated data, notebooks, MLflow artifacts, or DVC-tracked outputs unless explicitly scoped.
 - After every phase, run:
   - `uv run ruff check fof8-core fof8-ml fof8-gen pipelines scripts`
   - `uv run pytest fof8-core/tests fof8-ml/tests -q`
 - For package moves, update imports, tests, README snippets, and DVC paths together.
+- Do not add compatibility re-exports by default. Only re-export names that are intentionally part of the new architecture.
 
 ## Recommended Parallelization
 
@@ -53,6 +56,28 @@ Avoid parallel edits to the same files. In particular, only one agent should tou
 - `fof8-ml/src/fof8_ml/orchestration/data_loader.py`
 - `pipelines/train_classifier.py`
 - `pipelines/train_regressor.py`
+
+## Refactor Philosophy
+
+The repo can tolerate breaking changes because it is currently single-user. Agents should use that freedom to make the architecture clearer, not to churn APIs casually.
+
+The default rule is:
+
+> Preserve behavior and generated data contracts, not old internal import paths.
+
+Examples:
+
+- Prefer `from fof8_core.features.draft_class import get_draft_class` over preserving `from fof8_core.features import get_draft_class` solely for compatibility.
+- Prefer `from fof8_core.features.position_masks import apply_position_mask` over keeping `features.py` as a broad barrel module.
+- Prefer explicit target modules such as `fof8_core.targets.financial` and `fof8_core.targets.career` over keeping all target builders importable from one legacy module.
+
+Compatibility wrappers are allowed only when they serve the new architecture or protect a deliberately stable command boundary. Stable command boundaries include:
+
+- DVC stage commands in `dvc.yaml`.
+- Hydra entrypoint scripts used directly from the command line.
+- Package console scripts such as `gather-data`.
+
+If an import path changes, update all internal callers and docs in the same phase.
 
 ## Phase 0: Restore Baseline Tests
 
@@ -106,25 +131,22 @@ fof8-core/src/fof8_core/
     constants.py
 ```
 
-If converting `features.py` to a package is too disruptive, use this lower-risk structure first:
-
-```text
-fof8-core/src/fof8_core/
-  features.py
-  feature_constants.py
-  position_masks.py
-```
-
-Recommended approach: use the lower-risk structure first to avoid import ambiguity between `features.py` and a `features/` package.
+Recommended approach: convert `features.py` into a real `features/` package and migrate all repo imports to explicit module paths. Because this repo does not need external API compatibility, do not keep a legacy `features.py` shim unless there is a concrete reason.
 
 ### Tasks
 
 1. Move feature group constants and `POSITION_FEATURE_MAP` to `position_masks.py` or `feature_constants.py`.
 2. Move `apply_position_mask` to `position_masks.py`.
-3. Keep `get_draft_class` import-compatible from `fof8_core.features`.
-4. Re-export `apply_position_mask` from `fof8_core.features` or update callers:
+3. Move `get_draft_class` to `draft_class.py`.
+4. Update all repo callers to explicit imports:
+   - `from fof8_core.features.draft_class import get_draft_class`
+   - `from fof8_core.features.position_masks import apply_position_mask`
+5. Update affected callers, including:
    - `fof8-ml/src/fof8_ml/orchestration/data_loader.py`
-5. Extract helper functions inside `get_draft_class`:
+   - `fof8-ml/src/fof8_ml/data/dataset.py`
+   - `pipelines/batch_inference.py`
+   - tests and README examples
+6. Extract helper functions inside `get_draft_class`:
    - `_add_age_features`
    - `_add_position_relative_z_scores`
    - `_add_scouting_uncertainty_features`
@@ -132,9 +154,11 @@ Recommended approach: use the lower-risk structure first to avoid import ambigui
 
 ### Acceptance Criteria
 
-- Existing public imports still work or are migrated consistently.
+- All internal imports are migrated to the new module paths.
+- No compatibility shim remains unless it has a clear architectural purpose.
 - `get_draft_class` behavior is unchanged.
 - Position masking behavior is unchanged.
+- README and docs examples use the new imports.
 - Tests pass.
 
 ## Phase 2: Add Target Registry and Split Target Logic
@@ -147,12 +171,13 @@ Recommended approach: use the lower-risk structure first to avoid import ambigui
 
 ```text
 fof8-core/src/fof8_core/
-  targets.py                  # compatibility exports
-  target_registry.py
-  targets_financial.py
-  targets_career.py
-  targets_awards.py
-  targets_av.py
+  targets/
+    __init__.py
+    registry.py
+    financial.py
+    career.py
+    awards.py
+    approximate_value.py
 ```
 
 ### Tasks
@@ -176,15 +201,20 @@ def get_target(name: str, loader: FOF8Loader, **kwargs) -> pl.DataFrame:
    - `merit_cap_share`
    - `career_value_metrics`
    - `awards` if static parameters are not required, or support partial configs.
-3. Keep existing function names importable from `fof8_core.targets`.
-4. Add tests for:
+3. Update all repo callers to explicit imports from the new target modules or registry:
+   - `from fof8_core.targets.registry import get_target`
+   - `from fof8_core.targets.career import get_career_outcomes`
+   - `from fof8_core.targets.financial import get_merit_cap_share`
+4. Do not keep a legacy `targets.py` shim unless a short-term migration blocker is identified.
+5. Add tests for:
    - successful registry lookup
    - unknown target name error
    - registered function returns expected frame for a mocked loader
 
 ### Acceptance Criteria
 
-- Existing callers continue to work.
+- All internal callers are migrated to the new module paths.
+- No legacy target barrel module remains unless deliberately justified.
 - New config-driven target resolution is possible.
 - Target modules are easier to navigate by domain.
 
@@ -198,7 +228,7 @@ def get_target(name: str, loader: FOF8Loader, **kwargs) -> pl.DataFrame:
 
 ```text
 fof8-ml/src/fof8_ml/data/
-  dataset.py                  # compatibility exports
+  dataset.py                  # remove or keep only if it remains the intended facade
   economic_dataset.py
   survival_dataset.py         # deprecated or explicitly supported
   categorical.py
@@ -211,7 +241,8 @@ fof8-ml/src/fof8_ml/data/
    - string/categorical to `pl.Enum`
 2. Decide whether `build_survival_dataset` is supported or deprecated:
    - If supported, move to `survival_dataset.py` and add tests.
-   - If deprecated, keep a wrapper in `dataset.py` with a deprecation warning and update scripts such as `scripts/plot_probs.py`.
+   - If deprecated, remove internal usage and update scripts such as `scripts/plot_probs.py`.
+   - Do not keep a deprecation wrapper unless there is a concrete short-term reason.
 3. Keep `build_economic_dataset` focused on building the universal feature/target/metadata frame.
 4. Keep chronological splitting in `fof8_ml.orchestration.data_loader`, not in dataset builders.
 5. Add explicit return type dataclasses if useful:
@@ -326,7 +357,7 @@ pipelines/train_regressor.py
 ```text
 fof8-ml/src/fof8_ml/models/
   registry.py
-  factory.py                  # compatibility wrapper around registry
+  factory.py                  # keep only if it remains the intended public construction API
 ```
 
 ### Tasks
@@ -351,6 +382,7 @@ fof8-ml/src/fof8_ml/models/
 - Existing model configs resolve.
 - Adding a new model requires one registration entry and one config file.
 - Tests fail clearly if a config references an unknown model.
+- Any retained `factory.py` API is intentional, documented, and backed by the registry.
 
 ## Phase 7: Train/Inference Schema Contract
 
@@ -474,7 +506,7 @@ def prevent_system_sleep():
 
 1. `tests: align career outcome tests with current API`
 2. `refactor(core): split position mask constants from draft features`
-3. `refactor(core): add target registry with compatibility exports`
+3. `refactor(core): add explicit target modules and registry`
 4. `refactor(ml): split economic and survival dataset builders`
 5. `fix(ml): use deterministic data cache keys`
 6. `refactor(ml): introduce shared training pipeline context`
@@ -487,7 +519,7 @@ def prevent_system_sleep():
 
 ### Import Compatibility
 
-Moving modules can break notebooks and scripts. Keep compatibility exports during the transition and add deprecation warnings later.
+Moving modules can break notebooks and scripts. In this repo, migrate those imports directly instead of preserving old paths. Use compatibility exports only when they are intentionally part of the new architecture.
 
 ### Hydra/DVC Path Stability
 

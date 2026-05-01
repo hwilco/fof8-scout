@@ -1,7 +1,7 @@
 import logging
 
 import polars as pl
-from fof8_core.features import get_draft_class
+from fof8_core.features.draft_class import get_draft_class
 from fof8_core.loader import FOF8Loader
 from fof8_core.targets import get_career_outcomes, get_merit_cap_share, get_peak_overall
 

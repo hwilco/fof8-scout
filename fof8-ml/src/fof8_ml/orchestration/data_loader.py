@@ -3,7 +3,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 import polars as pl
-from fof8_core.features import apply_position_mask
+from fof8_core.features.position_masks import apply_position_mask
 from fof8_core.loader import FOF8Loader
 from omegaconf import DictConfig
 
