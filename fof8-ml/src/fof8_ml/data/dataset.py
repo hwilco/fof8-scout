@@ -3,7 +3,8 @@ import logging
 import polars as pl
 from fof8_core.features.draft_class import get_draft_class
 from fof8_core.loader import FOF8Loader
-from fof8_core.targets import get_career_outcomes, get_merit_cap_share, get_peak_overall
+from fof8_core.targets.career import get_career_outcomes
+from fof8_core.targets.financial import get_merit_cap_share, get_peak_overall
 
 
 # TODO: Determine the fate of `build_survival_dataset`.

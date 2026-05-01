@@ -1,6 +1,8 @@
 import polars as pl
 import pytest
-from fof8_core import get_annual_financials, get_career_outcomes, get_draft_class
+from fof8_core.features.draft_class import get_draft_class
+from fof8_core.targets.career import get_career_outcomes
+from fof8_core.targets.financial import get_annual_financials
 
 
 def test_get_draft_class_pipeline(mock_loader, tmp_path):
