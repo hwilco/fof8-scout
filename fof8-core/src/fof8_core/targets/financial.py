@@ -127,7 +127,7 @@ def get_merit_cap_share(loader: FOF8Loader) -> pl.DataFrame:
             )
             .with_columns(
                 pl.col("Contract_Year_String")
-                .str.extract(r"(\\d+)")
+                .str.extract(r"(\d+)")
                 .cast(pl.Int32)
                 .alias("Contract_Year_Index")
             )
@@ -143,7 +143,7 @@ def get_merit_cap_share(loader: FOF8Loader) -> pl.DataFrame:
             )
             .with_columns(
                 pl.col("Contract_Year_String")
-                .str.extract(r"(\\d+)")
+                .str.extract(r"(\d+)")
                 .cast(pl.Int32)
                 .alias("Contract_Year_Index")
             )

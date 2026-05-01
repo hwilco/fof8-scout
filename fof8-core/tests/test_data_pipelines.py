@@ -2,7 +2,7 @@ import polars as pl
 import pytest
 from fof8_core.features.draft_class import get_draft_class
 from fof8_core.targets.career import get_career_outcomes
-from fof8_core.targets.financial import get_annual_financials
+from fof8_core.targets.financial import get_annual_financials, get_merit_cap_share
 
 
 def test_get_draft_class_pipeline(mock_loader, tmp_path):
@@ -129,3 +129,45 @@ def test_get_annual_financials_pipeline(mock_loader, tmp_path):
         0
     ]
     assert pytest.approx(val_2020) == 0.0075
+
+
+def test_get_merit_cap_share_uses_contract_year_index_extraction(mock_loader, tmp_path):
+    years = [2020, 2021, 2022, 2023, 2024]
+    for idx, year in enumerate(years, start=1):
+        year_dir = tmp_path / "DRAFT003" / str(year)
+        year_dir.mkdir(parents=True, exist_ok=True)
+
+        pl.DataFrame(
+            {
+                "Information": ["Salary Cap (in tens of thousands)"],
+                "Value/Round/Position": [100],
+            }
+        ).write_csv(year_dir / "universe_info.csv")
+
+        pl.DataFrame(
+            {
+                "Player_ID": [1, 2],
+                "Position": ["QB", "QB"],
+                "Experience": [idx, idx],
+                "Salary_Year_1": [10 if year == 2020 else 0, 0 if year == 2020 else 10],
+                "Salary_Year_2": [10, 0],
+                "Salary_Year_3": [10, 0],
+                "Salary_Year_4": [10, 0],
+                "Salary_Year_5": [10, 0],
+                "Bonus_Year_1": [0, 0],
+                "Bonus_Year_2": [0, 0],
+                "Bonus_Year_3": [0, 0],
+                "Bonus_Year_4": [0, 0],
+                "Bonus_Year_5": [0, 0],
+            }
+        ).write_csv(year_dir / "player_record.csv")
+
+    df = get_merit_cap_share(mock_loader)
+
+    p1 = df.filter(pl.col("Player_ID") == 1)["Career_Merit_Cap_Share"][0]
+    p2 = df.filter(pl.col("Player_ID") == 2)["Career_Merit_Cap_Share"][0]
+
+    # Player 1: actual share 0.1, expected rookie contract share 0.5 => merit -0.4
+    assert pytest.approx(p1, abs=1e-9) == -0.4
+    # Player 2: actual share 0.4, expected rookie contract share 0.0 => merit 0.4
+    assert pytest.approx(p2, abs=1e-9) == 0.4
