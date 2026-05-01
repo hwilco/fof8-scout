@@ -8,16 +8,16 @@
         "--env-file", ".devcontainer/.env",
         "--gpus", "all"
     ],
+    "mounts": [
+        "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
+        "source=/mnt/c/Users/${localEnv:USER}/.ssh,target=/home/vscode/.ssh-host,type=bind,readonly,consistency=cached"
+    ],
     "containerEnv": {
         "EDITOR": "nano",
+        "HOST_USER": "${localEnv:USER}",
         "GIT_CONFIG_COUNT": "1",
         "GIT_CONFIG_KEY_0": "safe.directory",
         "GIT_CONFIG_VALUE_0": "*"
-    },
-    "features": {
-        "ghcr.io/devcontainers/features/python:1": {
-            "version": "3.12"
-        }
     },
     "customizations": {
         "vscode": {
@@ -37,5 +37,6 @@
     "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
     // Only install the experimentation package, but include the root dev tools
     "postCreateCommand": "bash .devcontainer/experimentation/setup.sh",
-    "remoteUser": "vscode"
+    "remoteUser": "vscode",
+    "updateRemoteUserUID": true
 }
