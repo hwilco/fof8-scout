@@ -1,4 +1,6 @@
 import fnmatch
+import hashlib
+import json
 import os
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +19,12 @@ _GLOBAL_DATA_CACHE: Dict[str, Any] = {
     "meta_train": None,
     "last_cfg_hash": None,
 }
+
+
+def _get_data_cache_cfg_hash(data_cfg: Dict[str, Any]) -> str:
+    """Create a deterministic hash for cache keying across processes."""
+    serialized = json.dumps(data_cfg, sort_keys=True, default=str)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
 class DataLoader:
@@ -39,7 +47,7 @@ class DataLoader:
             "test_pct": cfg.split.test_split_pct,
             "mask": cfg.mask_positional_features,
         }
-        cfg_hash = str(hash(str(data_cfg)))
+        cfg_hash = _get_data_cache_cfg_hash(data_cfg)
 
         if (
             _GLOBAL_DATA_CACHE.get("last_cfg_hash") == cfg_hash
