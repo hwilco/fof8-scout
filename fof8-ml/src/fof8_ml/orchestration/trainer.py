@@ -8,7 +8,7 @@ from sklearn.model_selection import KFold, StratifiedKFold
 from fof8_ml.evaluation.metrics import calculate_survival_metrics
 from fof8_ml.models.base import ModelWrapper
 from fof8_ml.models.factory import apply_quiet_params, get_model_wrapper
-from fof8_ml.orchestration.types import CVResult
+from fof8_ml.orchestration.pipeline_types import CVResult
 
 
 def run_cv_classifier(

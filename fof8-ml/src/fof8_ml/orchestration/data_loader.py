@@ -7,7 +7,7 @@ from fof8_core.features import apply_position_mask
 from fof8_core.loader import FOF8Loader
 from omegaconf import DictConfig
 
-from fof8_ml.orchestration.types import PreparedData, TimelineInfo
+from fof8_ml.orchestration.pipeline_types import PreparedData, TimelineInfo
 
 # Module-level cache for data persistence across trials in the same process
 _GLOBAL_DATA_CACHE: Dict[str, Any] = {
@@ -217,3 +217,24 @@ class DataLoader:
             meta_test=data.meta_test,
             timeline=data.timeline,
         )
+
+    def print_summary(self, data: PreparedData, cfg: DictConfig) -> None:
+        """Prints a summary of the loaded data."""
+        if self.quiet:
+            return
+
+        print(f"Simulation Range: {data.timeline.initial_year} to {data.timeline.final_sim_year}")
+        print(
+            f"Active Range: {data.timeline.valid_start_year} to {data.timeline.valid_end_year} "
+            f"(Buffer: {cfg.split.right_censor_buffer} years)"
+        )
+        print(
+            f"Training Set: {data.timeline.train_year_range} "
+            f"({data.timeline.train_year_range[1] - data.timeline.train_year_range[0] + 1} classes)"
+        )
+        print(
+            f"Holdout Set: {data.timeline.test_year_range} "
+            f"({data.timeline.test_year_range[1] - data.timeline.test_year_range[0] + 1} classes)"
+        )
+        if cfg.mask_positional_features:
+            print("Applying In-Memory Positional Feature Masking...")

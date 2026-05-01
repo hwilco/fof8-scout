@@ -15,8 +15,7 @@
 ## 3. The "Done" Definition
 Before concluding any feature addition or refactor, you must autonomously complete these steps:
 1. Write or update the corresponding unit test in the relevant `tests/` directory.
-2. Run `uv run ruff check --fix` and `uv run ruff format` on the modified files.
-3. Check if any `README.md` or other documentationrequires updating based on the changes.
+2. Check if any `README.md` or other documentationrequires updating based on the changes.
 
 ## 4. Data Version Control (DVC) Rules
 - **The Data Boundary:** Large files (like `.csv`, `.parquet`, or `.joblib` model artifacts) are strictly tracked by DVC. NEVER stage or commit these files using Git.

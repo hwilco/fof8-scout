@@ -25,16 +25,19 @@ We use DVC to manage the "Universal Truth" data store and orchestrate the traini
 uv run dvc pull
 
 # 2. Run the full pipeline (Transform -> Train)
-uv run dvc repro fof8-ml/dvc.yaml
+uv run dvc repro
 ```
 
 ### 2. Running Training Experiments (Hydra)
 
-The training pipeline is decoupled from the data transformation. You can still run the script directly for fast iteration or specific Hydra overrides:
+The training pipeline is decoupled from the data transformation. You can run either the classifier or regressor script directly for fast iteration:
 
 ```bash
-# Run with specific Hydra overrides (still utilizes the DVC-processed features.parquet)
-uv run python pipelines/train.py experiment_name="Testing_DagsHub_Setup"
+# Run the Sieve Classifier with a specific override
+uv run python pipelines/train_classifier.py experiment_name="Testing_Classifier"
+
+# Run the Intensity Regressor
+uv run python pipelines/train_regressor.py experiment_name="Testing_Regressor"
 ```
 
 > [!IMPORTANT]
@@ -47,14 +50,14 @@ uv run python pipelines/train.py experiment_name="Testing_DagsHub_Setup"
 You can experiment with different feature subsets using the `include_features` and `exclude_features` configuration options. Both support wildcards (e.g., `Delta_*`). If both are provided, `exclude_features` acts as a final filter (removing features even if they were explicitly included).
 
 ```bash
-# Only use specific features
-uv run python pipelines/train.py data.include_features="[Combine_40, Combine_Bench]"
+# Example: Only use specific features for the classifier
+uv run python pipelines/train_classifier.py include_features="[Combine_40, Combine_Bench]"
 
-# Use all features EXCEPT specific ones
-uv run python pipelines/train.py data.exclude_features="[Weight, Age]"
+# Example: Exclude specific features for the regressor
+uv run python pipelines/train_regressor.py exclude_features="[Weight, Age]"
 
 # Wildcard support
-uv run python pipelines/train.py data.exclude_features="[Delta_*]"
+uv run python pipelines/train_classifier.py exclude_features="[Delta_*]"
 ```
 
 ### 3. Viewing Results (MLflow)

@@ -1,0 +1,54 @@
+defaults:
+  - _self_
+  - data: fof8_base
+  - target: economic
+  - split: chronological
+  - cv: kfold_5
+  - model: reg_tweedie
+  - hparams_search: s2_reg_tweedie
+  - experiment: null
+  - override hydra/sweeper: optuna
+
+# --- Experiment Metadata ---
+experiment_name: "S2_Intensity_Regressor"
+
+# --- Execution Settings ---
+quiet_sweep: false           # If true, suppresses non-essential output during sweeps
+use_gpu: false               # Enable GPU acceleration for supported models
+seed: 42                     # Global random seed
+
+# --- Data Slicing & Feature Logic ---
+positions: "all"
+mask_positional_features: true
+include_features: null
+exclude_features: ["Position", "Scout_*", "Delta_*", "Interviewed"]
+
+# --- Optimization Targets ---
+optimization:
+  metric: "s2_oof_rmse"
+  direction: "minimize"
+
+diagnostics:
+  log_importance: true
+  log_shap: true
+
+tags:
+  version: "3.0"
+  type: "intensity_regressor"
+
+hydra:
+  job:
+    chdir: True
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
+  sweeper:
+    direction: ${optimization.direction}
+    study_name: s2_regressor_v1
+    n_trials: 20
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: 42
+      multivariate: true

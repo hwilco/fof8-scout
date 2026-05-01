@@ -39,7 +39,8 @@ fof8-scout/
 ├── pipelines/                # ML Orchestration Scripts (DVC Stages)
 │   ├── conf/                 # Hydra Hierarchical Configs
 │   ├── process_features.py   # Feature store builder
-│   ├── train.py              # Model training orchestration
+│   ├── train_classifier.py   # Sieve Classifier (S1) orchestration
+│   ├── train_regressor.py    # Intensity Regressor (S2) orchestration
 │   └── batch_inference.py    # Prediction pipeline
 ├── notebooks/                # Analysis and exploration notebooks
 ├── docs/                     # Detailed technical documentation
@@ -88,7 +89,7 @@ This project uses a hybrid DagsHub/DVC architecture to ensure data lineage acros
 3.  **Consumption (Dev Container)**: Run `dvc pull` to sync the latest raw data.
 4.  **Orchestration (Dev Container)**: Run `dvc repro` from the root. This will:
     -   **Transform**: Run `pipelines/process_features.py` to build a single "Universal Truth" feature store (`features.parquet`).
-    -   **Train**: Run `pipelines/train.py` which dynamically splits the parquet in-memory and logs results to MLflow.
+    -   **Train**: Run `pipelines/train_classifier.py` and/or `pipelines/train_regressor.py`. These stages dynamically split the parquet in-memory and log independent results to MLflow.
 
 > [!TIP]
 > The `git_commit` is automatically logged as a tag in MLflow, allowing you to trace any model run back to its exact data and code version.

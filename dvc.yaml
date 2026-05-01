@@ -9,11 +9,22 @@ stages:
     outs:
       - fof8-ml/data/processed/features.parquet
 
-  train_model:
-    cmd: uv run python pipelines/train.py
+  train_classifier:
+    cmd: uv run python pipelines/train_classifier.py
     deps:
       - fof8-ml/data/processed/features.parquet
-      - pipelines/train.py
+      - pipelines/train_classifier.py
+      - pipelines/conf/classifier_pipeline.yaml
       - pipelines/conf/
     outs:
-      - outputs/metrics.json
+      - outputs/classifier_metrics.json
+
+  train_regressor:
+    cmd: uv run python pipelines/train_regressor.py
+    deps:
+      - fof8-ml/data/processed/features.parquet
+      - pipelines/train_regressor.py
+      - pipelines/conf/regressor_pipeline.yaml
+      - pipelines/conf/
+    outs:
+      - outputs/regressor_metrics.json

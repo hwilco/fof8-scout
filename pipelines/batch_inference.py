@@ -10,7 +10,7 @@ from hydra.utils import to_absolute_path
 from omegaconf import DictConfig
 
 
-@hydra.main(version_base=None, config_path="conf", config_name="economic_pipeline")
+@hydra.main(version_base=None, config_path="conf", config_name="classifier_pipeline")
 def main(cfg: DictConfig):
     # Define a stable root directory for the experimentation package
     # (two levels up from this script)

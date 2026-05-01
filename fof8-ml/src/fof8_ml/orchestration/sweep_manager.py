@@ -22,6 +22,7 @@ class SweepContext:
     sweep_run_id: Optional[str]
     quiet: bool
     tags: dict
+    trial_num: Optional[int] = None
 
 
 class SweepManager:
@@ -106,6 +107,7 @@ class SweepManager:
 
         quiet = bool(is_sweep and cfg.quiet_sweep)
 
+        trial_num = None
         if is_sweep:
             try:
                 trial_num = HydraConfig.get().job.num + 1
@@ -120,6 +122,7 @@ class SweepManager:
             sweep_run_id=sweep_run_id,
             quiet=quiet,
             tags=tags,
+            trial_num=trial_num,
         )
 
     def update_champion(

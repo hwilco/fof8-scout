@@ -9,10 +9,6 @@ defaults:
 experiment_name: "S1_Catboost_Hyperopt_v1"
 quiet_sweep: true
 
-# --- Execution Flow ---
-stage2_model: null
-train_stage2: false
-
 # --- Optimization Target ---
 optimization:
   metric: "s1_oof_pr_auc"
