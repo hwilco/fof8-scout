@@ -49,25 +49,50 @@ def test_get_draft_class_pipeline(mock_loader, tmp_path):
 
 
 def test_get_career_outcomes_pipeline(mock_loader, tmp_path):
-    year_dir = tmp_path / "DRAFT003" / "2144"
-    year_dir.mkdir(parents=True)
+    year_dir_2143 = tmp_path / "DRAFT003" / "2143"
+    year_dir_2143.mkdir(parents=True)
+    pl.DataFrame(
+        {
+            "Player_ID": [1, 2],
+            "Career_Games_Played": [100, 10],
+            "Number_of_Seasons": [6, 2],
+            "Championship_Rings": [1, 0],
+            "Hall_of_Fame_Flag": [0, 0],
+        }
+    ).write_csv(year_dir_2143 / "player_information_post_sim.csv")
+
+    year_dir_2144 = tmp_path / "DRAFT003" / "2144"
+    year_dir_2144.mkdir(parents=True)
     pl.DataFrame(
         {
             "Player_ID": [1, 2, 3],
-            "Draft_Year": [2020, 2020, 0],
-            "Year_Born": [1998, 1999, 1997],
-            "Draft_Round": [1, 7, 0],
             "Career_Games_Played": [160, 10, None],
             "Number_of_Seasons": [10, 2, None],
             "Championship_Rings": [2, 0, None],
-            "Hall_of_Fame_Flag": [1, 0, 0],
+            "Hall_of_Fame_Flag": [1, 0, None],
         }
-    ).write_csv(year_dir / "player_information_post_sim.csv")
+    ).write_csv(year_dir_2144 / "player_information_post_sim.csv")
 
-    df = get_career_outcomes(mock_loader, final_year=2144)
-    assert df.shape == (3, 9)
-    assert df.filter(pl.col("Player_ID") == 3)["Was_Drafted"][0] is False
+    df = get_career_outcomes(mock_loader)
+
+    assert df.shape == (3, 5)
+    assert df.columns == [
+        "Player_ID",
+        "Career_Games_Played",
+        "Championship_Rings",
+        "Hall_of_Fame_Flag",
+        "Number_of_Seasons",
+    ]
+
+    # Regression: when scanning all years, each player's latest row is retained.
+    assert df.filter(pl.col("Player_ID") == 1)["Career_Games_Played"][0] == 160
+    assert df.filter(pl.col("Player_ID") == 1)["Championship_Rings"][0] == 2
+
+    # Regression: null career values are backfilled to zero.
     assert df.filter(pl.col("Player_ID") == 3)["Career_Games_Played"][0] == 0
+    assert df.filter(pl.col("Player_ID") == 3)["Number_of_Seasons"][0] == 0
+    assert df.filter(pl.col("Player_ID") == 3)["Championship_Rings"][0] == 0
+    assert df.filter(pl.col("Player_ID") == 3)["Hall_of_Fame_Flag"][0] == 0
 
 
 def test_get_annual_financials_pipeline(mock_loader, tmp_path):

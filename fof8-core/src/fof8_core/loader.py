@@ -90,7 +90,10 @@ class FOF8Loader:
             null_values=["", "null", "None", "N/A"],
             ignore_errors=True,
             # Force columns that are notorious for mixed types to String immediately
-            dtypes={"Injury_Type": pl.String, "Season_Statistics_-_Injury_Type": pl.String},
+            schema_overrides={
+                "Injury_Type": pl.String,
+                "Season_Statistics_-_Injury_Type": pl.String,
+            },
         )
 
         # Clean up column names
