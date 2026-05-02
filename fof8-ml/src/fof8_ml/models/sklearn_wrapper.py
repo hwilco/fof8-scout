@@ -1,3 +1,5 @@
+from typing import Any
+
 import joblib
 import mlflow
 import numpy as np
@@ -10,23 +12,25 @@ from .base import ModelWrapper
 
 
 class SklearnRegressorWrapper(ModelWrapper):
-    def __init__(self, model_name: str, **params):
-        super().__init__(**params)
+    def __init__(self, model_name: str, **params: object) -> None:
+        use_gpu = bool(params.pop("use_gpu", False))
+        super().__init__(use_gpu=use_gpu, **params)
         self.scaler = None
         self.columns = None
+        typed_params: dict[str, Any] = {k: v for k, v in self.params.items() if v is not None}
 
         if "tweedie" in model_name.lower():
-            self.model = TweedieRegressor(**self.params)
+            self.model = TweedieRegressor(**typed_params)
         else:
-            self.model = GammaRegressor(**self.params)
+            self.model = GammaRegressor(**typed_params)
 
     def fit(
         self,
         X_train: pl.DataFrame,
         y_train: np.ndarray,
-        X_val: pl.DataFrame = None,
-        y_val: np.ndarray = None,
-    ):
+        X_val: pl.DataFrame | None = None,
+        y_val: np.ndarray | None = None,
+    ) -> None:
         # GLMs expect strictly positive target for gamma/poisson/tweedie
         # In the pipeline, the target is already transformed by np.log1p.
         # But for sklearn, the pipeline actually passes np.expm1(y) in the inner loop!
@@ -54,7 +58,8 @@ class SklearnRegressorWrapper(ModelWrapper):
     def get_best_iteration(self) -> int:
         return 0
 
-    def log_model(self, name: str):
+    def log_model(self, name: str) -> None:
+        assert self.columns is not None
         mlflow.sklearn.log_model(self.model, name=name)
         joblib.dump(self.scaler, f"{name}_scaler.joblib")
         mlflow.log_artifact(f"{name}_scaler.joblib")
@@ -70,9 +75,8 @@ class SklearnRegressorWrapper(ModelWrapper):
 
     def get_feature_importance(self) -> tuple[list[str], np.ndarray]:
         """Returns the one-hot encoded feature names and absolute coefficients."""
+        assert self.columns is not None
         if hasattr(self.model, "coef_"):
             return self.columns, np.abs(self.model.coef_)
-        elif hasattr(self.model, "feature_importances_"):
-            return self.columns, self.model.feature_importances_
         else:
             return self.columns, np.zeros(len(self.columns))

@@ -1,10 +1,19 @@
+from typing import Protocol
+
 import polars as pl
 from sklearn.preprocessing import StandardScaler
 
 
+class ScalerLike(Protocol):
+    def fit_transform(self, X: object) -> object: ...
+    def transform(self, X: object) -> object: ...
+
+
 def preprocess_for_sklearn(
-    X_pl: pl.DataFrame, scaler=None, expected_columns: list[str] | None = None
-):
+    X_pl: pl.DataFrame,
+    scaler: ScalerLike | None = None,
+    expected_columns: list[str] | None = None,
+) -> tuple[pl.DataFrame, ScalerLike, list[str]]:
     """
     Prepares a Polars DataFrame for scikit-learn models by:
     1. One-hot encoding categorical features using pl.to_dummies().

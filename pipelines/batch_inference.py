@@ -23,7 +23,7 @@ from omegaconf import DictConfig
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="classifier_pipeline")
-def main(cfg: DictConfig):
+def main(cfg: DictConfig) -> None:
     """Execute batch inference using the training-time feature schema contract."""
     # Define a stable root directory for the experimentation package
     # (two levels up from this script)
@@ -47,7 +47,7 @@ def main(cfg: DictConfig):
     client = mlflow.tracking.MlflowClient()
 
     # Get all experiment IDs
-    experiment_ids = [e.experiment_id for e in client.search_experiments()]
+    experiment_ids: list[str] = [str(e.experiment_id) for e in client.search_experiments()]
 
     # Find the Stage 1 nested run
     nested_runs = client.search_runs(

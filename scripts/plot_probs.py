@@ -7,7 +7,7 @@ import seaborn as sns
 from fof8_ml.data.career_threshold_dataset import build_career_threshold_dataset
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run_id", required=True, help="MLflow Run ID to load")
     parser.add_argument("--output", default="prob_histogram.png", help="Output filename")

@@ -7,9 +7,9 @@ This package contains the formal machine learning training pipeline and experime
 The `fof8_ml` source code is organized into modular components to support scalability and easy experimentation with different model architectures:
 
 - **`data/`**: Dataset construction, caching, and ML-specific feature transformations.
-- **`models/`**: Wrapper classes that provide a unified API for different ML libraries (XGBoost, CatBoost, Scikit-Learn) and a **Model Factory**.
+- **`models/`**: Wrapper classes and an explicit stage-aware **Model Registry** for deterministic model resolution.
 - **`evaluation/`**: Metrics calculation and standardized plotting (Feature Importance, Confusion Matrices, SHAP).
-- **`orchestration/`**: The core logic for pipeline execution (DataLoader, Trainer, Logger, and Sweep Management).
+- **`orchestration/`**: Shared pipeline lifecycle (`PipelineContext`, loader/logger/sweeps) and stage runners.
 
 ## Machine Learning Pipeline
 
@@ -44,6 +44,13 @@ uv run python pipelines/train_regressor.py experiment_name="Testing_Regressor"
 > **Data vs ML Decoupling**:
 > - The `transform` stage (handled by DVC) builds the single `features.parquet` file.
 > - The `train` stage handles chronological splitting **in-memory**. This means you can adjust your test split cutoff in `conf/data/fof8_base.yaml` and rerun `dvc repro`—DVC will skip the expensive transformation and only rerun the training.
+
+### Shared Pipeline Runner
+`pipelines/train_classifier.py` and `pipelines/train_regressor.py` are thin Hydra entrypoints.
+Common setup/teardown is centralized in `fof8_ml.orchestration.pipeline_runner`:
+- `build_pipeline_context(...)`
+- `select_optimization_metric(...)`
+- `finalize_pipeline_run(...)`
 
 ### Adding A Model
 Model resolution is explicit and registry-based (not substring-based).
@@ -82,6 +89,12 @@ Classifier and regressor training both log a train/inference feature contract ar
 - `feature_schema.json` (MLflow run artifact root, alongside model artifacts such as `stage1_model/` or `stage2_model/`)
 - Batch inference loads this artifact and raises explicit schema mismatch errors for
   missing required columns or incompatible feature sets.
+
+### Extension Guides
+See [`docs/architecture_extensions.md`](../docs/architecture_extensions.md) for:
+- adding a model (registry + config)
+- adding a target
+- adding a feature group
 
 ## Output Organization
 

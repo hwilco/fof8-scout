@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import mlflow
 import numpy as np
 import polars as pl
@@ -34,7 +36,7 @@ def run_cv_classifier(
         X_cv_train, X_cv_val = X[train_idx], X[val_idx]
         y_cv_train, y_cv_val = y[train_idx], y[val_idx]
 
-        params = OmegaConf.to_container(model_cfg.params, resolve=True)
+        params = cast(dict[str, Any], OmegaConf.to_container(model_cfg.params, resolve=True))
         if quiet:
             params = apply_quiet_params(model_cfg.name, params)
 
@@ -95,7 +97,7 @@ def run_cv_regressor(
         X_cv_train, X_cv_val = X[train_idx], X[val_idx]
         y_cv_train, y_cv_val = y[train_idx], y[val_idx]
 
-        params = OmegaConf.to_container(model_cfg.params, resolve=True)
+        params = cast(dict[str, Any], OmegaConf.to_container(model_cfg.params, resolve=True))
         if quiet:
             params = apply_quiet_params(model_cfg.name, params)
 
@@ -144,7 +146,7 @@ def train_final_model(
     quiet: bool = False,
 ) -> ModelWrapper:
     """Train the final full-dataset model using averaged best iterations from CV."""
-    final_params = OmegaConf.to_container(model_cfg.params, resolve=True)
+    final_params = cast(dict[str, Any], OmegaConf.to_container(model_cfg.params, resolve=True))
     final_params.pop("early_stopping_rounds", None)
 
     name_lower = model_cfg.name.lower()

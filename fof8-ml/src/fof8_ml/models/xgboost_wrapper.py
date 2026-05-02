@@ -13,7 +13,7 @@ class XGBoostWrapper(ModelWrapper):
     def get_best_iteration(self) -> int:
         return getattr(self.model, "best_iteration", 0)
 
-    def log_model(self, name: str):
+    def log_model(self, name: str) -> None:
         mlflow.xgboost.log_model(self.model, name=name)
 
     def get_feature_importance(self) -> tuple[list[str], np.ndarray]:
@@ -22,7 +22,7 @@ class XGBoostWrapper(ModelWrapper):
 
 
 class XGBoostClassifierWrapper(XGBoostWrapper):
-    def __init__(self, random_seed: int, use_gpu: bool = False, **params):
+    def __init__(self, random_seed: int, use_gpu: bool = False, **params: object) -> None:
         super().__init__(use_gpu=use_gpu, **params)
 
         # GPU configuration
@@ -41,9 +41,9 @@ class XGBoostClassifierWrapper(XGBoostWrapper):
         self,
         X_train: pl.DataFrame,
         y_train: np.ndarray,
-        X_val: pl.DataFrame = None,
-        y_val: np.ndarray = None,
-    ):
+        X_val: pl.DataFrame | None = None,
+        y_val: np.ndarray | None = None,
+    ) -> None:
         eval_set = None
         if X_val is not None and y_val is not None:
             eval_set = [(X_val, y_val)]
@@ -58,7 +58,7 @@ class XGBoostClassifierWrapper(XGBoostWrapper):
 
 
 class XGBoostRegressorWrapper(XGBoostWrapper):
-    def __init__(self, random_seed: int, use_gpu: bool = False, **params):
+    def __init__(self, random_seed: int, use_gpu: bool = False, **params: object) -> None:
         super().__init__(use_gpu=use_gpu, **params)
         clean_params = self.params.copy()
 
@@ -82,9 +82,9 @@ class XGBoostRegressorWrapper(XGBoostWrapper):
         self,
         X_train: pl.DataFrame,
         y_train: np.ndarray,
-        X_val: pl.DataFrame = None,
-        y_val: np.ndarray = None,
-    ):
+        X_val: pl.DataFrame | None = None,
+        y_val: np.ndarray | None = None,
+    ) -> None:
         eval_set = None
         if X_val is not None and y_val is not None:
             eval_set = [(X_val, y_val)]

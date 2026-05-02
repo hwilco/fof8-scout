@@ -1,10 +1,11 @@
 import os
 import re
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
 
 
-def copy_and_convert(src: Path, dst: Path):
+def copy_and_convert(src: Path, dst: Path) -> None:
     """
     Reads src as cp1252, writes to dst as utf-8, and preserves metadata.
     """
@@ -13,7 +14,7 @@ def copy_and_convert(src: Path, dst: Path):
     shutil.copystat(src, dst)
 
 
-def detect_latest_year(league_dir):
+def detect_latest_year(league_dir: str | Path) -> int:
     """
     Scans for player_season_YYYY.csv and returns the latest year found.
     """
@@ -34,8 +35,12 @@ def detect_latest_year(league_dir):
 
 
 def create_league_snapshot(
-    fof8_dir, league_name, output_base_dir, file_filter=None, rename_map=None
-):
+    fof8_dir: str | Path,
+    league_name: str,
+    output_base_dir: str | Path,
+    file_filter: list[str] | Mapping[str, str] | None = None,
+    rename_map: Mapping[str, str] | None = None,
+) -> str:
     """
     Creates a snapshot of relevant CSV files for the current season.
 

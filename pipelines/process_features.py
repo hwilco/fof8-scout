@@ -8,7 +8,7 @@ from omegaconf import DictConfig
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="transform")
-def main(cfg: DictConfig):
+def main(cfg: DictConfig) -> None:
     script_dir = os.path.dirname(os.path.abspath(__file__))
     exp_root = os.path.abspath(os.path.join(script_dir, ".."))
     absolute_raw_path = os.path.abspath(os.path.join(exp_root, cfg.data.raw_path))
@@ -33,7 +33,7 @@ def main(cfg: DictConfig):
         cfg.data.league_name,
         year_range,
         final_sim_year,
-        positions="all",
+        positions=None,
         active_team_id=cfg.data.active_team_id,
         merit_threshold=0,
     )

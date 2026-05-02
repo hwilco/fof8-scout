@@ -17,7 +17,7 @@ def build_economic_dataset(
     year_range: list[int],
     final_sim_year: int,
     positions: list[str] | None = None,
-    active_team_id: int = None,
+    active_team_id: int | None = None,
     merit_threshold: float = 0,
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """Build feature, target, and metadata frames for the economic model."""
@@ -76,9 +76,7 @@ def build_economic_dataset(
 
     df_all_features = pl.concat(feature_dfs)
 
-    if positions and positions != "all":
-        if isinstance(positions, str):
-            positions = [positions]
+    if positions:
         df_all_features = df_all_features.filter(pl.col("Position_Group").is_in(positions))
 
     df_master = df_all_features.join(df_targets, on="Player_ID", how="left")

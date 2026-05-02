@@ -37,4 +37,28 @@ target-version = "py312"
 extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I"] # Error, Pyflakes, and Isort (import sorting)
+select = ["E", "F", "I", "ANN"] # Error, Pyflakes, Isort, and type annotations
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/*.py" = ["ANN"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+reportPrivateImportUsage = "none"
+include = [
+    "fof8-core/src",
+    "fof8-ml/src",
+    "fof8-gen/src",
+    "pipelines",
+    "scripts",
+]
+exclude = [
+    "**/tests",
+    "notebooks",
+    "**/*.ipynb",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    ".venv",
+]

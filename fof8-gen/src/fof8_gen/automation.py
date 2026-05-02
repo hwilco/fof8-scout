@@ -11,7 +11,7 @@ from pathlib import Path
 from .metadata import load_metadata
 
 
-def main():
+def main() -> None:
     default_fof8_dir = (
         Path(os.environ.get("LOCALAPPDATA", ""))
         / "Solecismic Software"

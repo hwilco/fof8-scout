@@ -1,5 +1,9 @@
 # Train Pipeline Decomposition Ideas
 
+Note: this document is historical. The decomposition has been implemented via
+`fof8_ml.orchestration.pipeline_runner` and stage-specific runners used by
+`pipelines/train_classifier.py` and `pipelines/train_regressor.py`.
+
 The `pipelines/train.py` script is currently a large monolith orchestrator (~800 lines). While it successfully integrates Hydra, DVC, and MLflow, its size makes it difficult to maintain and test.
 
 ## Current Challenges

@@ -2,7 +2,7 @@ import torch
 from fof8_ml.models import CatBoostClassifierWrapper, XGBoostClassifierWrapper
 
 
-def test_gpu_detection():
+def test_gpu_detection() -> None:
     print(f"Torch CUDA available: {torch.cuda.is_available()}")
 
     params = {"iterations": 10}

@@ -3,11 +3,13 @@ import json
 import logging
 import os
 import subprocess
-from typing import Any, Dict, Optional
+from collections.abc import Iterator
+from typing import Any, Optional, cast
 
 import dagshub
 import dvc.api
 import mlflow
+import polars as pl
 from omegaconf import DictConfig, OmegaConf
 
 from fof8_ml.data.schema import FEATURE_SCHEMA_ARTIFACT_PATH, FeatureSchema
@@ -24,8 +26,8 @@ _TRACKING_INITIALIZED = False
 _USING_REMOTE = None
 
 
-def flatten_dict(d: dict, parent_key: str = "", sep: str = ".") -> dict:
-    items = []
+def flatten_dict(d: dict, parent_key: str = "", sep: str = ".") -> dict[str, object]:
+    items: list[tuple[str, object]] = []
     for k, v in d.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
         if isinstance(v, dict):
@@ -35,7 +37,7 @@ def flatten_dict(d: dict, parent_key: str = "", sep: str = ".") -> dict:
     return dict(items)
 
 
-def log_params_safe(params: dict):
+def log_params_safe(params: dict[str, object]) -> None:
     """Log parameters to MLflow in chunks of 100 to avoid limits."""
     items = list(params.items())
     for i in range(0, len(items), 100):
@@ -43,7 +45,7 @@ def log_params_safe(params: dict):
 
 
 @contextlib.contextmanager
-def preserve_cwd(new_cwd: str = None):
+def preserve_cwd(new_cwd: str | None = None) -> Iterator[None]:
     """Temporarily change the working directory."""
     old_cwd = os.getcwd()
     if new_cwd:
@@ -57,7 +59,7 @@ def preserve_cwd(new_cwd: str = None):
 class ExperimentLogger:
     """Wraps all MLflow tracking operations with DagsHub fallback."""
 
-    def __init__(self, exp_root: str, experiment_name: str):
+    def __init__(self, exp_root: str, experiment_name: str) -> None:
         self.exp_root = exp_root
         self.experiment_name = experiment_name
         self.client = None
@@ -83,9 +85,11 @@ class ExperimentLogger:
                 pass  # Race condition
         mlflow.set_experiment(self.experiment_name)
         exp = self.client.get_experiment_by_name(self.experiment_name)
+        if exp is None:
+            raise RuntimeError(f"Failed to resolve MLflow experiment '{self.experiment_name}'")
         self.experiment_id = exp.experiment_id
 
-    def start_pipeline_run(self, run_name: str, tags: dict) -> mlflow.ActiveRun:
+    def start_pipeline_run(self, run_name: str, tags: dict[str, str]) -> mlflow.ActiveRun:
         """Start a top-level run with automatic write-failure fallback."""
         global _USING_REMOTE
         try:
@@ -144,11 +148,12 @@ class ExperimentLogger:
         except Exception as e:
             logging.warning(f"Could not log Git commit / DVC version: {e}")
 
-        cfg_container = OmegaConf.to_container(cfg, resolve=True)
+        cfg_container = cast(dict[str, Any], OmegaConf.to_container(cfg, resolve=True))
         log_params_safe(flatten_dict(cfg_container))
 
         if cfg.get("tags"):
-            mlflow.set_tags(OmegaConf.to_container(cfg.tags, resolve=True))
+            tags = cast(dict[str, Any], OmegaConf.to_container(cfg.tags, resolve=True))
+            mlflow.set_tags(tags)
 
         if is_sweep and trial_num is not None:
             mlflow.set_tag("trial_num", str(trial_num))
@@ -220,9 +225,9 @@ class ExperimentLogger:
 
     def log_regressor_results(
         self,
-        metrics: Dict[str, float],
+        metrics: dict[str, float],
         model: ModelWrapper,
-        X_reg: Any,
+        X_reg: pl.DataFrame,
         cfg: DictConfig,
         quiet: bool,
     ) -> None:
@@ -239,20 +244,22 @@ class ExperimentLogger:
                     log_shap=cfg.diagnostics.log_shap,
                 )
 
-    def start_stage_run(self, stage_name: str, ctx: Any) -> mlflow.ActiveRun:
+    def start_stage_run(self, stage_name: str, ctx: object) -> mlflow.ActiveRun:
         """Start a nested MLflow run for a pipeline stage."""
         run_name = f"Stage{stage_name.capitalize()}"
         active_run = mlflow.start_run(run_name=run_name, nested=True)
         mlflow.set_tag("model_stage", stage_name.lower())
-        if ctx.sweep_name:
-            mlflow.set_tag("sweep_name", ctx.sweep_name)
-        if ctx.sweep_run_id:
-            mlflow.set_tag("sweep_run_id", ctx.sweep_run_id)
+        sweep_name = getattr(ctx, "sweep_name", None)
+        sweep_run_id = getattr(ctx, "sweep_run_id", None)
+        if sweep_name:
+            mlflow.set_tag("sweep_name", str(sweep_name))
+        if sweep_run_id:
+            mlflow.set_tag("sweep_run_id", str(sweep_run_id))
         return active_run
 
     def log_stage_params(self, model_cfg: DictConfig, prefix: str) -> None:
         """Log stage-specific model parameters."""
-        params = OmegaConf.to_container(model_cfg.params, resolve=True)
+        params = cast(dict[str, Any], OmegaConf.to_container(model_cfg.params, resolve=True))
         log_params_safe(flatten_dict(params, parent_key=prefix))
 
     def write_dvc_metrics(

@@ -1,3 +1,5 @@
+from typing import Any
+
 import catboost as cb
 import mlflow
 import numpy as np
@@ -10,7 +12,7 @@ from .base import ModelWrapper
 class CatBoostWrapper(ModelWrapper):
     """Shared logic for CatBoost wrapper."""
 
-    def _prepare_data(self, X: pl.DataFrame):
+    def _prepare_data(self, X: pl.DataFrame) -> tuple[Any, list[str]]:
         """
         Converts Polars DataFrame to Pandas and identifies categorical features.
 
@@ -25,44 +27,54 @@ class CatBoostWrapper(ModelWrapper):
         return X_pd, cat_features
 
     def get_best_iteration(self) -> int:
+        assert self.model is not None
         return self.model.get_best_iteration()
 
-    def log_model(self, name: str):
+    def log_model(self, name: str) -> None:
+        assert self.model is not None
         mlflow.catboost.log_model(self.model, name=name)
 
     def get_feature_importance(self) -> tuple[list[str], np.ndarray]:
         """Returns feature names and importance values from CatBoost."""
+        assert self.model is not None
         return self.model.feature_names_, self.model.get_feature_importance()
 
 
 class CatBoostClassifierWrapper(CatBoostWrapper):
-    def __init__(self, random_seed: int, use_gpu: bool = False, thread_count: int = -1, **params):
+    def __init__(
+        self,
+        random_seed: int,
+        use_gpu: bool = False,
+        thread_count: int = -1,
+        **params: object,
+    ) -> None:
         super().__init__(use_gpu=use_gpu, **params)
+        params_dict = self.params
         self.thread_count = thread_count
 
         # GPU configuration
         if self.use_gpu and torch.cuda.is_available():
-            self.params["task_type"] = "GPU"
-            self.params["devices"] = "0"
+            params_dict["task_type"] = "GPU"
+            params_dict["devices"] = "0"
 
         # Prevent verbosity conflict
         if not any(
-            k in self.params for k in ["verbose", "logging_level", "verbose_eval", "silent"]
+            k in params_dict for k in ["verbose", "logging_level", "verbose_eval", "silent"]
         ):
-            self.params["verbose"] = False
+            params_dict["verbose"] = False
 
         self.model = cb.CatBoostClassifier(
-            **self.params, random_seed=random_seed, thread_count=self.thread_count
+            **(params_dict), random_seed=random_seed, thread_count=self.thread_count
         )
-        self.early_stopping_rounds = self.params.pop("early_stopping_rounds", 10)
+        self.early_stopping_rounds = params_dict.pop("early_stopping_rounds", 10)
 
     def fit(
         self,
         X_train: pl.DataFrame,
         y_train: np.ndarray,
-        X_val: pl.DataFrame = None,
-        y_val: np.ndarray = None,
-    ):
+        X_val: pl.DataFrame | None = None,
+        y_val: np.ndarray | None = None,
+    ) -> None:
         X_train_pd, cat_features = self._prepare_data(X_train)
 
         eval_set = None
@@ -88,7 +100,13 @@ class CatBoostClassifierWrapper(CatBoostWrapper):
 
 
 class CatBoostRegressorWrapper(CatBoostWrapper):
-    def __init__(self, random_seed: int, use_gpu: bool = False, thread_count: int = -1, **params):
+    def __init__(
+        self,
+        random_seed: int,
+        use_gpu: bool = False,
+        thread_count: int = -1,
+        **params: object,
+    ) -> None:
         super().__init__(use_gpu=use_gpu, **params)
         self.thread_count = thread_count
         # Clean params for regressor
@@ -110,7 +128,7 @@ class CatBoostRegressorWrapper(CatBoostWrapper):
             clean_params["verbose"] = False
 
         self.model = cb.CatBoostRegressor(
-            **clean_params, random_seed=random_seed, thread_count=self.thread_count
+            **(clean_params), random_seed=random_seed, thread_count=self.thread_count
         )
         self.early_stopping_rounds = self.params.get("early_stopping_rounds", 10)
 
@@ -118,9 +136,9 @@ class CatBoostRegressorWrapper(CatBoostWrapper):
         self,
         X_train: pl.DataFrame,
         y_train: np.ndarray,
-        X_val: pl.DataFrame = None,
-        y_val: np.ndarray = None,
-    ):
+        X_val: pl.DataFrame | None = None,
+        y_val: np.ndarray | None = None,
+    ) -> None:
         X_train_pd, cat_features = self._prepare_data(X_train)
 
         eval_set = None

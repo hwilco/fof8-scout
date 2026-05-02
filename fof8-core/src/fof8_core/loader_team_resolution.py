@@ -93,6 +93,9 @@ def resolve_team_id_from_team_information(
     for row in df_teams.to_dicts():
         city = row.get("Home_City", "")
         if city and city in team_name:
-            return int(row.get("Team"))
+            team_value = row.get("Team")
+            if team_value is None:
+                continue
+            return int(team_value)
 
     return None

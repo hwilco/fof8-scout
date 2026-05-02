@@ -1,5 +1,7 @@
 """Model factory backed by the explicit stage/model registry."""
 
+from typing import Any
+
 from fof8_ml.models.base import ModelWrapper
 from fof8_ml.models.registry import get_model_family, resolve_model
 
@@ -8,7 +10,7 @@ def get_model_wrapper(
     model_name: str,
     stage: str,
     random_seed: int,
-    params: dict,
+    params: dict[str, Any],
     use_gpu: bool = False,
     thread_count: int = -1,
 ) -> ModelWrapper:
@@ -49,7 +51,7 @@ def get_model_wrapper(
     )
 
 
-def apply_quiet_params(model_name: str, params: dict) -> dict:
+def apply_quiet_params(model_name: str, params: dict[str, Any]) -> dict[str, Any]:
     """Return params with quiet flags applied for CatBoost/XGBoost models.
 
     The model family is resolved from the explicit registry across known

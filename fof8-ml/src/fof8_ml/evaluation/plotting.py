@@ -4,13 +4,19 @@ import tempfile
 
 import matplotlib.pyplot as plt
 import mlflow
+import numpy as np
 import polars as pl
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 
+from fof8_ml.models.base import ModelWrapper
+
 
 def log_feature_importance(
-    wrapper, stage_name: str, X: pl.DataFrame | None = None, log_shap: bool = False
-):
+    wrapper: ModelWrapper,
+    stage_name: str,
+    X: pl.DataFrame | None = None,
+    log_shap: bool = False,
+) -> None:
     """
     Helper to generate and log feature importance plots to MLflow.
 
@@ -65,8 +71,10 @@ def log_feature_importance(
             try:
                 import shap
 
+                X_nonnull = X
+
                 # Preprocess X using the wrapper's transformation
-                X_transformed = wrapper.transform(X)
+                X_transformed = wrapper.transform(X_nonnull)
 
                 # SHAP often prefers Pandas or Numpy
                 # For CatBoost, we MUST use the Pandas format it was trained on
@@ -98,11 +106,11 @@ def log_feature_importance(
 
                 # Per-Position SHAP
                 # Note: We use the ORIGINAL X to find positions, but SHAP uses the TRANSFORMED X
-                if "Position_Group" in X.columns:
-                    positions = X.get_column("Position_Group").unique().to_list()
+                if "Position_Group" in X_nonnull.columns:
+                    positions = X_nonnull.get_column("Position_Group").unique().to_list()
                     for pos in positions:
                         # Get indices for this position
-                        pos_mask = X.get_column("Position_Group") == pos
+                        pos_mask = X_nonnull.get_column("Position_Group") == pos
                         X_pos_transformed = X_transformed.filter(pos_mask)
 
                         if len(X_pos_transformed) < 30:
@@ -153,7 +161,7 @@ def log_feature_importance(
     plt.close(fig)
 
 
-def log_confusion_matrix(y_true, y_pred, threshold: float):
+def log_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray, threshold: float) -> None:
     """
     Helper to generate and log confusion matrix.
 
@@ -175,7 +183,9 @@ def log_confusion_matrix(y_true, y_pred, threshold: float):
     plt.close(fig)
 
 
-def log_calibration_comparison(y_true, y_prob_raw, y_prob_cal, n_bins: int = 10):
+def log_calibration_comparison(
+    y_true: np.ndarray, y_prob_raw: np.ndarray, y_prob_cal: np.ndarray, n_bins: int = 10
+) -> None:
     """
     Generates and logs a reliability diagram comparing raw and calibrated probabilities.
 
@@ -197,7 +207,7 @@ def log_calibration_comparison(y_true, y_prob_raw, y_prob_cal, n_bins: int = 10)
 
     ax.set_ylabel("Fraction of Positives (Actual)")
     ax.set_xlabel("Mean Predicted Probability")
-    ax.set_ylim([-0.05, 1.05])
+    ax.set_ylim(-0.05, 1.05)
     ax.legend(loc="lower right")
     ax.set_title("Calibration Reliability Diagram (Pre vs Post)")
     ax.grid(True, alpha=0.3)

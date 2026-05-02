@@ -1,5 +1,3 @@
-from typing import Dict, Tuple
-
 import numpy as np
 from sklearn.metrics import (
     auc,
@@ -17,7 +15,7 @@ def optimize_threshold(
     y_true: np.ndarray,
     calibrated_probs: np.ndarray,
     min_positive_recall: float = 0.0,
-) -> Tuple[float, float]:
+) -> tuple[float, float]:
     """Find threshold maximizing F1(bust) subject to min recall constraint.
 
     Args:
@@ -47,14 +45,14 @@ def optimize_threshold(
         final_preds = (calibrated_probs >= best_threshold).astype(int)
         best_f1_0 = f1_score(y_true, final_preds, pos_label=0)
 
-    return best_threshold, best_f1_0
+    return float(best_threshold), float(best_f1_0)
 
 
 def compute_stage1_final_metrics(
     y_true: np.ndarray,
     calibrated_probs: np.ndarray,
     threshold: float,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Compute all Stage 1 final metrics (bust precision, hit recall, PR-AUC, etc.)."""
     final_preds = (calibrated_probs >= threshold).astype(int)
 
@@ -71,20 +69,20 @@ def compute_stage1_final_metrics(
     f1_bust = f1_score(y_true, final_preds, pos_label=0)
 
     return {
-        "s1_oof_busts_filtered": busts_filtered,
-        "s1_oof_hit_recall": hit_recall,
-        "s1_oof_f1_bust": f1_bust,
-        "s1_oof_precision_bust": bust_precision,
-        "s1_oof_recall_bust": bust_recall,
-        "s1_oof_pr_auc": pr_auc,
-        "s1_oof_roc_auc": roc_auc,
+        "s1_oof_busts_filtered": float(busts_filtered),
+        "s1_oof_hit_recall": float(hit_recall),
+        "s1_oof_f1_bust": float(f1_bust),
+        "s1_oof_precision_bust": float(bust_precision),
+        "s1_oof_recall_bust": float(bust_recall),
+        "s1_oof_pr_auc": float(pr_auc),
+        "s1_oof_roc_auc": float(roc_auc),
     }
 
 
 def compute_stage2_oof_metrics(
     y_true_log: np.ndarray,
     oof_predictions_log: np.ndarray,
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """Compute Stage 2 OOF RMSE and MAE in original (expm1) space.
 
     Args:
@@ -94,8 +92,8 @@ def compute_stage2_oof_metrics(
     y_real = np.expm1(y_true_log)
     y_pred = np.expm1(oof_predictions_log)
 
-    rmse = np.sqrt(mean_squared_error(y_real, y_pred))
-    mae = mean_absolute_error(y_real, y_pred)
+    rmse = float(np.sqrt(mean_squared_error(y_real, y_pred)))
+    mae = float(mean_absolute_error(y_real, y_pred))
 
     return {
         "s2_oof_rmse": rmse,

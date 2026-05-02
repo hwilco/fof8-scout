@@ -1,9 +1,10 @@
 """High-level automation runner for FOF8 collection workflows."""
 
 import time
+from collections.abc import Callable
 from pathlib import Path
 
-from .screen import prevent_system_sleep, wait_for_image
+from .screen import _PyAutoGuiLike, prevent_system_sleep, wait_for_image
 from .snapshot import create_league_snapshot
 from .workflows import AutomationWorkflows
 
@@ -11,23 +12,36 @@ from .workflows import AutomationWorkflows
 class _LazyPyAutoGUI:
     """Import pyautogui only when it is first used."""
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> object:
         import pyautogui
 
         return getattr(pyautogui, name)
 
 
 class AutomationRunner:
-    def __init__(self, wait_for_image_fn=wait_for_image, pyautogui_module=None):
+    def __init__(
+        self,
+        wait_for_image_fn: Callable[..., bool] = wait_for_image,
+        pyautogui_module: _PyAutoGuiLike | None = None,
+    ) -> None:
         self.wait_for_image = wait_for_image_fn
-        self.pyautogui = pyautogui_module if pyautogui_module is not None else _LazyPyAutoGUI()
+        self.pyautogui: _PyAutoGuiLike = (
+            pyautogui_module if pyautogui_module is not None else _LazyPyAutoGUI()  # type: ignore[assignment]
+        )
         self.workflows = AutomationWorkflows(
             wait_for_image=self.wait_for_image,
             export_data=self.export_data,
             pyautogui_module=self.pyautogui,
         )
 
-    def export_data(self, fof8_dir, league_name, output_dir, file_filter=None, rename_map=None):
+    def export_data(
+        self,
+        fof8_dir: str,
+        league_name: str,
+        output_dir: Path,
+        file_filter: list[str] | dict[str, str] | None = None,
+        rename_map: dict[str, str] | None = None,
+    ) -> None:
         self.wait_for_image("export_data_btn.png")
         self.wait_for_image("ok_btn.png", timeout=120)
 
@@ -44,14 +58,14 @@ class AutomationRunner:
             rename_map=rename_map,
         )
 
-    def snapshot_only(self, fof8_dir, league_name, output_dir):
+    def snapshot_only(self, fof8_dir: str, league_name: str, output_dir: Path) -> None:
         with prevent_system_sleep():
             print("Starting manual export in 5 seconds... switch to the game window!")
             time.sleep(5)
             self.export_data(fof8_dir=fof8_dir, league_name=league_name, output_dir=output_dir)
             print("Manual export and snapshot complete.")
 
-    def run(self, fof8_dir, league_name, output_dir: Path, num_iterations):
+    def run(self, fof8_dir: str, league_name: str, output_dir: Path, num_iterations: int) -> None:
         metadata_path = output_dir / "metadata.yaml"
         if not metadata_path.exists():
             print(f"\nERROR: Metadata file not found at {metadata_path}")

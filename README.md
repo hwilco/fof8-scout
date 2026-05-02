@@ -32,10 +32,10 @@ fof8-scout/
 │   ├── mlflow.db             # MLflow experiment metadata
 │   ├── optuna.db             # Optuna persistent study storage
 │   ├── src/fof8_ml/          # Modular ML pipeline components
-│   │   ├── data/             # Dataset & Transform logic
-│   │   ├── models/           # Multi-library Model Wrappers & Factory
-│   │   ├── evaluation/       # Metrics & Plotting
-│   │   └── orchestration/    # Pipeline Orchestration (DataLoader, Trainer, Logger)
+│   │   ├── data/             # Dataset builders + train/inference feature schema
+│   │   ├── models/           # Stage-aware model wrappers + explicit registry
+│   │   ├── evaluation/       # Metrics & plotting
+│   │   └── orchestration/    # Shared pipeline context + stage runners
 ├── pipelines/                # ML Orchestration Scripts (DVC Stages)
 │   ├── conf/                 # Hydra Hierarchical Configs
 │   ├── process_features.py   # Feature store builder
@@ -93,6 +93,14 @@ This project uses a hybrid DagsHub/DVC architecture to ensure data lineage acros
 
 > [!TIP]
 > The `git_commit` is automatically logged as a tag in MLflow, allowing you to trace any model run back to its exact data and code version.
+
+## Extending The System
+
+See [`docs/architecture_extensions.md`](./docs/architecture_extensions.md) for:
+- package responsibilities
+- adding a new target (`fof8_core.targets.registry`)
+- adding a new model (`fof8_ml.models.registry`)
+- adding a new feature group (`fof8_core.features`)
 
 ---
 

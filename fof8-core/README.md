@@ -24,6 +24,7 @@ from fof8_core import FOF8Loader
 from fof8_core.features.draft_class import get_draft_class
 from fof8_core.targets.career import get_career_outcomes
 from fof8_core.targets.financial import get_annual_financials
+from fof8_core.targets.registry import get_target
 
 # Initialize the loader
 loader = FOF8Loader(base_path="./data", league_name="DRAFT003")
@@ -33,7 +34,16 @@ features_df = get_draft_class(loader, year=2050)
 
 # Load annual financial data for longitudinal analysis (VORP support)
 financials_df = get_annual_financials(loader)
+
+# Or resolve a named target via the registry
+career_df = get_target("career_outcomes", loader)
 ```
+
+## Extension Points
+
+- Add a feature group in `fof8_core/features/` and compose it from `draft_class.py`.
+- Add a target in `fof8_core/targets/` and register it in `fof8_core.targets.registry`.
+- See [`docs/architecture_extensions.md`](../docs/architecture_extensions.md) for the full step-by-step guide.
 
 ## Development
 

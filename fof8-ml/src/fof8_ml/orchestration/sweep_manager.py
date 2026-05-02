@@ -3,7 +3,7 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional, cast
 
 import mlflow
 from hydra.core.hydra_config import HydraConfig
@@ -28,7 +28,9 @@ class SweepContext:
 class SweepManager:
     """Manages Optuna sweep lifecycle: parent runs, champion tracking, leaderboard."""
 
-    def __init__(self, client: mlflow.tracking.MlflowClient, experiment_id: str, exp_root: str):
+    def __init__(
+        self, client: mlflow.tracking.MlflowClient, experiment_id: str, exp_root: str
+    ) -> None:
         self.client = client
         self.experiment_id = experiment_id
         self.exp_root = exp_root
@@ -88,7 +90,12 @@ class SweepManager:
                                 log_params_safe,
                             )
 
-                            log_params_safe(flatten_dict(search_space, parent_key="search_space"))
+                            log_params_safe(
+                                flatten_dict(
+                                    cast(dict[str, Any], search_space),
+                                    parent_key="search_space",
+                                )
+                            )
                 except Exception:
                     existing_runs = self.client.search_runs(
                         experiment_ids=[self.experiment_id],
@@ -154,7 +161,7 @@ class SweepManager:
             self.client.log_metric(ctx.sweep_run_id, score_name, current_score)
             self.client.set_tag(ctx.sweep_run_id, "best_trial_id", pipeline_run_id)
 
-            cfg_container = OmegaConf.to_container(cfg, resolve=True)
+            cfg_container = cast(dict[str, Any], OmegaConf.to_container(cfg, resolve=True))
             champ_params = {
                 k: v for k, v in cfg_container.items() if k in ["stage1_model", "stage2_model"]
             }
@@ -194,8 +201,8 @@ class SweepManager:
         score_label = score_name.replace("best_", "").upper()
 
         try:
-            trial_num = HydraConfig.get().job.num + 1
-            n_trials = HydraConfig.get().sweeper.n_trials
+            trial_num: int | str = HydraConfig.get().job.num + 1
+            n_trials: int | str = HydraConfig.get().sweeper.n_trials
         except Exception:
             trial_num = "?"
             n_trials = "?"
@@ -221,7 +228,7 @@ class SweepManager:
         )
         print(f"BEST SO FAR:         {best_score:.4f} ({score_label}) [Trial {best_trial_num}]")
         if is_new_best:
-            cfg_container = OmegaConf.to_container(cfg, resolve=True)
+            cfg_container = cast(dict[str, Any], OmegaConf.to_container(cfg, resolve=True))
             champ_params = {
                 k: v for k, v in cfg_container.items() if k in ["stage1_model", "stage2_model"]
             }

@@ -1,17 +1,26 @@
 """Named season workflow steps used by the automation runner."""
 
 import time
+from collections.abc import Callable
+from pathlib import Path
+
+from .screen import _PyAutoGuiLike
 
 
 class AutomationWorkflows:
     """Named workflow steps for the season automation loop."""
 
-    def __init__(self, wait_for_image, export_data, pyautogui_module):
+    def __init__(
+        self,
+        wait_for_image: Callable[..., bool],
+        export_data: Callable[..., None],
+        pyautogui_module: _PyAutoGuiLike,
+    ) -> None:
         self.wait_for_image = wait_for_image
         self.export_data = export_data
         self.pyautogui = pyautogui_module
 
-    def export_draft_snapshot(self, fof8_dir, league_name, output_dir):
+    def export_draft_snapshot(self, fof8_dir: str, league_name: str, output_dir: Path) -> None:
         print("Exporting draft files (rookies + draft_personal + player_information)...")
         self.export_data(
             fof8_dir,
@@ -24,7 +33,7 @@ class AutomationWorkflows:
             },
         )
 
-    def create_one_year_history(self):
+    def create_one_year_history(self) -> None:
         self.wait_for_image("create_history_btn.png")
         time.sleep(1)
         self.pyautogui.write("1")
@@ -33,7 +42,7 @@ class AutomationWorkflows:
         print("Waiting for history to generate...")
         self.wait_for_image("end_season_indicator_and_btn.png", timeout=600, click=False)
 
-    def export_post_sim_snapshot(self, fof8_dir, league_name, output_dir):
+    def export_post_sim_snapshot(self, fof8_dir: str, league_name: str, output_dir: Path) -> None:
         self.export_data(
             fof8_dir,
             league_name,
@@ -41,7 +50,7 @@ class AutomationWorkflows:
             rename_map={"player_information.csv": "player_information_post_sim.csv"},
         )
 
-    def advance_to_staff_draft(self):
+    def advance_to_staff_draft(self) -> None:
         self.wait_for_image("end_season_indicator_and_btn.png")
         self.wait_for_image("yes_btn.png")
         self.wait_for_image("continue_btn.png")
@@ -56,7 +65,7 @@ class AutomationWorkflows:
 
         self.wait_for_image("staff_draft_btn.png")
 
-    def complete_staff_draft(self):
+    def complete_staff_draft(self) -> None:
         self.wait_for_image("draft_speed_dropdown.png")
         time.sleep(0.5)
         self.wait_for_image(["fast_option.png", "fast_option_selected.png"])
@@ -66,6 +75,6 @@ class AutomationWorkflows:
         self.wait_for_image("draft_completed_indicator.png", timeout=600)
         self.wait_for_image("close_window_btn.png")
 
-    def begin_free_agency(self):
+    def begin_free_agency(self) -> None:
         self.wait_for_image("begin_free_agency_btn.png")
         self.wait_for_image("yes_btn.png")

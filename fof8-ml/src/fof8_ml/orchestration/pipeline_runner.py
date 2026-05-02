@@ -34,6 +34,8 @@ def build_pipeline_context(cfg: DictConfig, entrypoint_file: str) -> PipelineCon
 
     logger = ExperimentLogger(exp_root, cfg.experiment_name)
     logger.init_tracking()
+    if logger.client is None or logger.experiment_id is None:
+        raise RuntimeError("MLflow tracking client/experiment were not initialized")
 
     sweep_mgr = SweepManager(logger.client, logger.experiment_id, exp_root)
     sweep_context = sweep_mgr.detect_sweep(cfg)

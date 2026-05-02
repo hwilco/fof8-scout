@@ -11,7 +11,7 @@ class BetaCalibrator:
     logit(p_cal) = a * log(p) + b * (-log(1-p)) + c
     """
 
-    def __init__(self, eps: float = 1e-10):
+    def __init__(self, eps: float = 1e-10) -> None:
         """
         Initialize the BetaCalibrator.
 
@@ -63,7 +63,7 @@ class BetaCalibrator:
         return self.model.predict_proba(X_beta)[:, 1]
 
 
-def run_calibration_audit(y_true: np.ndarray, y_prob: np.ndarray) -> dict:
+def run_calibration_audit(y_true: np.ndarray, y_prob: np.ndarray) -> dict[str, float]:
     """
     Runs a formal calibration audit using Cox Slope and Intercept,
     Brier score, and Spiegelhalter's Z-test.
@@ -83,8 +83,8 @@ def run_calibration_audit(y_true: np.ndarray, y_prob: np.ndarray) -> dict:
     lr = LogisticRegression(C=1e10)
     lr.fit(logit_p, y_true)
 
-    alpha = lr.intercept_[0]
-    beta = lr.coef_[0][0]
+    alpha = float(np.ravel(lr.intercept_)[0])
+    beta = float(np.ravel(lr.coef_)[0])
 
     # 2. Spiegelhalter's Z-test
     brier = np.mean((y_true - y_prob) ** 2)
@@ -95,8 +95,8 @@ def run_calibration_audit(y_true: np.ndarray, y_prob: np.ndarray) -> dict:
     p_value = 2 * (1 - norm.cdf(np.abs(z_score)))
 
     return {
-        "cox_intercept": float(alpha),
-        "cox_slope": float(beta),
+        "cox_intercept": alpha,
+        "cox_slope": beta,
         "spiegelhalter_z": float(z_score),
         "spiegelhalter_p": float(p_value),
         "brier_score": float(brier),

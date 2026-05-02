@@ -30,7 +30,7 @@ def _get_data_cache_cfg_hash(data_cfg: Dict[str, Any]) -> str:
 class DataLoader:
     """Loads and caches training/test data from Hydra config."""
 
-    def __init__(self, exp_root: str, quiet: bool = False):
+    def __init__(self, exp_root: str, quiet: bool = False) -> None:
         self.exp_root = exp_root
         self.quiet = quiet
 

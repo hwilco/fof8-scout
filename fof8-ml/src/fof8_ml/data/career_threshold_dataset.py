@@ -27,7 +27,7 @@ def build_career_threshold_dataset(
     career_threshold: int,
     target_column: str = "Career_Games_Played",
     positions: list[str] | None = None,
-    active_team_id: int = None,
+    active_team_id: int | None = None,
 ) -> tuple[pl.DataFrame, pl.Series]:
     """Return classifier inputs for binary prospect career-threshold prediction.
 
@@ -57,9 +57,7 @@ def build_career_threshold_dataset(
 
     df_all_features = pl.concat(feature_dfs)
 
-    if positions and positions != "all":
-        if isinstance(positions, str):
-            positions = [positions]
+    if positions:
         df_all_features = df_all_features.filter(pl.col("Position_Group").is_in(positions))
 
     df_master = df_all_features.join(df_targets, on="Player_ID", how="left")

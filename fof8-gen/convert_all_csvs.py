@@ -2,7 +2,7 @@ import shutil
 from pathlib import Path
 
 
-def convert_in_place(path: Path):
+def convert_in_place(path: Path) -> None:
     """
     Reads file as cp1252, writes back as utf-8, and preserves metadata.
     Skips if already valid UTF-8.
@@ -32,7 +32,7 @@ def convert_in_place(path: Path):
         print(f"Failed to convert {path}: {e}")
 
 
-def main():
+def main() -> None:
     # Target directory relative to this script or workspace root
     # Based on the environment, we'll look for data/raw relative to the workspace root
     base_dir = Path("data/raw")

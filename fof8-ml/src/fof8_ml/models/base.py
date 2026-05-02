@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any, cast
 
 import numpy as np
 import polars as pl
@@ -7,19 +8,19 @@ import polars as pl
 class ModelWrapper(ABC):
     """Base class for all machine learning models in the pipeline."""
 
-    def __init__(self, use_gpu: bool = False, **params):
-        self.params = params
+    def __init__(self, use_gpu: bool = False, **params: object) -> None:
+        self.params: dict[str, Any] = cast(dict[str, Any], params)
         self.use_gpu = use_gpu
-        self.model = None
+        self.model: Any = None
 
     @abstractmethod
     def fit(
         self,
         X_train: pl.DataFrame,
         y_train: np.ndarray,
-        X_val: pl.DataFrame = None,
-        y_val: np.ndarray = None,
-    ):
+        X_val: pl.DataFrame | None = None,
+        y_val: np.ndarray | None = None,
+    ) -> None:
         """Fit the model to the training data."""
         pass
 
@@ -38,7 +39,7 @@ class ModelWrapper(ABC):
         pass
 
     @abstractmethod
-    def log_model(self, name: str):
+    def log_model(self, name: str) -> None:
         """Log the model to MLflow."""
         pass
 

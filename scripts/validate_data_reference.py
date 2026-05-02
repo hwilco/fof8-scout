@@ -34,11 +34,11 @@ print(f"Avg per year: {total_rookies / len(rookie_years):.1f}")
 print("Doc says avg: ~838")
 print(
     f"Min year count: {min(yearly_rookie_counts.values())} "
-    f"(year {min(yearly_rookie_counts, key=yearly_rookie_counts.get)})"
+    f"(year {min(yearly_rookie_counts, key=lambda y: yearly_rookie_counts[y])})"
 )
 print(
     f"Max year count: {max(yearly_rookie_counts.values())} "
-    f"(year {max(yearly_rookie_counts, key=yearly_rookie_counts.get)})"
+    f"(year {max(yearly_rookie_counts, key=lambda y: yearly_rookie_counts[y])})"
 )
 
 # 4. Grade range

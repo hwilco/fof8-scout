@@ -7,12 +7,12 @@ from pathlib import Path
 import polars as pl
 import yaml
 from hydra.utils import to_absolute_path
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 
 logger = logging.getLogger(__name__)
 
 
-def get_data_hash(cfg, year_range: tuple[int, int] | None = None) -> str:
+def get_data_hash(cfg: DictConfig, year_range: tuple[int, int] | None = None) -> str:
     """
     Generates a unique hash based on the data and target configuration.
     """
@@ -58,7 +58,10 @@ def get_data_hash(cfg, year_range: tuple[int, int] | None = None) -> str:
 
 
 def load_cached_dataset(
-    cache_dir: str | Path, cfg, split_name: str = "train", year_range: tuple[int, int] | None = None
+    cache_dir: str | Path,
+    cfg: DictConfig,
+    split_name: str = "train",
+    year_range: tuple[int, int] | None = None,
 ) -> tuple[pl.DataFrame | None, pl.DataFrame | None, pl.DataFrame | None]:
     """
     Attempts to load X, y, and metadata from Parquet files if they exist and match the config hash.
@@ -84,7 +87,7 @@ def load_cached_dataset(
 
 def save_cached_dataset(
     cache_dir: str | Path,
-    cfg,
+    cfg: DictConfig,
     X: pl.DataFrame,
     y: pl.DataFrame,
     meta: pl.DataFrame,

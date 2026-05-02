@@ -18,7 +18,7 @@ class FOF8Loader:
     Handles directory navigation, schema enforcement, and year extraction.
     """
 
-    def __init__(self, base_path: str | Path, league_name: str):
+    def __init__(self, base_path: str | Path, league_name: str) -> None:
         """
         Initializes the loader.
 
