@@ -35,7 +35,7 @@
         }
     },
     "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
-    // Only install the experimentation package, but include the root dev tools
+    // Install the experimentation package with notebook/viz groups and root default groups.
     "postCreateCommand": "bash .devcontainer/experimentation/setup.sh",
     "remoteUser": "vscode",
     "updateRemoteUserUID": true

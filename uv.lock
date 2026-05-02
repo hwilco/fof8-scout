@@ -1265,27 +1265,20 @@ version = "0.1.0"
 source = { editable = "fof8-ml" }
 dependencies = [
     { name = "alembic" },
-    { name = "altair" },
-    { name = "bokeh" },
     { name = "catboost" },
     { name = "dagshub" },
-    { name = "dvc" },
+    { name = "dvc", extra = ["s3"] },
     { name = "fof8-core" },
-    { name = "hvplot" },
     { name = "hydra-core" },
     { name = "hydra-optuna-sweeper" },
-    { name = "jupyter" },
-    { name = "jupyter-bokeh" },
     { name = "lightgbm" },
     { name = "mlflow" },
     { name = "numpy" },
     { name = "optuna" },
-    { name = "panel" },
     { name = "polars" },
     { name = "pyarrow" },
     { name = "scikit-learn" },
     { name = "scipy" },
-    { name = "seaborn" },
     { name = "shap" },
     { name = "sqlalchemy" },
     { name = "torch" },
@@ -1293,46 +1286,58 @@ dependencies = [
     { name = "xgboost" },
 ]
 
+[package.dev-dependencies]
+notebook = [
+    { name = "jupyter" },
+]
+viz = [
+    { name = "altair" },
+    { name = "bokeh" },
+    { name = "hvplot" },
+    { name = "jupyter-bokeh" },
+    { name = "panel" },
+    { name = "seaborn" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.6.5" },
-    { name = "altair", specifier = ">=5.4.1" },
-    { name = "bokeh", specifier = ">=3.9.0" },
-    { name = "catboost" },
-    { name = "dagshub" },
-    { name = "dvc" },
+    { name = "catboost", specifier = ">=1.2.10,<2" },
+    { name = "dagshub", specifier = ">=0.7.0,<1" },
+    { name = "dvc", extras = ["s3"], specifier = ">=3.67.1,<4" },
     { name = "fof8-core", editable = "fof8-core" },
-    { name = "hvplot", specifier = ">=0.12.2" },
-    { name = "hydra-core" },
-    { name = "hydra-optuna-sweeper" },
-    { name = "jupyter", specifier = ">=1.1.1" },
-    { name = "jupyter-bokeh", specifier = ">=4.0.5" },
-    { name = "lightgbm" },
-    { name = "mlflow", specifier = ">=2.0.0" },
-    { name = "numpy", specifier = ">=2.4.4" },
+    { name = "hydra-core", specifier = ">=1.3.2,<2" },
+    { name = "hydra-optuna-sweeper", specifier = ">=1.1.2,<2" },
+    { name = "lightgbm", specifier = ">=4.6.0,<5" },
+    { name = "mlflow", specifier = ">=3.11.1,<4" },
+    { name = "numpy", specifier = ">=2.4.4,<3" },
     { name = "optuna", specifier = "==4.8.0" },
-    { name = "panel", specifier = ">=1.8.10" },
     { name = "polars", specifier = ">=1.0.0" },
     { name = "pyarrow", specifier = ">=15.0.0" },
-    { name = "scikit-learn" },
-    { name = "scipy", specifier = ">=1.17.1" },
-    { name = "seaborn", specifier = ">=0.13.2" },
+    { name = "scikit-learn", specifier = ">=1.8.0,<2" },
+    { name = "scipy", specifier = ">=1.17.1,<2" },
     { name = "shap", specifier = ">=0.51.0" },
     { name = "sqlalchemy", specifier = "<2.0.0" },
-    { name = "torch", index = "https://download.pytorch.org/whl/cu130" },
-    { name = "torchvision", specifier = ">=0.26.0", index = "https://download.pytorch.org/whl/cu130" },
-    { name = "xgboost" },
+    { name = "torch", specifier = ">=2.11.0,<3", index = "https://download.pytorch.org/whl/cu130" },
+    { name = "torchvision", specifier = ">=0.26.0,<1", index = "https://download.pytorch.org/whl/cu130" },
+    { name = "xgboost", specifier = ">=3.2.0,<4" },
+]
+
+[package.metadata.requires-dev]
+notebook = [{ name = "jupyter", specifier = ">=1.1.1,<2" }]
+viz = [
+    { name = "altair", specifier = ">=6.1.0,<7" },
+    { name = "bokeh", specifier = ">=3.9.0,<4" },
+    { name = "hvplot", specifier = ">=0.12.2,<1" },
+    { name = "jupyter-bokeh", specifier = ">=4.0.5,<5" },
+    { name = "panel", specifier = ">=1.8.10,<2" },
+    { name = "seaborn", specifier = ">=0.13.2,<1" },
 ]
 
 [[package]]
 name = "fof8-scout"
 version = "0.1.0"
 source = { virtual = "." }
-dependencies = [
-    { name = "dagshub" },
-    { name = "dvc", extra = ["s3"] },
-    { name = "mlflow" },
-]
 
 [package.dev-dependencies]
 dev = [
@@ -1343,22 +1348,27 @@ dev = [
     { name = "pytest-mock" },
     { name = "ruff" },
 ]
+mlops = [
+    { name = "dagshub" },
+    { name = "dvc", extra = ["s3"] },
+    { name = "mlflow" },
+]
 
 [package.metadata]
-requires-dist = [
-    { name = "dagshub", specifier = ">=0.7.0" },
-    { name = "dvc", extras = ["s3"] },
-    { name = "mlflow", specifier = ">=3.11.1" },
-]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "nbstripout" },
-    { name = "pre-commit" },
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "pytest-mock" },
+    { name = "nbstripout", specifier = ">=0.8.1,<1" },
+    { name = "pre-commit", specifier = ">=4.3.0,<5" },
+    { name = "pyright", specifier = ">=1.1.408,<2" },
+    { name = "pytest", specifier = ">=9.0.0,<10" },
+    { name = "pytest-mock", specifier = ">=3.15.1,<4" },
     { name = "ruff", specifier = ">=0.15.11" },
+]
+mlops = [
+    { name = "dagshub", specifier = ">=0.7.0,<1" },
+    { name = "dvc", extras = ["s3"], specifier = ">=3.67.1,<4" },
+    { name = "mlflow", specifier = ">=3.11.1,<4" },
 ]
 
 [[package]]

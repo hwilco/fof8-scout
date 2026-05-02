@@ -117,7 +117,7 @@ echo "Syncing dependencies..."
 # ownership changed at container runtime.
 sudo mkdir -p /workspaces/.venv
 sudo chown -R vscode:vscode /workspaces/.venv
-uv sync --package fof8-ml
+uv sync --package fof8-ml --group notebook --group viz
 
 # 5. Setup Jupyter notebook stripping
 echo "Configuring nbstripout..."

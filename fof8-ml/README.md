@@ -2,6 +2,20 @@
 
 This package contains the formal machine learning training pipeline and experimentation notebooks for the FOF8 Draft Analyzer.
 
+## Dependency Setup
+
+Install only runtime requirements for training/inference:
+
+```bash
+uv sync --package fof8-ml
+```
+
+Install runtime plus notebook/visualization tooling:
+
+```bash
+uv sync --package fof8-ml --group notebook --group viz
+```
+
 ## Modular Architecture
 
 The `fof8_ml` source code is organized into modular components to support scalability and easy experimentation with different model architectures:

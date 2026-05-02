@@ -57,6 +57,24 @@ fof8-scout/
 
 ## Getting Started
 
+### Dependency Profiles
+
+Use dependency groups explicitly based on the task:
+
+```powershell
+# Root development tooling (ruff/pyright/pytest/pre-commit/nbstripout)
+uv sync --group dev
+
+# Root MLOps tooling (mlflow, dagshub, dvc[s3])
+uv sync --group mlops
+
+# fof8-ml runtime dependencies only (no notebook/viz stack)
+uv sync --package fof8-ml
+
+# fof8-ml with notebook + visualization tooling
+uv sync --package fof8-ml --group notebook --group viz
+```
+
 ### fof8-gen (Windows host)
 
 See the [fof8-gen README](./fof8-gen/README.md) for full setup and usage.
