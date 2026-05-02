@@ -78,6 +78,11 @@ uv run mlflow ui --backend-store-uri sqlite:///fof8-ml/mlflow.db --port 5000
 ```
 Then open `http://localhost:5000` in your browser.
 
+Classifier and regressor training both log a train/inference feature contract artifact at:
+- `feature_schema.json` (MLflow run artifact root, alongside model artifacts such as `stage1_model/` or `stage2_model/`)
+- Batch inference loads this artifact and raises explicit schema mismatch errors for
+  missing required columns or incompatible feature sets.
+
 ## Output Organization
 
 To keep the source tree clean, all execution artifacts are organized as follows:

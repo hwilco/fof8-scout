@@ -73,6 +73,8 @@ class DataLoader:
                 meta_train=_GLOBAL_DATA_CACHE["meta_train"],
                 meta_test=_GLOBAL_DATA_CACHE["meta_test"],
                 timeline=timeline,
+                metadata_columns=_GLOBAL_DATA_CACHE["metadata_columns"],
+                target_columns=_GLOBAL_DATA_CACHE["target_columns"],
             )
 
         loader = FOF8Loader(base_path=absolute_raw_path, league_name=cfg.data.league_name)
@@ -161,6 +163,8 @@ class DataLoader:
                 "valid_end_year": valid_end_year,
                 "train_year_range": train_year_range,
                 "test_year_range": test_year_range,
+                "metadata_columns": metadata_cols,
+                "target_columns": target_cols,
                 "last_cfg_hash": cfg_hash,
             }
         )
@@ -173,6 +177,8 @@ class DataLoader:
             meta_train=meta_train,
             meta_test=meta_test,
             timeline=timeline,
+            metadata_columns=metadata_cols,
+            target_columns=target_cols,
         )
 
     def apply_feature_ablation(
@@ -224,6 +230,8 @@ class DataLoader:
             meta_train=data.meta_train,
             meta_test=data.meta_test,
             timeline=data.timeline,
+            metadata_columns=data.metadata_columns,
+            target_columns=data.target_columns,
         )
 
     def print_summary(self, data: PreparedData, cfg: DictConfig) -> None:

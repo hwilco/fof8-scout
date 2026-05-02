@@ -1,3 +1,10 @@
+"""Run batch Stage 1 inference against random historical draft classes.
+
+The script loads both the trained model and the persisted `feature_schema.json`
+artifact from MLflow, then applies that schema contract before prediction.
+"""
+
+import json
 import os
 import random
 
@@ -6,12 +13,18 @@ import mlflow
 import polars as pl
 from fof8_core.features.draft_class import get_draft_class
 from fof8_core.loader import FOF8Loader
+from fof8_ml.data.schema import (
+    FEATURE_SCHEMA_ARTIFACT_PATH,
+    FeatureSchema,
+    FeatureSchemaError,
+)
 from hydra.utils import to_absolute_path
 from omegaconf import DictConfig
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="classifier_pipeline")
 def main(cfg: DictConfig):
+    """Execute batch inference using the training-time feature schema contract."""
     # Define a stable root directory for the experimentation package
     # (two levels up from this script)
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -58,6 +71,11 @@ def main(cfg: DictConfig):
 
     print(f"Loading Stage 1 Model from Run: {stage1_run.info.run_id}")
     stage1_model_uri = f"runs:/{stage1_run.info.run_id}/stage1_model"
+    schema_local_path = client.download_artifacts(
+        stage1_run.info.run_id, FEATURE_SCHEMA_ARTIFACT_PATH
+    )
+    with open(schema_local_path) as f:
+        schema = FeatureSchema.from_dict(json.load(f))
 
     # Load the model
     # We need to know if it's CatBoost or XGBoost. We can check the run params or tags.
@@ -123,21 +141,12 @@ def main(cfg: DictConfig):
                 if "Age" not in df_features.columns:
                     df_features = df_features.with_columns(pl.lit(22).alias("Age"))
 
-            # 3. Preprocess for model
-            # Drop non-feature columns
-            cols_to_drop = ["Player_ID", "Year", "First_Name", "Last_Name"]
-            df_model = df_features.drop([c for c in cols_to_drop if c in df_features.columns])
-
+            # 3. Preprocess for model using persisted training schema
+            df_model = schema.apply(df_features)
             X_pd = df_model.to_pandas()
-
-            # Handle Categoricals
-            if "College" in X_pd.columns:
-                # Training script might have mapped colleges. inference.py sets to 'Other'
-                X_pd["College"] = "Other"
-
-            cat_cols = X_pd.select_dtypes(include=["object"]).columns.tolist()
-            for col in cat_cols:
-                X_pd[col] = X_pd[col].astype("category")
+            for col in schema.categorical_columns:
+                if col in X_pd.columns:
+                    X_pd[col] = X_pd[col].astype("category")
 
             # 4. Predict
             if is_catboost:
@@ -158,6 +167,9 @@ def main(cfg: DictConfig):
 
             all_results.append(df_year_results)
 
+        except FeatureSchemaError as e:
+            print(f"  Schema mismatch for year {year}: {e}")
+            continue
         except Exception as e:
             print(f"  Error processing year {year}: {e}")
             continue

@@ -45,6 +45,7 @@ def main(cfg: DictConfig) -> float:
             ctx.sweep_context.is_sweep,
             ctx.sweep_context.trial_num,
         )
+        ctx.logger.log_feature_schema(ctx.data)
 
         available_metrics = run_classifier_stage(ctx)
 

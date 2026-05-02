@@ -26,6 +26,8 @@ class PreparedData:
     meta_train: pl.DataFrame
     meta_test: pl.DataFrame
     timeline: TimelineInfo  # year ranges, buffer, etc.
+    metadata_columns: List[str]
+    target_columns: List[str]
 
 
 @dataclass

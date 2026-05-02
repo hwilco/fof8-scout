@@ -18,6 +18,7 @@ stages:
       - fof8-core/src/fof8_core/loader.py
       - fof8-core/src/fof8_core/features/position_masks.py
       - fof8-ml/src/fof8_ml/orchestration/
+      - fof8-ml/src/fof8_ml/data/
       - fof8-ml/src/fof8_ml/models/
       - fof8-ml/src/fof8_ml/evaluation/
       - pipelines/train_classifier.py
@@ -33,6 +34,7 @@ stages:
       - fof8-core/src/fof8_core/loader.py
       - fof8-core/src/fof8_core/features/position_masks.py
       - fof8-ml/src/fof8_ml/orchestration/
+      - fof8-ml/src/fof8_ml/data/
       - fof8-ml/src/fof8_ml/models/
       - fof8-ml/src/fof8_ml/evaluation/
       - pipelines/train_regressor.py

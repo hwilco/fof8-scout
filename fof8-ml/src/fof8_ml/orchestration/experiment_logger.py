@@ -10,6 +10,7 @@ import dvc.api
 import mlflow
 from omegaconf import DictConfig, OmegaConf
 
+from fof8_ml.data.schema import FEATURE_SCHEMA_ARTIFACT_PATH, FeatureSchema
 from fof8_ml.evaluation.plotting import (
     log_calibration_comparison,
     log_confusion_matrix,
@@ -155,6 +156,25 @@ class ExperimentLogger:
         n_pos = int(data.y_cls.sum())
         n_neg = len(data.y_cls) - n_pos
         mlflow.log_params({"data.n_pos": n_pos, "data.n_neg": n_neg})
+
+    def log_feature_schema(self, data: PreparedData) -> None:
+        """Persist train/inference feature schema to `feature_schema.json`.
+
+        The artifact is logged at the active run artifact root and is loaded by
+        `pipelines/batch_inference.py` to enforce training-compatible features.
+        """
+        schema = FeatureSchema(
+            feature_columns=data.X_train.columns,
+            categorical_columns=FeatureSchema.infer_categorical_columns(data.X_train),
+            excluded_metadata_columns=data.metadata_columns,
+            excluded_target_columns=data.target_columns,
+            category_handling_policy="cast_to_string",
+            missing_column_policy="reject",
+            extra_column_policy="drop",
+            missing_defaults={},
+            college_bucketing_policy={"status": "already_applied_in_feature_pipeline"},
+        )
+        mlflow.log_dict(schema.to_dict(), FEATURE_SCHEMA_ARTIFACT_PATH)
 
     def log_classifier_results(
         self,
