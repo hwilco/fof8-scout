@@ -81,9 +81,9 @@ stages:
       nfiles: 6
     - path: fof8-ml/src/fof8_ml/models/
       hash: md5
-      md5: 93754f835671dd6895b7abaff605b8d5.dir
-      size: 47899
-      nfiles: 14
+      md5: 5ac5fd289f0de5e187e39a141ccee591.dir
+      size: 58269
+      nfiles: 16
     - path: fof8-ml/src/fof8_ml/orchestration/
       hash: md5
       md5: 85bb805b03eecd65fb987e23476d406c.dir
@@ -129,9 +129,9 @@ stages:
       nfiles: 6
     - path: fof8-ml/src/fof8_ml/models/
       hash: md5
-      md5: 93754f835671dd6895b7abaff605b8d5.dir
-      size: 47899
-      nfiles: 14
+      md5: 5ac5fd289f0de5e187e39a141ccee591.dir
+      size: 58269
+      nfiles: 16
     - path: fof8-ml/src/fof8_ml/orchestration/
       hash: md5
       md5: 85bb805b03eecd65fb987e23476d406c.dir

@@ -45,6 +45,15 @@ uv run python pipelines/train_regressor.py experiment_name="Testing_Regressor"
 > - The `transform` stage (handled by DVC) builds the single `features.parquet` file.
 > - The `train` stage handles chronological splitting **in-memory**. This means you can adjust your test split cutoff in `conf/data/fof8_base.yaml` and rerun `dvc repro`—DVC will skip the expensive transformation and only rerun the training.
 
+### Adding A Model
+Model resolution is explicit and registry-based (not substring-based).
+
+To add a model:
+- Add one model config in `pipelines/conf/model/*.yaml`.
+- Add one registry entry in `fof8_ml.models.registry` for the correct stage key.
+- Use the registered config `name` in your Hydra override or experiment config.
+
+If a model key is missing, training fails with a clear error listing valid keys for that stage.
 
 ### Feature Ablation
 You can experiment with different feature subsets using the `include_features` and `exclude_features` configuration options. Both support wildcards (e.g., `Delta_*`). If both are provided, `exclude_features` acts as a final filter (removing features even if they were explicitly included).

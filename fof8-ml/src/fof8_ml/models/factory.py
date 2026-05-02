@@ -1,7 +1,7 @@
+"""Model factory backed by the explicit stage/model registry."""
+
 from fof8_ml.models.base import ModelWrapper
-from fof8_ml.models.catboost_wrapper import CatBoostClassifierWrapper, CatBoostRegressorWrapper
-from fof8_ml.models.sklearn_wrapper import SklearnRegressorWrapper
-from fof8_ml.models.xgboost_wrapper import XGBoostClassifierWrapper, XGBoostRegressorWrapper
+from fof8_ml.models.registry import get_model_family, resolve_model
 
 
 def get_model_wrapper(
@@ -13,10 +13,13 @@ def get_model_wrapper(
     thread_count: int = -1,
 ) -> ModelWrapper:
     """
-    Factory function to instantiate the appropriate model wrapper based on config.
+    Instantiate a stage-specific model wrapper from a registered model key.
+
+    Model names are resolved exclusively via `fof8_ml.models.registry`.
+    Any model used by config must be registered there first.
 
     Args:
-        model_name: Name of the model (e.g., 's1_catboost', 'xgb').
+        model_name: Name/alias of the model from config.
         stage: Pipeline stage ('stage1' or 'stage2').
         random_seed: Random seed for reproducibility.
         params: Dictionary of model hyperparameters.
@@ -26,35 +29,42 @@ def get_model_wrapper(
     Returns:
         An instantiated subclass of ModelWrapper.
     """
-    model_name = model_name.lower()
-    if stage == "stage1":
-        if "catboost" in model_name:
-            return CatBoostClassifierWrapper(
-                random_seed=random_seed, use_gpu=use_gpu, thread_count=thread_count, **params
-            )
-        elif "xgb" in model_name:
-            return XGBoostClassifierWrapper(random_seed=random_seed, use_gpu=use_gpu, **params)
-        else:
-            raise ValueError(f"Unknown model for stage 1: {model_name}")
-    elif stage == "stage2":
-        if "catboost" in model_name:
-            return CatBoostRegressorWrapper(
-                random_seed=random_seed, use_gpu=use_gpu, thread_count=thread_count, **params
-            )
-        elif "xgb" in model_name:
-            return XGBoostRegressorWrapper(random_seed=random_seed, use_gpu=use_gpu, **params)
-        elif "sklearn" in model_name or "tweedie" in model_name or "gamma" in model_name:
-            return SklearnRegressorWrapper(model_name=model_name, use_gpu=use_gpu, **params)
-        else:
-            raise ValueError(f"Unknown model for stage 2: {model_name}")
+    registration = resolve_model(stage=stage, model_name=model_name)
+
+    if registration.family == "catboost":
+        return registration.builder(
+            random_seed=random_seed,
+            use_gpu=use_gpu,
+            thread_count=thread_count,
+            **params,
+        )
+    if registration.family == "xgb":
+        return registration.builder(random_seed=random_seed, use_gpu=use_gpu, **params)
+    if registration.family == "sklearn":
+        return registration.builder(model_name=model_name.lower(), use_gpu=use_gpu, **params)
+
+    raise ValueError(
+        "Unsupported model family "
+        f"'{registration.family}' for stage '{stage}' and model '{model_name}'"
+    )
 
 
 def apply_quiet_params(model_name: str, params: dict) -> dict:
-    """Modifies params dictionary to silence output for sweeps."""
+    """Return params with quiet flags applied for CatBoost/XGBoost models.
+
+    The model family is resolved from the explicit registry across known
+    stages. Non-CatBoost/XGBoost models are returned unchanged.
+    """
+
     quiet_params = params.copy()
-    name_lower = model_name.lower()
-    if "catboost" in name_lower:
-        quiet_params["logging_level"] = "Silent"
-    elif "xgb" in name_lower:
-        quiet_params["verbosity"] = 0
+
+    for stage in ("stage1", "stage2"):
+        family = get_model_family(stage=stage, model_name=model_name)
+        if family == "catboost":
+            quiet_params["logging_level"] = "Silent"
+            return quiet_params
+        if family == "xgb":
+            quiet_params["verbosity"] = 0
+            return quiet_params
+
     return quiet_params
