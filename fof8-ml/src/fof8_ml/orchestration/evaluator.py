@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 from sklearn.metrics import (
     auc,
@@ -41,9 +43,28 @@ def optimize_threshold(
                 best_threshold = thresh
 
     if best_f1_0 == -1.0:
-        best_threshold = thresholds[0]
-        final_preds = (calibrated_probs >= best_threshold).astype(int)
-        best_f1_0 = f1_score(y_true, final_preds, pos_label=0)
+        # No threshold satisfies the requested minimum positive recall.
+        # Fall back deterministically to the threshold that yields maximum
+        # positive recall, then best bust F1, then the lowest threshold.
+        candidates: list[tuple[float, float, float]] = []
+        for thresh in thresholds:
+            current_preds = (calibrated_probs >= thresh).astype(int)
+            recall_1 = recall_score(y_true, current_preds)
+            f1_0 = f1_score(y_true, current_preds, pos_label=0)
+            candidates.append((recall_1, f1_0, thresh))
+
+        best_recall, best_f1_0, best_threshold = max(
+            candidates, key=lambda item: (item[0], item[1], -item[2])
+        )
+        warnings.warn(
+            (
+                "No threshold satisfied min_positive_recall="
+                f"{min_positive_recall:.4f}; using deterministic fallback threshold="
+                f"{best_threshold:.2f} with achieved_recall={best_recall:.4f}."
+            ),
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     return float(best_threshold), float(best_f1_0)
 

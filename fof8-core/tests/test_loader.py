@@ -124,3 +124,27 @@ def test_get_active_team_id_team_information_fallback(tmp_path):
 
     loader = FOF8Loader(tmp_path, league_name="DRAFT003")
     assert loader.get_active_team_id() == 42
+
+
+@patch("polars.scan_csv")
+def test_scan_file_applies_schema_overrides_during_scan(mock_scan, mock_loader, temp_league_dir):
+    mock_lf = MagicMock(spec=pl.LazyFrame)
+    mock_lf.with_columns.return_value = mock_lf
+    mock_lf.drop.return_value = mock_lf
+    mock_lf.rename.return_value = mock_lf
+    mock_lf.collect_schema.return_value.names.side_effect = [
+        ["Player_IDPlayer_ID", "Season_Statistics_-_Injury_Type", "Future_Overall"],
+        ["Player_ID", "Injury_Type", "Future_Overall"],
+    ]
+    mock_scan.return_value = mock_lf
+
+    year = 2020
+    csv_path = temp_league_dir / "DRAFT003" / str(year) / "player_record.csv"
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    csv_path.write_text("Player_IDPlayer_ID,Season_Statistics_-_Injury_Type,Future_Overall\n")
+
+    mock_loader.scan_file("player_record.csv", year=year)
+
+    scan_overrides = mock_scan.call_args.kwargs["schema_overrides"]
+    assert scan_overrides["Player_IDPlayer_ID"] == pl.Int32
+    assert scan_overrides["Season_Statistics_-_Injury_Type"] == pl.String

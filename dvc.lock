@@ -5,8 +5,8 @@ stages:
     deps:
     - path: fof8-core/src/fof8_core/
       hash: md5
-      md5: e65f8074f1fba3f9d1cd8128b0648fe1.dir
-      size: 145051
+      md5: 0d15990eab07f72aaca141d218f73570.dir
+      size: 147501
       nfiles: 35
     - path: fof8-gen/data/raw
       hash: md5
@@ -68,8 +68,8 @@ stages:
       size: 901
     - path: fof8-core/src/fof8_core/loader.py
       hash: md5
-      md5: c28e600aeda3862e205500606b8a969c
-      size: 7241
+      md5: 6b35a54d49f97e40ff389e3808da3403
+      size: 8457
     - path: fof8-ml/data/processed/features.parquet
       hash: md5
       md5: 2151e8ca10580443191d0a32ac1f95b7
@@ -91,8 +91,8 @@ stages:
       nfiles: 16
     - path: fof8-ml/src/fof8_ml/orchestration/
       hash: md5
-      md5: 1425266314e9b2a5d5791c128e1101ce.dir
-      size: 139267
+      md5: 9cffc18d828241c4ab8a66129bf52301.dir
+      size: 140890
       nfiles: 22
     - path: pipelines/conf/
       hash: md5
@@ -121,8 +121,8 @@ stages:
       size: 901
     - path: fof8-core/src/fof8_core/loader.py
       hash: md5
-      md5: c28e600aeda3862e205500606b8a969c
-      size: 7241
+      md5: 6b35a54d49f97e40ff389e3808da3403
+      size: 8457
     - path: fof8-ml/data/processed/features.parquet
       hash: md5
       md5: 2151e8ca10580443191d0a32ac1f95b7
@@ -144,8 +144,8 @@ stages:
       nfiles: 16
     - path: fof8-ml/src/fof8_ml/orchestration/
       hash: md5
-      md5: 1425266314e9b2a5d5791c128e1101ce.dir
-      size: 139267
+      md5: 9cffc18d828241c4ab8a66129bf52301.dir
+      size: 140890
       nfiles: 22
     - path: pipelines/conf/
       hash: md5

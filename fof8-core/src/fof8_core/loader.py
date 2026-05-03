@@ -1,6 +1,8 @@
 """Core CSV loader for FOF8 league data across one or more simulation years."""
 
+import csv
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 
@@ -89,25 +91,54 @@ class FOF8Loader:
 
         return pl.concat(lfs)
 
-    def _scan_single_file(self, path: Path, schema_override: dict) -> pl.LazyFrame:
+    def _scan_single_file(self, path: Path, schema_override: dict[str, Any]) -> pl.LazyFrame:
         """Helper to scan a single CSV file and apply cleaning logic."""
+        prefixes_to_strip = ("Season_Statistics", "Playoff_Statistics")
+        rename_aliases = {"Player_ID": "Player_IDPlayer_ID"}
+
+        with path.open(newline="", encoding="utf-8") as csv_file:
+            raw_columns = next(csv.reader(csv_file), [])
+        raw_column_set = set(raw_columns)
+
+        scan_schema_overrides: dict[str, Any] = {
+            # Force columns that are notorious for mixed types to String immediately.
+            # These columns are known to vary in representation across exports.
+            "Injury_Type": pl.String,
+            "Season_Statistics_-_Injury_Type": pl.String,
+        }
+
+        deferred_schema_overrides: dict[str, Any] = {}
+        for col, dtype in schema_override.items():
+            if col in raw_column_set:
+                scan_schema_overrides[col] = dtype
+                continue
+
+            alias = rename_aliases.get(col)
+            if alias and alias in raw_column_set:
+                scan_schema_overrides[alias] = dtype
+                continue
+
+            prefixed_candidates = [f"{prefix}_-_{col}" for prefix in prefixes_to_strip]
+            matched_prefixed = next(
+                (name for name in prefixed_candidates if name in raw_column_set), None
+            )
+            if matched_prefixed:
+                scan_schema_overrides[matched_prefixed] = dtype
+                continue
+
+            deferred_schema_overrides[col] = dtype
+
         lf = pl.scan_csv(
             path,
             infer_schema_length=10000,
             null_values=["", "null", "None", "N/A"],
             ignore_errors=True,
-            # Force columns that are notorious for mixed types to String immediately
-            schema_overrides={
-                "Injury_Type": pl.String,
-                "Season_Statistics_-_Injury_Type": pl.String,
-            },
+            schema_overrides=scan_schema_overrides,
         )
 
         # Clean up column names
         column_names = lf.collect_schema().names()
         column_map = {}
-        prefixes_to_strip = ["Season_Statistics", "Playoff_Statistics"]
-
         for col in column_names:
             new_name = col
             if col == "Player_IDPlayer_ID":
@@ -133,7 +164,7 @@ class FOF8Loader:
 
         casts = [
             pl.col(col).cast(dtype)
-            for col, dtype in schema_override.items()
+            for col, dtype in deferred_schema_overrides.items()
             if col in column_names_post_rename and col not in future_cols
         ]
         if casts:
