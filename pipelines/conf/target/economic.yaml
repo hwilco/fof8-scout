@@ -1,0 +1,11 @@
+stage1_sieve:
+  target_col: "Cleared_Sieve"
+  merit_threshold: 0
+  min_positive_recall: 0.95
+stage2_intensity:
+  target_col: "DPO"
+leakage_prevention:
+  drop_cols:
+    - "Career_Merit_Cap_Share"
+    - "Peak_Overall"
+    - "Career_Games_Played"

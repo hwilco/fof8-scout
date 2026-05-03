@@ -11,6 +11,13 @@ This module handles the **Collection** phase of the scouting pipeline. It uses R
 - `src/fof8_gen/`: The automation and snapshotting logic.
 - `src/fof8_gen/resources/images/`: UI screenshots for image recognition.
 
+### Automation Architecture
+- `src/fof8_gen/automation.py`: Thin CLI entrypoint used by `gather-data`.
+- `src/fof8_gen/automation_runner.py`: High-level run/snapshot orchestration.
+- `src/fof8_gen/workflows.py`: Named season-step methods (history, staff draft, free agency).
+- `src/fof8_gen/screen.py`: Image wait/click helpers and sleep-prevention context manager.
+- `src/fof8_gen/metadata.py`: Metadata YAML loading and validation.
+
 ---
 
 ## Installation & Setup

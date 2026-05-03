@@ -1,7 +1,0 @@
-# @package hydra.sweeper
-search_space:
-  model.params.depth: range(4, 9)
-  model.params.learning_rate: interval(0.01, 0.15)
-  model.params.l2_leaf_reg: interval(1, 8)
-  model.params.random_strength: interval(0, 2)
-  model.params.iterations: range(400, 1500)

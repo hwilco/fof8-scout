@@ -15,7 +15,7 @@ dependencies = [
 gather-data = "fof8_gen.automation:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27.0,<2"]
 build-backend = "hatchling.build"
 
 [tool.uv]

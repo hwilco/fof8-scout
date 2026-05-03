@@ -1,0 +1,10 @@
+# @package hydra.sweeper
+search_space:
+  # Stage 1 (Sieve)
+  stage1_model.params.depth: range(4, 9)
+  stage1_model.params.learning_rate: interval(0.01, 0.15)
+  stage1_model.params.iterations: range(400, 1500)
+
+  # Stage 2 (Intensity)
+  stage2_model.params.power: range(1.1, 1.9, step=0.1)
+  stage2_model.params.alpha: interval(0.001, 10.0)

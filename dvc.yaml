@@ -1,0 +1,44 @@
+stages:
+  process_features:
+    cmd: uv run python pipelines/process_features.py
+    deps:
+      - fof8-gen/data/raw
+      - fof8-core/src/fof8_core/
+      - fof8-ml/src/fof8_ml/data/
+      - pipelines/process_features.py
+      - pipelines/conf/data/
+      - pipelines/conf/transform.yaml
+    outs:
+      - fof8-ml/data/processed/features.parquet
+
+  train_classifier:
+    cmd: uv run python pipelines/train_classifier.py
+    deps:
+      - fof8-ml/data/processed/features.parquet
+      - fof8-core/src/fof8_core/loader.py
+      - fof8-core/src/fof8_core/features/position_masks.py
+      - fof8-ml/src/fof8_ml/orchestration/
+      - fof8-ml/src/fof8_ml/data/
+      - fof8-ml/src/fof8_ml/models/
+      - fof8-ml/src/fof8_ml/evaluation/
+      - pipelines/train_classifier.py
+      - pipelines/conf/classifier_pipeline.yaml
+      - pipelines/conf/
+    outs:
+      - outputs/classifier_metrics.json
+
+  train_regressor:
+    cmd: uv run python pipelines/train_regressor.py
+    deps:
+      - fof8-ml/data/processed/features.parquet
+      - fof8-core/src/fof8_core/loader.py
+      - fof8-core/src/fof8_core/features/position_masks.py
+      - fof8-ml/src/fof8_ml/orchestration/
+      - fof8-ml/src/fof8_ml/data/
+      - fof8-ml/src/fof8_ml/models/
+      - fof8-ml/src/fof8_ml/evaluation/
+      - pipelines/train_regressor.py
+      - pipelines/conf/regressor_pipeline.yaml
+      - pipelines/conf/
+    outs:
+      - outputs/regressor_metrics.json

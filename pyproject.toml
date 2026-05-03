@@ -3,17 +3,13 @@ name = "fof8-scout"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 description = "Monorepo for scouting FOF8 draft prospects — data generation, exploration, and ML modelling"
-dependencies = [
-    "dagshub>=0.7.0",
-    "mlflow>=3.11.1",
-    "dvc[s3]",
-]
+dependencies = []
 
 [tool.uv.workspace]
 members = [
     "fof8-core",
     "fof8-gen",
-    "fof8-experimentation"
+    "fof8-ml"
 ]
 
 [[tool.uv.index]]
@@ -24,17 +20,49 @@ explicit = true
 [dependency-groups]
 dev = [
     "ruff>=0.15.11",
-    "pyright",
-    "pre-commit",
-    "nbstripout",
-    "pytest",
-    "pytest-mock",
+    "pyright>=1.1.409,<2",
+    "pre-commit>=4.3.0,<5",
+    "nbstripout>=0.8.1,<1",
+    "pytest>=9.0.0,<10",
+    "pytest-mock>=3.15.1,<4",
+    "types-pyautogui>=0.9.3.20260408",
+    "types-seaborn>=0.13.2.20260408",
+    "seaborn>=0.13.2",
+]
+mlops = [
+    "dagshub>=0.7.0,<1",
+    "mlflow>=3.11.1,<4",
+    "dvc[s3]>=3.67.1,<4",
 ]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py312"
 extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I"] # Error, Pyflakes, and Isort (import sorting)
+select = ["E", "F", "I", "ANN"] # Error, Pyflakes, Isort, and type annotations
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/*.py" = ["ANN"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+reportPrivateImportUsage = "none"
+include = [
+    "fof8-core/src",
+    "fof8-ml/src",
+    "fof8-gen/src",
+    "pipelines",
+    "scripts",
+]
+exclude = [
+    "**/tests",
+    "notebooks",
+    "**/*.ipynb",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    ".venv",
+]

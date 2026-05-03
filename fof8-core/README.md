@@ -4,7 +4,7 @@ The central engine for the `fof8-scout` monorepo. This package provides shared d
 
 ## Role and Capabilities
 
-`fof8-core` serves as the single source of truth for how FOF8 data is interpreted and processed across the repository. It is used by `fof8-gen` for data collection decisions and by `fof8-experimentation` for machine learning modeling.
+`fof8-core` serves as the single source of truth for how FOF8 data is interpreted and processed across the repository. It is used by `fof8-gen` for data collection decisions and by `fof8-ml` for machine learning modeling.
 
 - **Data Loading (`FOF8Loader`)**: Multi-year CSV scanning with automatic year injection and memory-efficient schema enforcement.
 - **Domain Schemas**: Standardized Polars schemas using downcasting (`Int8`/`Int16`) and categorical types to handle 100+ years of simulation data in memory.
@@ -14,13 +14,17 @@ The central engine for the `fof8-scout` monorepo. This package provides shared d
 
 ## Installation
 
-This package is a member of the `fof8-scout` uv workspace. It is automatically available to other modules (like `fof8-experimentation`) when the workspace is synced.
+This package is a member of the `fof8-scout` uv workspace. It is automatically available to other modules (like `fof8-ml`) when the workspace is synced.
 
 ## Usage
 
 ```python
 import polars as pl
-from fof8_core import FOF8Loader, get_draft_class, get_career_outcomes
+from fof8_core import FOF8Loader
+from fof8_core.features.draft_class import get_draft_class
+from fof8_core.targets.career import get_career_outcomes
+from fof8_core.targets.financial import get_annual_financials
+from fof8_core.targets.registry import get_target
 
 # Initialize the loader
 loader = FOF8Loader(base_path="./data", league_name="DRAFT003")
@@ -30,7 +34,16 @@ features_df = get_draft_class(loader, year=2050)
 
 # Load annual financial data for longitudinal analysis (VORP support)
 financials_df = get_annual_financials(loader)
+
+# Or resolve a named target via the registry
+career_df = get_target("career_outcomes", loader)
 ```
+
+## Extension Points
+
+- Add a feature group in `fof8_core/features/` and compose it from `draft_class.py`.
+- Add a target in `fof8_core/targets/` and register it in `fof8_core.targets.registry`.
+- See [`docs/architecture_extensions.md`](../docs/architecture_extensions.md) for the full step-by-step guide.
 
 ## Development
 

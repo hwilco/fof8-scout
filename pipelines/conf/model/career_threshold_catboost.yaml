@@ -1,0 +1,15 @@
+name: "catboost_career_threshold"
+params:
+  iterations: 3000
+  learning_rate: 0.03032307975089054
+  depth: 8
+  loss_function: "Logloss"
+  eval_metric: "PRAUC"
+  early_stopping_rounds: 50
+  l2_leaf_reg: 13.806600572499796
+  random_strength: 2.8282983506502624
+  auto_class_weights: "Balanced"
+  colsample_bylevel: 0.6339374482513506
+  one_hot_max_size: 6
+  min_data_in_leaf: 89
+  bagging_temperature: 1.0184059039570155

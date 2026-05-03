@@ -1,0 +1,8 @@
+# Ground Truth Data Store Paths
+# Ground Truth Data Store Paths
+league_name: "DRAFT005"                           # The specific FOF8 simulation league directory
+raw_path: "fof8-gen/data/raw"                      # Root path for raw CSV extracts
+processed_dir: "fof8-ml/data/processed"           # Directory for intermediate Parquet artifacts
+features_path: "fof8-ml/data/processed/features.parquet" # Primary materialized data store for training
+
+active_team_id: null                              # Optional: ID of the user's team for scout filtering (null = auto-discover)

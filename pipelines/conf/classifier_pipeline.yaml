@@ -1,0 +1,89 @@
+defaults:
+  - _self_
+  - data: fof8_base
+  - target: economic
+  - split: chronological
+  - cv: kfold_5
+  - model: s1_catboost
+  - hparams_search: s1_catboost_career_threshold
+  - experiment: null
+  - override hydra/sweeper: optuna
+
+# --- Experiment Metadata ---
+experiment_name: "S1_Sieve_Classifier"
+
+# --- Execution Settings ---
+quiet_sweep: true            # If true, suppresses non-essential output during sweeps
+use_gpu: false               # Enable GPU acceleration for supported models
+seed: 42                     # Global random seed
+
+# --- Data Slicing & Feature Logic ---
+positions: "all"
+mask_positional_features: true
+include_features: null
+exclude_features: []
+ablation:
+  toggles:
+    no_position: false
+    no_combine: false
+    no_interviewed: true
+    no_zscores: false
+    no_scout: true
+    no_delta: true
+  toggle_to_group:
+    no_position: no_position
+    no_combine: no_combine
+    no_interviewed: no_interviewed
+    no_zscores: no_zscores
+    no_scout: no_scout
+    no_delta: no_delta
+  groups:
+    no_position:
+      - "Position"
+    no_combine:
+      - "Dash"
+      - "Strength"
+      - "Agility"
+      - "Jump"
+      - "Position_Specific"
+      - "Height"
+      - "Weight"
+    no_interviewed:
+      - "Interviewed"
+    no_zscores:
+      - "*_Z"
+    no_scout:
+      - "Scout_*"
+    no_delta:
+      - "Delta_*"
+  invalid_combinations: []
+
+# --- Optimization Targets ---
+optimization:
+  metric: "s1_oof_pr_auc"
+  direction: "maximize"
+
+diagnostics:
+  log_importance: true
+  log_shap: true
+
+tags:
+  version: "3.0"
+  type: "sieve_classifier"
+
+hydra:
+  job:
+    chdir: True
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
+  sweeper:
+    direction: ${optimization.direction}
+    study_name: s1_classifier_v1
+    n_trials: 20
+    sampler:
+      _target_: optuna.samplers.TPESampler
+      seed: 42
+      multivariate: true

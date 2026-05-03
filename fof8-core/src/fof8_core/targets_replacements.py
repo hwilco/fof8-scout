@@ -1,8 +1,10 @@
 """
-Strategies for calculating replacement-level value for use in Value Over Replacement Player (VORP) metrics.
+Strategies for calculating replacement-level value for use in
+Value Over Replacement Player (VORP) metrics.
 """
 
 from typing import Callable
+
 import polars as pl
 
 from .schemas import POSITION_GROUPS
@@ -12,7 +14,8 @@ ReplacementStrategy = Callable[[pl.LazyFrame], pl.LazyFrame]
 
 
 def strategy_25th_percentile(lf_av: pl.LazyFrame) -> pl.LazyFrame:
-    """Calculates replacement level as the 25th percentile of active producers (AV > 0), per position group."""
+    """Calculates replacement level as the 25th percentile of active producers
+    (AV > 0), per position group."""
     baseline = (
         lf_av.filter(pl.col("Season_AV") > 0)
         .group_by(["Year", "Position_Group"])
@@ -96,23 +99,26 @@ def strategy_n_plus_one(lf_av: pl.LazyFrame) -> pl.LazyFrame:
 
 def strategy_hybrid_baseline(lf_av: pl.LazyFrame) -> pl.LazyFrame:
     """
+    IMPORTANT: This method is currently broken due to some oddities in player snap counts
+    (e.g. QBs in DRAFT005).
+
     Calculates replacement level using a rate-based (per-snap) bifurcated approach
     to solve the 'bench penalty' in zero-injury simulations.
 
     - Ironman Positions (QB, OL, Specialists): Uses the median AV/Snap of the 5 worst true starters.
-    - Rotational Positions (RB, WR, DL, etc.): Uses the median AV/Snap of the 5th-25th percentile of snaps.
+    - Rotational Positions (RB, WR, DL, etc.):
+      Uses the median AV/Snap of the 5th-25th percentile of snaps.
     """
 
     ironman_starters = {"QB": 1, "C": 1, "G": 2, "T": 2, "K": 1, "P": 1, "LS": 1}
-    NUM_TEAMS = 32
 
-    ironman_counts = pl.DataFrame(
-        [
-            {"Position_Group": pos, "League_Starters": count * NUM_TEAMS}
-            for pos, count in ironman_starters.items()
-        ],
-        schema={"Position_Group": POSITION_GROUPS, "League_Starters": pl.Int32},
-    ).lazy()
+    # ironman_counts = pl.DataFrame(
+    #     [
+    #         {"Position_Group": pos, "League_Starters": count * NUM_TEAMS}
+    #         for pos, count in ironman_starters.items()
+    #     ],
+    #     schema={"Position_Group": POSITION_GROUPS, "League_Starters": pl.Int32},
+    # ).lazy()
 
     # 1. Prepare player-level snap and rate data
     lf = lf_av.with_columns(

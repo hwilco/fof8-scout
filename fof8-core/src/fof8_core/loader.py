@@ -1,8 +1,16 @@
+"""Core CSV loader for FOF8 league data across one or more simulation years."""
+
+import csv
 from pathlib import Path
-from typing import Optional
+from typing import Any
 
 import polars as pl
 
+from .loader_team_resolution import (
+    read_metadata_team_fields,
+    resolve_team_id_from_known_names,
+    resolve_team_id_from_team_information,
+)
 from .schemas import SCHEMAS
 
 
@@ -12,7 +20,7 @@ class FOF8Loader:
     Handles directory navigation, schema enforcement, and year extraction.
     """
 
-    def __init__(self, base_path: str | Path, league_name: str):
+    def __init__(self, base_path: str | Path, league_name: str) -> None:
         """
         Initializes the loader.
 
@@ -46,7 +54,7 @@ class FOF8Loader:
             raise ValueError(f"No year directories found in {self.league_dir}")
         return min(years)
 
-    def scan_file(self, filename: str, year: Optional[int] = None) -> pl.LazyFrame:
+    def scan_file(self, filename: str, year: int | None = None) -> pl.LazyFrame:
         """
         Scans a specific CSV file into a Polars LazyFrame.
         Supports wildcard filenames (e.g., 'player_ratings_season_*.csv').
@@ -83,22 +91,54 @@ class FOF8Loader:
 
         return pl.concat(lfs)
 
-    def _scan_single_file(self, path: Path, schema_override: dict) -> pl.LazyFrame:
+    def _scan_single_file(self, path: Path, schema_override: dict[str, Any]) -> pl.LazyFrame:
         """Helper to scan a single CSV file and apply cleaning logic."""
+        prefixes_to_strip = ("Season_Statistics", "Playoff_Statistics")
+        rename_aliases = {"Player_ID": "Player_IDPlayer_ID"}
+
+        with path.open(newline="", encoding="utf-8") as csv_file:
+            raw_columns = next(csv.reader(csv_file), [])
+        raw_column_set = set(raw_columns)
+
+        scan_schema_overrides: dict[str, Any] = {
+            # Force columns that are notorious for mixed types to String immediately.
+            # These columns are known to vary in representation across exports.
+            "Injury_Type": pl.String,
+            "Season_Statistics_-_Injury_Type": pl.String,
+        }
+
+        deferred_schema_overrides: dict[str, Any] = {}
+        for col, dtype in schema_override.items():
+            if col in raw_column_set:
+                scan_schema_overrides[col] = dtype
+                continue
+
+            alias = rename_aliases.get(col)
+            if alias and alias in raw_column_set:
+                scan_schema_overrides[alias] = dtype
+                continue
+
+            prefixed_candidates = [f"{prefix}_-_{col}" for prefix in prefixes_to_strip]
+            matched_prefixed = next(
+                (name for name in prefixed_candidates if name in raw_column_set), None
+            )
+            if matched_prefixed:
+                scan_schema_overrides[matched_prefixed] = dtype
+                continue
+
+            deferred_schema_overrides[col] = dtype
+
         lf = pl.scan_csv(
             path,
             infer_schema_length=10000,
             null_values=["", "null", "None", "N/A"],
             ignore_errors=True,
-            # Force columns that are notorious for mixed types to String immediately
-            dtypes={"Injury_Type": pl.String, "Season_Statistics_-_Injury_Type": pl.String},
+            schema_overrides=scan_schema_overrides,
         )
 
         # Clean up column names
         column_names = lf.collect_schema().names()
         column_map = {}
-        prefixes_to_strip = ["Season_Statistics", "Playoff_Statistics"]
-
         for col in column_names:
             new_name = col
             if col == "Player_IDPlayer_ID":
@@ -116,10 +156,16 @@ class FOF8Loader:
 
         # Apply schema overrides as casts
         column_names_post_rename = lf.collect_schema().names()
+
+        # Drop unpopulated Future_ columns
+        future_cols = [col for col in column_names_post_rename if "Future_" in col]
+        if future_cols:
+            lf = lf.drop(future_cols)
+
         casts = [
             pl.col(col).cast(dtype)
-            for col, dtype in schema_override.items()
-            if col in column_names_post_rename
+            for col, dtype in deferred_schema_overrides.items()
+            if col in column_names_post_rename and col not in future_cols
         ]
         if casts:
             lf = lf.with_columns(casts)
@@ -151,25 +197,21 @@ class FOF8Loader:
         # item() returns the first value of the first column as a python type
         return int(cap_value) * 10_000
 
-    def get_active_team_id(self) -> Optional[int]:
+    def get_active_team_id(self) -> int | None:
         """
-        Dynamically discovers the active team ID from the league metadata.
-        Uses metadata.yaml to find the team name and resolves it via team_information.csv.
+        Resolve the active team ID for the league.
+
+        Resolution order:
+        1. Explicit ``team_id`` in ``metadata.yaml``
+        2. Known-name lookup from a static mapping
+        3. Fallback lookup in ``team_information.csv`` from earliest sim year
+
+        Returns:
+            Team ID if it can be resolved, otherwise ``None``.
         """
         metadata_path = self.league_dir / "metadata.yaml"
-        if not metadata_path.exists():
-            return None
-
-        # Basic text parsing to avoid a PyYAML dependency in the core package
-        team_name = None
-        team_id = None
         try:
-            for line in metadata_path.read_text().splitlines():
-                if "team_id:" in line:
-                    team_id = int(line.split(":", 1)[1].strip())
-                    break
-                if "team:" in line:
-                    team_name = line.split(":", 1)[1].strip()
+            team_id, team_name = read_metadata_team_fields(metadata_path)
         except Exception:
             return None
 
@@ -177,69 +219,18 @@ class FOF8Loader:
         if team_id is not None:
             return team_id
 
-        if not team_name:
-            return None
-
-        # Hardcoded lookup first to resolve ambiguity (like New York)
-        team_ids = {
-            "arizona cardinals": 0,
-            "atlanta falcons": 1,
-            "baltimore ravens": 2,
-            "buffalo bills": 3,
-            "carolina panthers": 4,
-            "chicago bears": 5,
-            "cincinnati bengals": 6,
-            "dallas cowboys": 7,
-            "denver broncos": 8,
-            "detroit lions": 9,
-            "green bay packers": 10,
-            "indianapolis colts": 11,
-            "jacksonville jaguars": 12,
-            "kansas city chiefs": 13,
-            "miami dolphins": 14,
-            "minnesota vikings": 15,
-            "new england patriots": 16,
-            "new orleans saints": 17,
-            "new york giants": 18,
-            "new york jets": 19,
-            "las vegas raiders": 20,
-            "oakland raiders": 20,
-            "philadelphia eagles": 21,
-            "pittsburgh steelers": 22,
-            "los angeles rams": 23,
-            "st. louis rams": 23,
-            "seattle seahawks": 24,
-            "san francisco 49ers": 25,
-            "los angeles chargers": 26,
-            "san diego chargers": 26,
-            "tampa bay buccaneers": 27,
-            "tennessee titans": 28,
-            "washington commanders": 29,
-            "washington redskins": 29,
-            "washington football team": 29,
-            "cleveland browns": 30,
-            "houston texans": 31,
-        }
-
-        known_id = team_ids.get(team_name.lower())
+        known_id = resolve_team_id_from_known_names(team_name)
         if known_id is not None:
             return known_id
 
-        # Resolve name to ID using the first available year's team info as a fallback
         try:
-            years = sorted(
-                [p.name for p in self.league_dir.iterdir() if p.is_dir() and p.name.isdigit()]
+            # Resolve name to ID using the first available year's team info as fallback.
+            return resolve_team_id_from_team_information(
+                league_dir=self.league_dir,
+                scan_file=self.scan_file,
+                team_name=team_name,
             )
-            if not years:
-                return None
-
-            df_teams = self.scan_file("team_information.csv", year=int(years[0])).collect()
-
-            for row in df_teams.to_dicts():
-                city = row.get("Home_City", "")
-                if city and city in team_name:
-                    return int(row.get("Team"))
         except Exception:
-            pass
+            return None
 
         return None
