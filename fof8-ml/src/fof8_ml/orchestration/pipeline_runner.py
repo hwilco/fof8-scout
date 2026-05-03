@@ -4,9 +4,9 @@ import os
 from dataclasses import dataclass
 from typing import Mapping
 
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf, open_dict
 
-from fof8_ml.orchestration.data_loader import DataLoader
+from fof8_ml.orchestration.data_loader import DataLoader, resolve_feature_ablation_config
 from fof8_ml.orchestration.experiment_logger import ExperimentLogger
 from fof8_ml.orchestration.pipeline_types import PreparedData
 from fof8_ml.orchestration.sweep_manager import SweepContext, SweepManager
@@ -39,6 +39,13 @@ def build_pipeline_context(cfg: DictConfig, entrypoint_file: str) -> PipelineCon
 
     sweep_mgr = SweepManager(logger.client, logger.experiment_id, exp_root)
     sweep_context = sweep_mgr.detect_sweep(cfg)
+
+    ablation = resolve_feature_ablation_config(cfg)
+    with open_dict(cfg):
+        OmegaConf.update(cfg, "include_features", ablation["include_features"], merge=False)
+        OmegaConf.update(cfg, "exclude_features", ablation["exclude_features"], merge=False)
+        OmegaConf.update(cfg, "ablation_signature", ablation["signature"], merge=False)
+        OmegaConf.update(cfg, "ablation_enabled_toggles", ablation["enabled_toggles"], merge=False)
 
     loader = DataLoader(exp_root, quiet=sweep_context.quiet)
     data = loader.load(cfg)

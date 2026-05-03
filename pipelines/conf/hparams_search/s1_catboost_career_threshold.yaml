@@ -42,10 +42,7 @@ search_space:
     high: 5.0
   # -----------------------------------------------
 
-  exclude_features:
+  # Feature ablation toggles (safe for Optuna JSON serialization).
+  ablation.toggles.no_position:
     type: categorical
-    choices:
-      - ["Interviewed"]                                # Use all features
-      - ["Position", "Scout_*", "Delta_*", "Interviewed"]                        # Remove position (leaving position group)
-      - ["*_Z", "Scout_*", "Delta_*", "Interviewed"]                             # Remove z-scores
-      - ["Dash", "Strength", "Agility", "Jump", "Position_Specific", "Height", "Weight", "Scout_*", "Delta_*", "Interviewed"]  # Remove combine physical and athletic features
+    choices: [true, false]

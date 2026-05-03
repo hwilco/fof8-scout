@@ -2,7 +2,8 @@ import fnmatch
 import hashlib
 import json
 import os
-from typing import Any, Dict, List, Optional
+from collections.abc import Iterable
+from typing import Any, Dict, List, Optional, cast
 
 import polars as pl
 from fof8_core.features.position_masks import apply_position_mask
@@ -25,6 +26,74 @@ def _get_data_cache_cfg_hash(data_cfg: Dict[str, Any]) -> str:
     """Create a deterministic hash for cache keying across processes."""
     serialized = json.dumps(data_cfg, sort_keys=True, default=str)
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _coerce_str_list(raw: object) -> List[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        return [raw]
+    if not isinstance(raw, Iterable):
+        return [str(raw)]
+    return [str(v) for v in list(raw)]
+
+
+def resolve_feature_ablation_config(cfg: DictConfig) -> dict[str, Any]:
+    """Resolve include/exclude feature lists from base lists + optional ablation toggles."""
+    include_features = _coerce_str_list(cfg.get("include_features"))
+    exclude_features = _coerce_str_list(cfg.get("exclude_features"))
+    enabled_toggles: List[str] = []
+
+    ablation_cfg = cfg.get("ablation")
+    if ablation_cfg:
+        toggles = cast(dict[str, Any], ablation_cfg.get("toggles", {}))
+        groups = cast(dict[str, Any], ablation_cfg.get("groups", {}))
+        toggle_to_group = cast(dict[str, Any], ablation_cfg.get("toggle_to_group", {}))
+        invalid_combinations = cast(list[Any], ablation_cfg.get("invalid_combinations", []))
+
+        enabled_toggles = [k for k, v in toggles.items() if bool(v)]
+        for toggle_name in enabled_toggles:
+            if toggle_name not in toggle_to_group:
+                raise ValueError(
+                    f"ablation.toggle_to_group is missing mapping for enabled toggle "
+                    f"'{toggle_name}'"
+                )
+            group_name = str(toggle_to_group[toggle_name])
+            if group_name not in groups:
+                raise ValueError(
+                    f"ablation.groups is missing group '{group_name}' "
+                    f"mapped from toggle '{toggle_name}'"
+                )
+            exclude_features.extend(_coerce_str_list(groups[group_name]))
+
+        enabled_set = set(enabled_toggles)
+        for combo in invalid_combinations:
+            combo_list = [str(v) for v in list(combo)]
+            if combo_list and set(combo_list).issubset(enabled_set):
+                raise ValueError(
+                    f"Invalid ablation toggle combination enabled: {combo_list}. "
+                    "Adjust ablation.toggles or ablation.invalid_combinations."
+                )
+
+    include_features = list(dict.fromkeys(include_features))
+    exclude_features = list(dict.fromkeys(exclude_features))
+
+    signature_payload = {
+        "include": sorted(include_features),
+        "exclude": sorted(exclude_features),
+        "toggles": sorted(enabled_toggles),
+    }
+    signature_hash = hashlib.sha256(
+        json.dumps(signature_payload, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:12]
+    signature = f"{signature_hash}:{','.join(enabled_toggles) if enabled_toggles else 'none'}"
+
+    return {
+        "include_features": include_features or None,
+        "exclude_features": exclude_features or None,
+        "enabled_toggles": enabled_toggles,
+        "signature": signature,
+    }
 
 
 class DataLoader:

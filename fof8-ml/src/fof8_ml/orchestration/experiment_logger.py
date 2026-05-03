@@ -25,6 +25,21 @@ from fof8_ml.orchestration.pipeline_types import PreparedData, Stage1Result
 _TRACKING_INITIALIZED = False
 _USING_REMOTE = None
 
+STAGE_RUN_NAMES = {
+    "stage1": "Stage1_Sieve_Classifier",
+    "stage2": "Stage2_Intensity_Regressor",
+}
+
+
+def resolve_stage_run_name(stage_name: str) -> str:
+    """Return the canonical nested MLflow run name for a pipeline stage."""
+    normalized_stage = stage_name.strip().lower()
+    if normalized_stage not in STAGE_RUN_NAMES:
+        raise ValueError(
+            f"Unsupported stage '{stage_name}'. Expected one of: {sorted(STAGE_RUN_NAMES.keys())}"
+        )
+    return STAGE_RUN_NAMES[normalized_stage]
+
 
 def flatten_dict(d: dict, parent_key: str = "", sep: str = ".") -> dict[str, object]:
     items: list[tuple[str, object]] = []
@@ -155,6 +170,14 @@ class ExperimentLogger:
             tags = cast(dict[str, Any], OmegaConf.to_container(cfg.tags, resolve=True))
             mlflow.set_tags(tags)
 
+        if cfg.get("ablation_signature"):
+            mlflow.set_tag("ablation.signature", str(cfg.ablation_signature))
+        if cfg.get("ablation_enabled_toggles"):
+            toggles = [str(t) for t in list(cfg.ablation_enabled_toggles)]
+            mlflow.set_tag(
+                "ablation.enabled_toggles", ",".join(sorted(toggles)) if toggles else "none"
+            )
+
         if is_sweep and trial_num is not None:
             mlflow.set_tag("trial_num", str(trial_num))
 
@@ -246,9 +269,10 @@ class ExperimentLogger:
 
     def start_stage_run(self, stage_name: str, ctx: object) -> mlflow.ActiveRun:
         """Start a nested MLflow run for a pipeline stage."""
-        run_name = f"Stage{stage_name.capitalize()}"
+        normalized_stage = stage_name.strip().lower()
+        run_name = resolve_stage_run_name(normalized_stage)
         active_run = mlflow.start_run(run_name=run_name, nested=True)
-        mlflow.set_tag("model_stage", stage_name.lower())
+        mlflow.set_tag("model_stage", normalized_stage)
         sweep_name = getattr(ctx, "sweep_name", None)
         sweep_run_id = getattr(ctx, "sweep_run_id", None)
         if sweep_name:

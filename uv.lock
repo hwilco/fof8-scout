@@ -1347,6 +1347,9 @@ dev = [
     { name = "pytest" },
     { name = "pytest-mock" },
     { name = "ruff" },
+    { name = "seaborn" },
+    { name = "types-pyautogui" },
+    { name = "types-seaborn" },
 ]
 mlops = [
     { name = "dagshub" },
@@ -1360,10 +1363,13 @@ mlops = [
 dev = [
     { name = "nbstripout", specifier = ">=0.8.1,<1" },
     { name = "pre-commit", specifier = ">=4.3.0,<5" },
-    { name = "pyright", specifier = ">=1.1.408,<2" },
+    { name = "pyright", specifier = ">=1.1.409,<2" },
     { name = "pytest", specifier = ">=9.0.0,<10" },
     { name = "pytest-mock", specifier = ">=3.15.1,<4" },
     { name = "ruff", specifier = ">=0.15.11" },
+    { name = "seaborn", specifier = ">=0.13.2" },
+    { name = "types-pyautogui", specifier = ">=0.9.3.20260408" },
+    { name = "types-seaborn", specifier = ">=0.13.2.20260408" },
 ]
 mlops = [
     { name = "dagshub", specifier = ">=0.7.0,<1" },
@@ -3083,6 +3089,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pandas-stubs"
+version = "3.0.0.260204"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/27/1d/297ff2c7ea50a768a2247621d6451abb2a07c0e9be7ca6d36ebe371658e5/pandas_stubs-3.0.0.260204.tar.gz", hash = "sha256:bf9294b76352effcffa9cb85edf0bed1339a7ec0c30b8e1ac3d66b4228f1fbc3", size = 109383, upload-time = "2026-02-04T15:17:17.247Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7c/2f/f91e4eee21585ff548e83358332d5632ee49f6b2dcd96cb5dca4e0468951/pandas_stubs-3.0.0.260204-py3-none-any.whl", hash = "sha256:5ab9e4d55a6e2752e9720828564af40d48c4f709e6a2c69b743014a6fcb6c241", size = 168540, upload-time = "2026-02-04T15:17:15.615Z" },
+]
+
+[[package]]
 name = "pandocfilters"
 version = "1.5.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3613,15 +3631,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/cb/04/2ba023d5f771b645f
 
 [[package]]
 name = "pyright"
-version = "1.1.408"
+version = "1.1.409"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "nodeenv" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/74/b2/5db700e52554b8f025faa9c3c624c59f1f6c8841ba81ab97641b54322f16/pyright-1.1.408.tar.gz", hash = "sha256:f28f2321f96852fa50b5829ea492f6adb0e6954568d1caa3f3af3a5f555eb684", size = 4400578, upload-time = "2026-01-08T08:07:38.795Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/51/4e/3aa27f74211522dba7e9cbc3e74de779c6d4b654c54e50a4840623be8014/pyright-1.1.409.tar.gz", hash = "sha256:986ee05beca9e077c165758ad123667c679e050059a2546aa02473930394bc93", size = 4430434, upload-time = "2026-04-23T11:02:03.799Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0c/82/a2c93e32800940d9573fb28c346772a14778b84ba7524e691b324620ab89/pyright-1.1.408-py3-none-any.whl", hash = "sha256:090b32865f4fdb1e0e6cd82bf5618480d48eecd2eb2e70f960982a3d9a4c17c1", size = 6399144, upload-time = "2026-01-08T08:07:37.082Z" },
+    { url = "https://files.pythonhosted.org/packages/16/6b/330d8ebae582b30c2959a1ef4c3bc344ebde48c2ff0c3f113c4710735e11/pyright-1.1.409-py3-none-any.whl", hash = "sha256:aa3ea228cab90c845c7a60d28db7a844c04315356392aa09fafcee98c8c22fb3", size = 6438161, upload-time = "2026-04-23T11:02:01.309Z" },
 ]
 
 [[package]]
@@ -4445,6 +4463,44 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/83/b8/9ebb531b6c2d377af08ac6746a5df3425b21853a5d2260876919b58a2a4a/typer-0.24.2.tar.gz", hash = "sha256:ec070dcfca1408e85ee203c6365001e818c3b7fffe686fd07ff2d68095ca0480", size = 119849, upload-time = "2026-04-22T17:45:34.413Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/39/d1/9484b497e0a0410b901c12b8251c3e746e1e863f7d28419ffe06f7892fda/typer-0.24.2-py3-none-any.whl", hash = "sha256:b618bc3d721f9a8d30f3e05565be26416d06e9bcc29d49bc491dc26aba674fa8", size = 55977, upload-time = "2026-04-22T17:45:33.055Z" },
+]
+
+[[package]]
+name = "types-pyautogui"
+version = "0.9.3.20260408"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "types-pyscreeze" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1c/05/b06731e564800a340a8c2a42756b70fe28f777c5465755c4a8a52994883e/types_pyautogui-0.9.3.20260408.tar.gz", hash = "sha256:05dc818585a8b364d76fda658aa9027e73a0c03c686eb87ba44544a3fcb67126", size = 9334, upload-time = "2026-04-08T04:37:35.589Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/db/99/4466971fae2e356d8407de21bb853dc9190f01de650e9a48b30aca7d2b5d/types_pyautogui-0.9.3.20260408-py3-none-any.whl", hash = "sha256:8129baa6332dff7ea9bc622b4250ba95fe1c048824b276ca7b886dd1516a6055", size = 8996, upload-time = "2026-04-08T04:37:34.462Z" },
+]
+
+[[package]]
+name = "types-pyscreeze"
+version = "1.0.1.20260408"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pillow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/fe/1d/0f61f07e4517e67345e1b5cb33f694850bd5f04475e167605b9373edf28f/types_pyscreeze-1.0.1.20260408.tar.gz", hash = "sha256:44bb92c8c25bfd3708da945fdef58f446fa2e7e4c8b9fdbd0441879a21103ebe", size = 9352, upload-time = "2026-04-08T04:36:18.565Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ba/af/ea4f258fb00988816da9a2846718f82ea6ef81f3851852f66ee903fc823a/types_pyscreeze-1.0.1.20260408-py3-none-any.whl", hash = "sha256:78c97a462380b646da144ee2c5aafc0dd12e7f0ea50f7c50436165d3a609498c", size = 8655, upload-time = "2026-04-08T04:36:17.692Z" },
+]
+
+[[package]]
+name = "types-seaborn"
+version = "0.13.2.20260408"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "pandas-stubs" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9c/48/f372e5d156fe57abd6ed8342567b63f5aa62312cba86e8f22f0636d53875/types_seaborn-0.13.2.20260408.tar.gz", hash = "sha256:bdc2b0666e446bc23aeeab5d968021a6e7849f017287a4eb56c3b78c87b5bfba", size = 29551, upload-time = "2026-04-08T04:34:45.852Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5f/3b/3547a97599d4a6378a1dadd5e9bdd491682dde89752befbb0bb47d8f66fa/types_seaborn-0.13.2.20260408-py3-none-any.whl", hash = "sha256:2f5480c0285a33d946993c8d64fa802344efec2e6e50979c2d5bb1b60a847e64", size = 40856, upload-time = "2026-04-08T04:34:44.971Z" },
 ]
 
 [[package]]

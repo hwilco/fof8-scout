@@ -13,7 +13,7 @@ defaults:
 experiment_name: "S2_Intensity_Regressor"
 
 # --- Execution Settings ---
-quiet_sweep: false           # If true, suppresses non-essential output during sweeps
+quiet_sweep: true            # If true, suppresses non-essential output during sweeps
 use_gpu: false               # Enable GPU acceleration for supported models
 seed: 42                     # Global random seed
 

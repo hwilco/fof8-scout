@@ -10,7 +10,7 @@ from hydra.core.hydra_config import HydraConfig
 from hydra.types import RunMode
 from omegaconf import DictConfig, OmegaConf
 
-from fof8_ml.orchestration.experiment_logger import preserve_cwd
+from fof8_ml.orchestration.experiment_logger import preserve_cwd, resolve_stage_run_name
 
 
 @dataclass
@@ -34,6 +34,30 @@ class SweepManager:
         self.client = client
         self.experiment_id = experiment_id
         self.exp_root = exp_root
+
+    def _champion_model_summary(self, cfg: DictConfig) -> dict[str, Any]:
+        cfg_container = cast(dict[str, Any], OmegaConf.to_container(cfg, resolve=True))
+        model_cfg = cfg_container.get("model")
+        if not isinstance(model_cfg, dict):
+            return {}
+
+        return {
+            "model_name": model_cfg.get("name"),
+            "model_family": model_cfg.get("family"),
+            "model_params": model_cfg.get("params", {}),
+        }
+
+    def _find_stage_run(self, parent_run_id: str, stage_name: str) -> Optional[str]:
+        run_name = resolve_stage_run_name(stage_name)
+        child_runs = self.client.search_runs(
+            experiment_ids=[self.experiment_id],
+            filter_string=f"tags.mlflow.parentRunId = '{parent_run_id}'",
+            max_results=100,
+        )
+        for run in child_runs:
+            if run.data.tags.get("mlflow.runName") == run_name:
+                return run.info.run_id
+        return None
 
     def detect_sweep(self, cfg: DictConfig) -> SweepContext:
         """Detect if we're in a multirun and find/create the parent sweep run."""
@@ -161,10 +185,7 @@ class SweepManager:
             self.client.log_metric(ctx.sweep_run_id, score_name, current_score)
             self.client.set_tag(ctx.sweep_run_id, "best_trial_id", pipeline_run_id)
 
-            cfg_container = cast(dict[str, Any], OmegaConf.to_container(cfg, resolve=True))
-            champ_params = {
-                k: v for k, v in cfg_container.items() if k in ["stage1_model", "stage2_model"]
-            }
+            champ_params = self._champion_model_summary(cfg)
             note_content = (
                 f"### 🏆 Current Sweep Champion\n"
                 f"- **Run ID:** `{pipeline_run_id}`\n"
@@ -181,9 +202,10 @@ class SweepManager:
             self.client.set_tag(pipeline_run_id, "champion", "true")
             self.client.set_tag(ctx.sweep_run_id, "best_params", str(champ_params))
 
-            if cfg.train_stage2 and cfg.stage2_model is not None:
+            stage2_run_id = self._find_stage_run(pipeline_run_id, "stage2")
+            if stage2_run_id is not None:
                 mlflow.register_model(
-                    model_uri=f"runs:/{pipeline_run_id}/stage2_model",
+                    model_uri=f"runs:/{stage2_run_id}/stage2_model",
                     name="fof8-scout-regressor",
                 )
 
@@ -228,9 +250,6 @@ class SweepManager:
         )
         print(f"BEST SO FAR:         {best_score:.4f} ({score_label}) [Trial {best_trial_num}]")
         if is_new_best:
-            cfg_container = cast(dict[str, Any], OmegaConf.to_container(cfg, resolve=True))
-            champ_params = {
-                k: v for k, v in cfg_container.items() if k in ["stage1_model", "stage2_model"]
-            }
+            champ_params = self._champion_model_summary(cfg)
             print(f"NEW CHAMPION PARAMS: {champ_params}")
         print("=" * 60 + "\n")

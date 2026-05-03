@@ -7,6 +7,7 @@ artifact from MLflow, then applies that schema contract before prediction.
 import json
 import os
 import random
+from typing import Optional
 
 import hydra
 import mlflow
@@ -18,8 +19,21 @@ from fof8_ml.data.schema import (
     FeatureSchema,
     FeatureSchemaError,
 )
+from fof8_ml.orchestration.experiment_logger import resolve_stage_run_name
 from hydra.utils import to_absolute_path
+from mlflow.entities import Run
 from omegaconf import DictConfig
+
+
+def resolve_stage1_run(
+    client: mlflow.tracking.MlflowClient, parent_run_id: str, experiment_ids: list[str]
+) -> Optional[Run]:
+    """Resolve the canonical Stage 1 nested run under a parent pipeline run."""
+    stage1_name = resolve_stage_run_name("stage1")
+    nested_runs = client.search_runs(
+        experiment_ids=experiment_ids, filter_string=f"tags.mlflow.parentRunId = '{parent_run_id}'"
+    )
+    return next((r for r in nested_runs if r.data.tags.get("mlflow.runName") == stage1_name), None)
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="classifier_pipeline")
@@ -50,20 +64,14 @@ def main(cfg: DictConfig) -> None:
     experiment_ids: list[str] = [str(e.experiment_id) for e in client.search_experiments()]
 
     # Find the Stage 1 nested run
-    nested_runs = client.search_runs(
-        experiment_ids=experiment_ids, filter_string=f"tags.mlflow.parentRunId = '{parent_run_id}'"
-    )
-
-    stage1_run = next(
-        (r for r in nested_runs if r.data.tags.get("mlflow.runName") == "Stage1_Sieve_Classifier"),
-        None,
-    )
+    stage1_name = resolve_stage_run_name("stage1")
+    stage1_run = resolve_stage1_run(client, parent_run_id, experiment_ids)
 
     if not stage1_run:
-        print(f"Could not find Stage 1 nested run for parent {parent_run_id}.")
+        print(f"Could not find Stage 1 nested run ({stage1_name}) for parent {parent_run_id}.")
         # Fallback: maybe the run_id provided IS the stage1 run?
         run_info = client.get_run(parent_run_id)
-        if run_info.data.tags.get("mlflow.runName") == "Stage1_Sieve_Classifier":
+        if run_info.data.tags.get("mlflow.runName") == stage1_name:
             stage1_run = run_info
         else:
             print("Failed to find Stage 1 model.")

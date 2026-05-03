@@ -10,14 +10,20 @@
     ],
     "mounts": [
         "source=${localEnv:HOME}/.gitconfig,target=/home/vscode/.gitconfig,type=bind,consistency=cached",
-        "source=/mnt/c/Users/${localEnv:USER}/.ssh,target=/home/vscode/.ssh-host,type=bind,readonly,consistency=cached"
+        "source=/mnt/c/Users/${localEnv:USER}/.ssh,target=/home/vscode/.ssh-host,type=bind,readonly,consistency=cached",
+        // Mount WSL .codex folder into the container
+        "source=${localEnv:HOME}/.codex,target=/home/vscode/.codex,type=bind"
     ],
     "containerEnv": {
         "EDITOR": "nano",
         "HOST_USER": "${localEnv:USER}",
         "GIT_CONFIG_COUNT": "1",
         "GIT_CONFIG_KEY_0": "safe.directory",
-        "GIT_CONFIG_VALUE_0": "*"
+        "GIT_CONFIG_VALUE_0": "*",
+        "CODEX_HOME": "/home/vscode/.codex"
+    },
+    "remoteEnv": {
+        "CODEX_HOME": "/home/vscode/.codex"
     },
     "customizations": {
         "vscode": {
@@ -30,9 +36,13 @@
                 "ms-toolsai.jupyter",
                 "ms-python.python",
                 "charliermarsh.ruff",
-                "tamasfe.even-better-toml"
+                "tamasfe.even-better-toml",
+                "openai.chatgpt"
             ]
         }
+    },
+    "features": {
+        "ghcr.io/devcontainers/features/node:1": {}
     },
     "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
     // Install the experimentation package with notebook/viz groups and root default groups.

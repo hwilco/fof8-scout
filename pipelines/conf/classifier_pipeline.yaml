@@ -13,7 +13,7 @@ defaults:
 experiment_name: "S1_Sieve_Classifier"
 
 # --- Execution Settings ---
-quiet_sweep: false           # If true, suppresses non-essential output during sweeps
+quiet_sweep: true            # If true, suppresses non-essential output during sweeps
 use_gpu: false               # Enable GPU acceleration for supported models
 seed: 42                     # Global random seed
 
@@ -21,7 +21,42 @@ seed: 42                     # Global random seed
 positions: "all"
 mask_positional_features: true
 include_features: null
-exclude_features: ["Position", "Scout_*", "Delta_*", "Interviewed"]
+exclude_features: []
+ablation:
+  toggles:
+    no_position: false
+    no_combine: false
+    no_interviewed: true
+    no_zscores: false
+    no_scout: true
+    no_delta: true
+  toggle_to_group:
+    no_position: no_position
+    no_combine: no_combine
+    no_interviewed: no_interviewed
+    no_zscores: no_zscores
+    no_scout: no_scout
+    no_delta: no_delta
+  groups:
+    no_position:
+      - "Position"
+    no_combine:
+      - "Dash"
+      - "Strength"
+      - "Agility"
+      - "Jump"
+      - "Position_Specific"
+      - "Height"
+      - "Weight"
+    no_interviewed:
+      - "Interviewed"
+    no_zscores:
+      - "*_Z"
+    no_scout:
+      - "Scout_*"
+    no_delta:
+      - "Delta_*"
+  invalid_combinations: []
 
 # --- Optimization Targets ---
 optimization:
