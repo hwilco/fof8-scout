@@ -55,7 +55,8 @@ class CatBoostClassifierWrapper(CatBoostWrapper):
         # GPU configuration
         if self.use_gpu and torch.cuda.is_available():
             params_dict["task_type"] = "GPU"
-            params_dict["devices"] = "0"
+            if "devices" in params_dict:
+                params_dict["devices"] = str(params_dict["devices"])
 
         # Prevent verbosity conflict
         if not any(
@@ -115,11 +116,12 @@ class CatBoostRegressorWrapper(CatBoostWrapper):
         # GPU configuration
         if self.use_gpu and torch.cuda.is_available():
             clean_params["task_type"] = "GPU"
-            clean_params["devices"] = "0"
+            if "devices" in clean_params:
+                clean_params["devices"] = str(clean_params["devices"])
 
-        for key in ["loss_function", "eval_metric", "iterations", "auto_class_weights"]:
+        for key in ["eval_metric", "iterations", "auto_class_weights"]:
             clean_params.pop(key, None)
-        clean_params["loss_function"] = "RMSE"
+        clean_params.setdefault("loss_function", "RMSE")
 
         # Prevent verbosity conflict
         if not any(
