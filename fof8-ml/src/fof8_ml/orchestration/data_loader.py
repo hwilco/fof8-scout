@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, cast
 import polars as pl
 from fof8_core.features.position_masks import apply_position_mask
 from fof8_core.loader import FOF8Loader
+from fof8_core.targets.economic import ECONOMIC_LEAKAGE_COLUMNS
 from omegaconf import DictConfig
 
 from fof8_ml.orchestration.pipeline_types import PreparedData, TimelineInfo
@@ -118,7 +119,6 @@ class DataLoader:
             "buffer": cfg.split.right_censor_buffer,
             "test_pct": cfg.split.test_split_pct,
             "mask": cfg.mask_positional_features,
-            "leakage_drop_cols": sorted(list(cfg.target.leakage_prevention.drop_cols)),
         }
         cfg_hash = _get_data_cache_cfg_hash(data_cfg)
 
@@ -164,51 +164,11 @@ class DataLoader:
 
         df = pl.read_parquet(features_file)
 
-        # --- Runtime Target Derivation / Migration Safety ---
-        # Canonical source for these target semantics in newly processed data:
-        # fof8_core.targets.economic.get_economic_targets
-        if "Career_Merit_Cap_Share" not in df.columns:
+        missing_target_cols = sorted(c for c in ECONOMIC_LEAKAGE_COLUMNS if c not in df.columns)
+        if missing_target_cols:
             raise ValueError(
-                "Processed features are missing required target source column "
-                "'Career_Merit_Cap_Share'. Re-run feature processing."
-            )
-        if "DPO" not in df.columns:
-            raise ValueError(
-                "Processed features are missing required target source column 'DPO'. "
-                "Re-run feature processing."
-            )
-
-        df = df.with_columns(
-            [
-                pl.col("Career_Merit_Cap_Share").fill_null(0.0),
-                pl.col("DPO").fill_null(0.0),
-            ]
-        )
-
-        if "Positive_Career_Merit_Cap_Share" not in df.columns:
-            df = df.with_columns(
-                pl.col("Career_Merit_Cap_Share")
-                .clip(lower_bound=0.0)
-                .alias("Positive_Career_Merit_Cap_Share")
-            )
-        if "Positive_DPO" not in df.columns:
-            df = df.with_columns(pl.col("DPO").clip(lower_bound=0.0).alias("Positive_DPO"))
-        if "Economic_Success" not in df.columns:
-            df = df.with_columns(
-                (pl.col("Career_Merit_Cap_Share") > 0).alias("Economic_Success").cast(pl.Int8)
-            )
-        if "Cleared_Sieve" not in df.columns:
-            df = df.with_columns(
-                (pl.col("Career_Merit_Cap_Share") > cfg.target.classifier_sieve.merit_threshold)
-                .alias("Cleared_Sieve")
-                .cast(pl.Int8)
-            )
-        elif cfg.target.classifier_sieve.target_col == "Cleared_Sieve":
-            # Keep threshold-driven behavior explicit when this profile is selected.
-            df = df.with_columns(
-                (pl.col("Career_Merit_Cap_Share") > cfg.target.classifier_sieve.merit_threshold)
-                .alias("Cleared_Sieve")
-                .cast(pl.Int8)
+                "Processed features are missing economic target columns "
+                f"{missing_target_cols}. Re-run feature processing."
             )
 
         if cfg.positions and cfg.positions != "all":
@@ -235,14 +195,9 @@ class DataLoader:
         target_cols = [
             cfg.target.classifier_sieve.target_col,
             cfg.target.regressor_intensity.target_col,
-        ] + list(cfg.target.leakage_prevention.drop_cols)
+            *ECONOMIC_LEAKAGE_COLUMNS,
+        ]
         target_cols = list(dict.fromkeys(target_cols))
-        missing_target_cols = sorted(c for c in target_cols if c not in df.columns)
-        if missing_target_cols:
-            raise ValueError(
-                "Configured target/leakage columns are missing from processed features: "
-                f"{missing_target_cols}. Re-run feature processing or adjust target config."
-            )
         feature_cols = [c for c in df.columns if c not in metadata_cols and c not in target_cols]
 
         X_train = train_df.select(feature_cols)

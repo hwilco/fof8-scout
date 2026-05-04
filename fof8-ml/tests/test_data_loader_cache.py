@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import polars as pl
 import pytest
+from fof8_core.targets.economic import ECONOMIC_LEAKAGE_COLUMNS
 from fof8_ml.orchestration.data_loader import (
     _GLOBAL_DATA_CACHE,
     DataLoader,
@@ -49,7 +50,6 @@ def _make_cfg(**overrides):
                     "target_space": "raw",
                     "target_family": "economic",
                 },
-                "leakage_prevention": {"drop_cols": []},
             },
             "positions": "all",
             "split": {"right_censor_buffer": 3, "test_split_pct": 0.2},
@@ -73,7 +73,6 @@ def _data_cfg_for_hash(cfg):
         "buffer": cfg.split.right_censor_buffer,
         "test_pct": cfg.split.test_split_pct,
         "mask": cfg.mask_positional_features,
-        "leakage_drop_cols": sorted(list(cfg.target.leakage_prevention.drop_cols)),
     }
 
 
@@ -120,6 +119,9 @@ def test_feature_ablation_does_not_poison_cached_base_data(monkeypatch):
             "Positive_Career_Merit_Cap_Share": [0.8, 0.1],
             "Positive_DPO": [0.8, 0.1],
             "Economic_Success": [1, 1],
+            "Cleared_Sieve": [1, 1],
+            "Peak_Overall": [1.0, 1.0],
+            "Career_Games_Played": [16, 16],
         }
     )
 
@@ -142,8 +144,8 @@ def test_feature_ablation_does_not_poison_cached_base_data(monkeypatch):
     assert "feat_drop" in loaded_again.X_train.columns
 
 
-def test_loader_raises_clear_error_for_missing_configured_target_column(monkeypatch):
-    cfg = _make_cfg(**{"target.regressor_intensity.target_col": "Missing_Target"})
+def test_loader_raises_clear_error_for_missing_economic_target_column(monkeypatch):
+    cfg = _make_cfg()
     loader = DataLoader(exp_root=".", quiet=True)
 
     source_df = pl.DataFrame(
@@ -154,8 +156,7 @@ def test_loader_raises_clear_error_for_missing_configured_target_column(monkeypa
             "Last_Name": ["One"],
             "Position_Group": ["QB"],
             "feat_keep": [10],
-            "Career_Merit_Cap_Share": [0.8],
-            "DPO": [0.8],
+            "Career_Merit_Cap_Share": [0.8],  # Missing all other economic target/context columns
         }
     )
 
@@ -166,20 +167,12 @@ def test_loader_raises_clear_error_for_missing_configured_target_column(monkeypa
         lambda **_: SimpleNamespace(initial_sim_year=2019, final_sim_year=2025),
     )
 
-    with pytest.raises(ValueError, match="Configured target/leakage columns are missing"):
+    with pytest.raises(ValueError, match="Processed features are missing economic target columns"):
         loader.load(cfg)
 
 
 def test_loader_dedupes_target_columns_when_targets_overlap_leakage(monkeypatch):
-    cfg = _make_cfg(
-        **{
-            "target.leakage_prevention.drop_cols": [
-                "Positive_Career_Merit_Cap_Share",
-                "Economic_Success",
-                "DPO",
-            ]
-        }
-    )
+    cfg = _make_cfg()
     loader = DataLoader(exp_root=".", quiet=True)
 
     source_df = pl.DataFrame(
@@ -195,6 +188,9 @@ def test_loader_dedupes_target_columns_when_targets_overlap_leakage(monkeypatch)
             "Positive_Career_Merit_Cap_Share": [0.8, 0.1],
             "Positive_DPO": [0.8, 0.1],
             "Economic_Success": [1, 1],
+            "Cleared_Sieve": [1, 1],
+            "Peak_Overall": [1.0, 1.0],
+            "Career_Games_Played": [16, 16],
         }
     )
 
@@ -207,3 +203,4 @@ def test_loader_dedupes_target_columns_when_targets_overlap_leakage(monkeypatch)
 
     data = loader.load(cfg)
     assert len(data.target_columns) == len(set(data.target_columns))
+    assert set(ECONOMIC_LEAKAGE_COLUMNS).issubset(set(data.target_columns))

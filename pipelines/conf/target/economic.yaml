@@ -6,13 +6,3 @@ regressor_intensity:
   target_col: "Positive_Career_Merit_Cap_Share"
   target_space: "raw"
   target_family: "economic"
-leakage_prevention:
-  drop_cols:
-    - "Career_Merit_Cap_Share"
-    - "Positive_Career_Merit_Cap_Share"
-    - "Peak_Overall"
-    - "Career_Games_Played"
-    - "DPO"
-    - "Positive_DPO"
-    - "Economic_Success"
-    - "Cleared_Sieve"

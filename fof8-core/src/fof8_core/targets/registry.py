@@ -6,7 +6,7 @@ import polars as pl
 
 from fof8_core.loader import FOF8Loader
 
-TargetBuilder = Callable[[FOF8Loader], pl.DataFrame]
+TargetBuilder = Callable[..., pl.DataFrame]
 TARGET_REGISTRY: dict[str, TargetBuilder] = {}
 _BUILTINS_REGISTERED = False
 
@@ -44,7 +44,7 @@ def _register_builtin_targets() -> None:
     _BUILTINS_REGISTERED = True
 
 
-def get_target(name: str, loader: FOF8Loader) -> pl.DataFrame:
+def get_target(name: str, loader: FOF8Loader, **kwargs: object) -> pl.DataFrame:
     _register_builtin_targets()
     try:
         target_fn = TARGET_REGISTRY[name]
@@ -52,4 +52,4 @@ def get_target(name: str, loader: FOF8Loader) -> pl.DataFrame:
         available = ", ".join(sorted(TARGET_REGISTRY)) or "none"
         raise ValueError(f"Unknown target '{name}'. Available targets: {available}.") from exc
 
-    return target_fn(loader)
+    return target_fn(loader, **kwargs)

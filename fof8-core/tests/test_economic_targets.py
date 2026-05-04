@@ -3,7 +3,11 @@
 from unittest.mock import MagicMock
 
 import polars as pl
-from fof8_core.targets.economic import get_economic_targets
+from fof8_core.targets.economic import (
+    ECONOMIC_OUTPUT_COLUMNS,
+    add_economic_derived_columns,
+    get_economic_targets,
+)
 
 
 def test_get_economic_targets_expected_columns_and_semantics(monkeypatch):
@@ -34,17 +38,7 @@ def test_get_economic_targets_expected_columns_and_semantics(monkeypatch):
 
     out = get_economic_targets(mock_loader, merit_threshold=0.2).sort("Player_ID")
 
-    assert out.columns == [
-        "Player_ID",
-        "Cleared_Sieve",
-        "Economic_Success",
-        "DPO",
-        "Positive_DPO",
-        "Career_Merit_Cap_Share",
-        "Positive_Career_Merit_Cap_Share",
-        "Peak_Overall",
-        "Career_Games_Played",
-    ]
+    assert out.columns == ECONOMIC_OUTPUT_COLUMNS
 
     # Union-of-IDs is preserved across peak, merit, and outcomes inputs.
     assert out["Player_ID"].to_list() == [1, 2, 3, 4, 5]
@@ -78,3 +72,31 @@ def test_get_economic_targets_expected_columns_and_semantics(monkeypatch):
     assert row5["DPO"][0] == 0
     assert row5["Positive_Career_Merit_Cap_Share"][0] == 0
     assert row5["Economic_Success"][0] == 0
+
+
+def test_add_economic_derived_columns_handles_null_negative_and_threshold():
+    df = pl.DataFrame(
+        {
+            "Player_ID": [1, 2, 3, 4],
+            "Peak_Overall": [80.0, 50.0, None, 40.0],
+            "Career_Merit_Cap_Share": [0.25, -0.1, 0.0, None],
+            "Career_Games_Played": [100, None, 0, 20],
+        }
+    )
+    out = add_economic_derived_columns(df, merit_threshold=0.2).sort("Player_ID")
+
+    assert out.filter(pl.col("Player_ID") == 1)["DPO"][0] == 20.0
+    assert out.filter(pl.col("Player_ID") == 1)["Cleared_Sieve"][0] == 1
+    assert out.filter(pl.col("Player_ID") == 1)["Economic_Success"][0] == 1
+
+    assert out.filter(pl.col("Player_ID") == 2)["DPO"][0] == -5.0
+    assert out.filter(pl.col("Player_ID") == 2)["Positive_DPO"][0] == 0.0
+    assert out.filter(pl.col("Player_ID") == 2)["Positive_Career_Merit_Cap_Share"][0] == 0.0
+    assert out.filter(pl.col("Player_ID") == 2)["Cleared_Sieve"][0] == 0
+
+    assert out.filter(pl.col("Player_ID") == 3)["Peak_Overall"][0] == 0.0
+    assert out.filter(pl.col("Player_ID") == 3)["Economic_Success"][0] == 0
+    assert out.filter(pl.col("Player_ID") == 3)["Cleared_Sieve"][0] == 0
+
+    assert out.filter(pl.col("Player_ID") == 4)["Career_Merit_Cap_Share"][0] == 0.0
+    assert out.filter(pl.col("Player_ID") == 4)["DPO"][0] == 0.0
