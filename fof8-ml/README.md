@@ -187,6 +187,9 @@ See [`docs/draft_value_target_strategy.md`](../docs/draft_value_target_strategy.
 - evaluating regressors with both draft-board ranking and value magnitude metrics
 - the recommended target/metric setup for complete classifier + regressor model selection
 
+See [`docs/draft_model_finish_line_plan.md`](../docs/draft_model_finish_line_plan.md) for:
+- the concrete implementation plan to add target experiments, draft-aware metrics, complete-model evaluation, and final model-selection gates
+
 ## Output Organization
 
 To keep the source tree clean, all execution artifacts are organized as follows:
