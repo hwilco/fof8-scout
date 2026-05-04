@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import polars as pl
 import pytest
-from fof8_core.targets.economic import ECONOMIC_LEAKAGE_COLUMNS
+from fof8_core.targets.draft_outcomes import DRAFT_OUTCOME_LEAKAGE_COLUMNS
 from fof8_ml.orchestration.data_loader import (
     _GLOBAL_DATA_CACHE,
     DataLoader,
@@ -167,7 +167,9 @@ def test_loader_raises_clear_error_for_missing_economic_target_column(monkeypatc
         lambda **_: SimpleNamespace(initial_sim_year=2019, final_sim_year=2025),
     )
 
-    with pytest.raises(ValueError, match="Processed features are missing economic target columns"):
+    with pytest.raises(
+        ValueError, match="Processed features are missing draft outcome target columns"
+    ):
         loader.load(cfg)
 
 
@@ -203,4 +205,4 @@ def test_loader_dedupes_target_columns_when_targets_overlap_leakage(monkeypatch)
 
     data = loader.load(cfg)
     assert len(data.target_columns) == len(set(data.target_columns))
-    assert set(ECONOMIC_LEAKAGE_COLUMNS).issubset(set(data.target_columns))
+    assert set(DRAFT_OUTCOME_LEAKAGE_COLUMNS).issubset(set(data.target_columns))

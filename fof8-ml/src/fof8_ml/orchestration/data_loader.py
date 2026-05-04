@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, cast
 import polars as pl
 from fof8_core.features.position_masks import apply_position_mask
 from fof8_core.loader import FOF8Loader
-from fof8_core.targets.economic import ECONOMIC_LEAKAGE_COLUMNS
+from fof8_core.targets.draft_outcomes import DRAFT_OUTCOME_LEAKAGE_COLUMNS
 from omegaconf import DictConfig
 
 from fof8_ml.orchestration.pipeline_types import PreparedData, TimelineInfo
@@ -164,10 +164,12 @@ class DataLoader:
 
         df = pl.read_parquet(features_file)
 
-        missing_target_cols = sorted(c for c in ECONOMIC_LEAKAGE_COLUMNS if c not in df.columns)
+        missing_target_cols = sorted(
+            c for c in DRAFT_OUTCOME_LEAKAGE_COLUMNS if c not in df.columns
+        )
         if missing_target_cols:
             raise ValueError(
-                "Processed features are missing economic target columns "
+                "Processed features are missing draft outcome target columns "
                 f"{missing_target_cols}. Re-run feature processing."
             )
 
@@ -195,7 +197,7 @@ class DataLoader:
         target_cols = [
             cfg.target.classifier_sieve.target_col,
             cfg.target.regressor_intensity.target_col,
-            *ECONOMIC_LEAKAGE_COLUMNS,
+            *DRAFT_OUTCOME_LEAKAGE_COLUMNS,
         ]
         target_cols = list(dict.fromkeys(target_cols))
         feature_cols = [c for c in df.columns if c not in metadata_cols and c not in target_cols]

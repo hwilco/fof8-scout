@@ -5,7 +5,10 @@ import logging
 import polars as pl
 from fof8_core.features.draft_class import get_draft_class
 from fof8_core.loader import FOF8Loader
-from fof8_core.targets.economic import ECONOMIC_TARGET_COLUMNS, get_economic_targets
+from fof8_core.targets.draft_outcomes import (
+    DRAFT_OUTCOME_TARGET_COLUMNS,
+    get_draft_outcome_targets,
+)
 
 from fof8_ml.data.categorical import bucket_rare_colleges, cast_categoricals_to_enum
 
@@ -26,7 +29,7 @@ def build_economic_dataset(
         if active_team_id is not None:
             logging.info(f"Discovered active team ID: {active_team_id}")
 
-    df_targets = get_economic_targets(loader, merit_threshold=merit_threshold)
+    df_targets = get_draft_outcome_targets(loader, merit_threshold=merit_threshold)
 
     feature_dfs = []
     start_year, end_year = year_range
@@ -51,7 +54,7 @@ def build_economic_dataset(
         )
 
     df_master = df_master.with_columns(
-        [pl.col(col).fill_null(0) for col in ECONOMIC_TARGET_COLUMNS]
+        [pl.col(col).fill_null(0) for col in DRAFT_OUTCOME_TARGET_COLUMNS]
     ).with_columns(
         pl.col("Cleared_Sieve").cast(pl.Int8),
         pl.col("Economic_Success").cast(pl.Int8),
@@ -61,7 +64,7 @@ def build_economic_dataset(
     df_model = bucket_rare_colleges(df_model, min_count=(end_year - start_year + 1))
     df_model = cast_categoricals_to_enum(df_model)
 
-    target_columns = ECONOMIC_TARGET_COLUMNS
+    target_columns = DRAFT_OUTCOME_TARGET_COLUMNS
     X = df_model.drop(target_columns)
     y = df_model.select(target_columns)
     metadata = df_master.select(["Player_ID", "Year", "First_Name", "Last_Name"])

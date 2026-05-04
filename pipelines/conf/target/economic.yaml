@@ -1,3 +1,4 @@
+target_name: "draft_outcome_targets"
 classifier_sieve:
   target_col: "Economic_Success"
   merit_threshold: 0
