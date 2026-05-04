@@ -21,6 +21,7 @@ def run_classifier(ctx: PipelineContext) -> dict[str, float]:
 
     with ctx.logger.start_model_run("classifier", ctx.sweep_context):
         ctx.logger.log_model_params(cfg.model, prefix="classifier")
+        mlflow.log_param("target.classifier.target_col", cfg.target.classifier_sieve.target_col)
 
         cv_result = run_cv_classifier(
             X=data.X_train,

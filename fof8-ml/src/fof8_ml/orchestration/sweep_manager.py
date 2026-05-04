@@ -281,13 +281,19 @@ class SweepManager:
             self.client.set_tag(ctx.sweep_run_id, "best_params", str(champ_params))
 
             registration_target = self._registration_target(cfg)
+            artifact_path: str | None = None
+            registered_name: str | None = None
             if registration_target is not None:
                 role_name, artifact_path, registered_name = registration_target
                 role_run_id = self._resolve_flat_role_run(pipeline_run_id, role_name)
             else:
                 role_run_id = None
 
-            if role_run_id is not None and registration_target is not None:
+            if (
+                role_run_id is not None
+                and artifact_path is not None
+                and registered_name is not None
+            ):
                 try:
                     self._register_role_model(
                         pipeline_run_id=pipeline_run_id,

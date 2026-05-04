@@ -211,6 +211,14 @@ def test_build_economic_dataset_preserves_undrafted_peak(mock_loader):
         # But her target row should exist.
         assert y["Cleared_Sieve"][1] == 0
         assert y["DPO"][1] == 0.0
+        assert y["Economic_Success"][1] == 0
+        assert y["Positive_DPO"][1] == 0.0
+        assert y["Positive_Career_Merit_Cap_Share"][1] == 0.0
+
+        # Target-like derived columns are not model features.
+        assert "Positive_DPO" not in X.columns
+        assert "Positive_Career_Merit_Cap_Share" not in X.columns
+        assert "Economic_Success" not in X.columns
 
         # Verify metadata
         assert metadata["First_Name"][1] == "Jane"

@@ -1,3 +1,5 @@
+from typing import Any
+
 import mlflow
 import numpy as np
 import polars as pl
@@ -14,7 +16,7 @@ class XGBoostWrapper(ModelWrapper):
     def get_best_iteration(self) -> int:
         return getattr(self.model, "best_iteration", 0)
 
-    def _signature_kwargs(self, X: pl.DataFrame | None) -> dict[str, object]:
+    def _signature_kwargs(self, X: pl.DataFrame | None) -> dict[str, Any]:
         if X is None:
             return {}
         input_example = X.head(5).to_pandas()

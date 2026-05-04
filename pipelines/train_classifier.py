@@ -3,12 +3,12 @@ import warnings
 
 import hydra
 import matplotlib
+from fof8_ml.orchestration.classifier import run_classifier
 from fof8_ml.orchestration.pipeline_runner import (
     build_pipeline_context,
     finalize_pipeline_run,
     select_optimization_metric,
 )
-from fof8_ml.orchestration.classifier import run_classifier
 from omegaconf import DictConfig
 
 # Suppress Optuna deprecation warnings

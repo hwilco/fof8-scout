@@ -110,11 +110,15 @@ class DataLoader:
         data_cfg = {
             "league": cfg.data.league_name,
             "features": cfg.data.features_path,
+            "classifier_target_col": cfg.target.classifier_sieve.target_col,
             "threshold": cfg.target.classifier_sieve.merit_threshold,
+            "regressor_target_col": cfg.target.regressor_intensity.target_col,
+            "regressor_target_space": cfg.target.regressor_intensity.get("target_space", "log"),
             "positions": cfg.positions,
             "buffer": cfg.split.right_censor_buffer,
             "test_pct": cfg.split.test_split_pct,
             "mask": cfg.mask_positional_features,
+            "leakage_drop_cols": sorted(list(cfg.target.leakage_prevention.drop_cols)),
         }
         cfg_hash = _get_data_cache_cfg_hash(data_cfg)
 
@@ -160,12 +164,50 @@ class DataLoader:
 
         df = pl.read_parquet(features_file)
 
-        # --- Runtime Filtering & Target Labeling ---
+        # --- Runtime Target Derivation / Migration Safety ---
+        if "Career_Merit_Cap_Share" not in df.columns:
+            raise ValueError(
+                "Processed features are missing required target source column "
+                "'Career_Merit_Cap_Share'. Re-run feature processing."
+            )
+        if "DPO" not in df.columns:
+            raise ValueError(
+                "Processed features are missing required target source column 'DPO'. "
+                "Re-run feature processing."
+            )
+
         df = df.with_columns(
-            (pl.col("Career_Merit_Cap_Share") > cfg.target.classifier_sieve.merit_threshold)
-            .alias("Cleared_Sieve")
-            .cast(pl.Int8)
+            [
+                pl.col("Career_Merit_Cap_Share").fill_null(0.0),
+                pl.col("DPO").fill_null(0.0),
+            ]
         )
+
+        if "Positive_Career_Merit_Cap_Share" not in df.columns:
+            df = df.with_columns(
+                pl.col("Career_Merit_Cap_Share")
+                .clip(lower_bound=0.0)
+                .alias("Positive_Career_Merit_Cap_Share")
+            )
+        if "Positive_DPO" not in df.columns:
+            df = df.with_columns(pl.col("DPO").clip(lower_bound=0.0).alias("Positive_DPO"))
+        if "Economic_Success" not in df.columns:
+            df = df.with_columns(
+                (pl.col("Career_Merit_Cap_Share") > 0).alias("Economic_Success").cast(pl.Int8)
+            )
+        if "Cleared_Sieve" not in df.columns:
+            df = df.with_columns(
+                (pl.col("Career_Merit_Cap_Share") > cfg.target.classifier_sieve.merit_threshold)
+                .alias("Cleared_Sieve")
+                .cast(pl.Int8)
+            )
+        elif cfg.target.classifier_sieve.target_col == "Cleared_Sieve":
+            # Keep threshold-driven behavior explicit when this profile is selected.
+            df = df.with_columns(
+                (pl.col("Career_Merit_Cap_Share") > cfg.target.classifier_sieve.merit_threshold)
+                .alias("Cleared_Sieve")
+                .cast(pl.Int8)
+            )
 
         if cfg.positions and cfg.positions != "all":
             pos_list = [cfg.positions] if isinstance(cfg.positions, str) else list(cfg.positions)
@@ -192,6 +234,13 @@ class DataLoader:
             cfg.target.classifier_sieve.target_col,
             cfg.target.regressor_intensity.target_col,
         ] + list(cfg.target.leakage_prevention.drop_cols)
+        target_cols = list(dict.fromkeys(target_cols))
+        missing_target_cols = sorted(c for c in target_cols if c not in df.columns)
+        if missing_target_cols:
+            raise ValueError(
+                "Configured target/leakage columns are missing from processed features: "
+                f"{missing_target_cols}. Re-run feature processing or adjust target config."
+            )
         feature_cols = [c for c in df.columns if c not in metadata_cols and c not in target_cols]
 
         X_train = train_df.select(feature_cols)

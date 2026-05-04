@@ -53,13 +53,23 @@ def build_economic_dataset(
             (pl.col("Career_Merit_Cap_Share") > merit_threshold)
             .alias("Cleared_Sieve")
             .cast(pl.Int8),
+            pl.col("Career_Merit_Cap_Share")
+            .clip(lower_bound=0.0)
+            .alias("Positive_Career_Merit_Cap_Share"),
+            (pl.col("Peak_Overall") * pl.col("Career_Merit_Cap_Share"))
+            .clip(lower_bound=0.0)
+            .alias("Positive_DPO"),
+            (pl.col("Career_Merit_Cap_Share") > 0).alias("Economic_Success").cast(pl.Int8),
         )
         .select(
             [
                 "Player_ID",
                 "Cleared_Sieve",
+                "Economic_Success",
                 "DPO",
+                "Positive_DPO",
                 "Career_Merit_Cap_Share",
+                "Positive_Career_Merit_Cap_Share",
                 "Peak_Overall",
                 "Career_Games_Played",
             ]
@@ -90,15 +100,26 @@ def build_economic_dataset(
 
     df_master = df_master.with_columns(
         pl.col("Cleared_Sieve").fill_null(0).cast(pl.Int8),
+        pl.col("Economic_Success").fill_null(0).cast(pl.Int8),
         pl.col("DPO").fill_null(0.0),
+        pl.col("Positive_DPO").fill_null(0.0),
         pl.col("Career_Merit_Cap_Share").fill_null(0.0),
+        pl.col("Positive_Career_Merit_Cap_Share").fill_null(0.0),
     )
 
     df_model = df_master.drop(["Player_ID", "Year", "First_Name", "Last_Name"])
     df_model = bucket_rare_colleges(df_model, min_count=(end_year - start_year + 1))
     df_model = cast_categoricals_to_enum(df_model)
 
-    X = df_model.drop(["Cleared_Sieve", "DPO", "Career_Merit_Cap_Share"])
-    y = df_model.select(["Cleared_Sieve", "DPO", "Career_Merit_Cap_Share"])
+    target_columns = [
+        "Cleared_Sieve",
+        "Economic_Success",
+        "DPO",
+        "Positive_DPO",
+        "Career_Merit_Cap_Share",
+        "Positive_Career_Merit_Cap_Share",
+    ]
+    X = df_model.drop(target_columns)
+    y = df_model.select(target_columns)
     metadata = df_master.select(["Player_ID", "Year", "First_Name", "Last_Name"])
     return X, y, metadata
