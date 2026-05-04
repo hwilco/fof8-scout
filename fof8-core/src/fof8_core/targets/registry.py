@@ -27,6 +27,7 @@ def _register_builtin_targets() -> None:
     from fof8_core.targets.approximate_value import get_career_value_metrics
     from fof8_core.targets.awards import get_awards
     from fof8_core.targets.career import get_career_outcomes
+    from fof8_core.targets.economic import get_economic_targets
     from fof8_core.targets.financial import (
         get_annual_financials,
         get_merit_cap_share,
@@ -37,6 +38,7 @@ def _register_builtin_targets() -> None:
     TARGET_REGISTRY["annual_financials"] = get_annual_financials
     TARGET_REGISTRY["peak_overall"] = get_peak_overall
     TARGET_REGISTRY["merit_cap_share"] = get_merit_cap_share
+    TARGET_REGISTRY["economic_targets"] = get_economic_targets
     TARGET_REGISTRY["career_value_metrics"] = get_career_value_metrics
     TARGET_REGISTRY["awards"] = get_awards
     _BUILTINS_REGISTERED = True

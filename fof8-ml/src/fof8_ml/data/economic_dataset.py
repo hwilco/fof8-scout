@@ -5,8 +5,7 @@ import logging
 import polars as pl
 from fof8_core.features.draft_class import get_draft_class
 from fof8_core.loader import FOF8Loader
-from fof8_core.targets.career import get_career_outcomes
-from fof8_core.targets.financial import get_merit_cap_share, get_peak_overall
+from fof8_core.targets.economic import get_economic_targets
 
 from fof8_ml.data.categorical import bucket_rare_colleges, cast_categoricals_to_enum
 
@@ -29,52 +28,7 @@ def build_economic_dataset(
         if active_team_id is not None:
             logging.info(f"Discovered active team ID: {active_team_id}")
 
-    df_peak = get_peak_overall(loader)
-    df_merit = get_merit_cap_share(loader)
-    df_outcomes = get_career_outcomes(loader)
-
-    all_ids = pl.concat(
-        [df_peak.select("Player_ID"), df_merit.select("Player_ID"), df_outcomes.select("Player_ID")]
-    ).unique()
-
-    df_targets = (
-        all_ids.join(df_peak.select(["Player_ID", "Peak_Overall"]), on="Player_ID", how="left")
-        .join(df_merit.select(["Player_ID", "Career_Merit_Cap_Share"]), on="Player_ID", how="left")
-        .join(df_outcomes.select(["Player_ID", "Career_Games_Played"]), on="Player_ID", how="left")
-        .with_columns(
-            [
-                pl.col("Peak_Overall").fill_null(0),
-                pl.col("Career_Merit_Cap_Share").fill_null(0),
-                pl.col("Career_Games_Played").fill_null(0),
-            ]
-        )
-        .with_columns(
-            (pl.col("Peak_Overall") * pl.col("Career_Merit_Cap_Share")).alias("DPO"),
-            (pl.col("Career_Merit_Cap_Share") > merit_threshold)
-            .alias("Cleared_Sieve")
-            .cast(pl.Int8),
-            pl.col("Career_Merit_Cap_Share")
-            .clip(lower_bound=0.0)
-            .alias("Positive_Career_Merit_Cap_Share"),
-            (pl.col("Peak_Overall") * pl.col("Career_Merit_Cap_Share"))
-            .clip(lower_bound=0.0)
-            .alias("Positive_DPO"),
-            (pl.col("Career_Merit_Cap_Share") > 0).alias("Economic_Success").cast(pl.Int8),
-        )
-        .select(
-            [
-                "Player_ID",
-                "Cleared_Sieve",
-                "Economic_Success",
-                "DPO",
-                "Positive_DPO",
-                "Career_Merit_Cap_Share",
-                "Positive_Career_Merit_Cap_Share",
-                "Peak_Overall",
-                "Career_Games_Played",
-            ]
-        )
-    )
+    df_targets = get_economic_targets(loader, merit_threshold=merit_threshold)
 
     feature_dfs = []
     start_year, end_year = year_range

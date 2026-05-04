@@ -38,6 +38,7 @@ def test_registry_contains_builtin_targets():
         "annual_financials",
         "peak_overall",
         "merit_cap_share",
+        "economic_targets",
         "career_value_metrics",
         "awards",
     }

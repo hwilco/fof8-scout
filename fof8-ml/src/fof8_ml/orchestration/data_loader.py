@@ -165,6 +165,8 @@ class DataLoader:
         df = pl.read_parquet(features_file)
 
         # --- Runtime Target Derivation / Migration Safety ---
+        # Canonical source for these target semantics in newly processed data:
+        # fof8_core.targets.economic.get_economic_targets
         if "Career_Merit_Cap_Share" not in df.columns:
             raise ValueError(
                 "Processed features are missing required target source column "
