@@ -1,4 +1,4 @@
-"""Model factory backed by the explicit stage/model registry."""
+"""Model factory backed by the explicit role/model registry."""
 
 from typing import Any
 
@@ -8,21 +8,21 @@ from fof8_ml.models.registry import get_model_family, resolve_model
 
 def get_model_wrapper(
     model_name: str,
-    stage: str,
+    role: str,
     random_seed: int,
     params: dict[str, Any],
     use_gpu: bool = False,
     thread_count: int = -1,
 ) -> ModelWrapper:
     """
-    Instantiate a stage-specific model wrapper from a registered model key.
+    Instantiate a role-specific model wrapper from a registered model key.
 
     Model names are resolved exclusively via `fof8_ml.models.registry`.
     Any model used by config must be registered there first.
 
     Args:
         model_name: Name/alias of the model from config.
-        stage: Pipeline stage ('stage1' or 'stage2').
+        role: Model role ('classifier' or 'regressor').
         random_seed: Random seed for reproducibility.
         params: Dictionary of model hyperparameters.
         use_gpu: Whether to enable GPU acceleration.
@@ -31,7 +31,7 @@ def get_model_wrapper(
     Returns:
         An instantiated subclass of ModelWrapper.
     """
-    registration = resolve_model(stage=stage, model_name=model_name)
+    registration = resolve_model(role=role, model_name=model_name)
 
     if registration.family == "catboost":
         return registration.builder(
@@ -47,7 +47,7 @@ def get_model_wrapper(
 
     raise ValueError(
         "Unsupported model family "
-        f"'{registration.family}' for stage '{stage}' and model '{model_name}'"
+        f"'{registration.family}' for role '{role}' and model '{model_name}'"
     )
 
 
@@ -55,13 +55,13 @@ def apply_quiet_params(model_name: str, params: dict[str, Any]) -> dict[str, Any
     """Return params with quiet flags applied for CatBoost/XGBoost models.
 
     The model family is resolved from the explicit registry across known
-    stages. Non-CatBoost/XGBoost models are returned unchanged.
+    roles. Non-CatBoost/XGBoost models are returned unchanged.
     """
 
     quiet_params = params.copy()
 
-    for stage in ("stage1", "stage2"):
-        family = get_model_family(stage=stage, model_name=model_name)
+    for role in ("classifier", "regressor"):
+        family = get_model_family(role=role, model_name=model_name)
         if family == "catboost":
             quiet_params["logging_level"] = "Silent"
             return quiet_params

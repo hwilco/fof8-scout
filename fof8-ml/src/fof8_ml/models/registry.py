@@ -1,6 +1,6 @@
-"""Explicit model registry for stage-aware wrapper resolution.
+"""Explicit model registry for role-aware wrapper resolution.
 
-This module defines the canonical mapping from `(stage, model_key)` to
+This module defines the canonical mapping from `(role, model_key)` to
 wrapper family and constructor. New model additions should be represented as:
 1) one model config file under `pipelines/conf/model/`
 2) one registry entry here.
@@ -16,7 +16,7 @@ from fof8_ml.models.catboost_wrapper import CatBoostClassifierWrapper, CatBoostR
 from fof8_ml.models.sklearn_wrapper import SklearnRegressorWrapper
 from fof8_ml.models.xgboost_wrapper import XGBoostClassifierWrapper, XGBoostRegressorWrapper
 
-Stage = str
+Role = str
 ModelKey = str
 
 
@@ -24,104 +24,88 @@ ModelKey = str
 class ModelRegistration:
     """Immutable metadata for one registered model key."""
 
-    stage: Stage
+    role: Role
     key: ModelKey
     family: str
     builder: Callable[..., ModelWrapper]
 
 
-_REGISTRY: dict[tuple[Stage, ModelKey], ModelRegistration] = {}
+_REGISTRY: dict[tuple[Role, ModelKey], ModelRegistration] = {}
 
 
 def _normalize(name: str) -> str:
-    """Normalize stage and model names for case-insensitive lookup."""
+    """Normalize role and model names for case-insensitive lookup."""
 
     return name.strip().lower()
 
 
-def register_model(stage: str, key: str, family: str, builder: Callable[..., ModelWrapper]) -> None:
-    """Register a model wrapper builder for a `(stage, model_key)` pair.
+def register_model(role: str, key: str, family: str, builder: Callable[..., ModelWrapper]) -> None:
+    """Register a model wrapper builder for a `(role, model_key)` pair.
 
     Raises:
-        ValueError: If the normalized stage/key pair is already registered.
+        ValueError: If the normalized role/key pair is already registered.
     """
 
-    stage_key = _normalize(stage)
+    role_key = _normalize(role)
     model_key = _normalize(key)
-    registry_key = (stage_key, model_key)
+    registry_key = (role_key, model_key)
 
     if registry_key in _REGISTRY:
-        raise ValueError(f"Duplicate model registration for stage='{stage_key}', key='{model_key}'")
+        raise ValueError(f"Duplicate model registration for role='{role_key}', key='{model_key}'")
 
     _REGISTRY[registry_key] = ModelRegistration(
-        stage=stage_key,
+        role=role_key,
         key=model_key,
         family=family,
         builder=builder,
     )
 
 
-def resolve_model(stage: str, model_name: str) -> ModelRegistration:
-    """Resolve a model registration for a stage and model name.
+def resolve_model(role: str, model_name: str) -> ModelRegistration:
+    """Resolve a model registration for a role and model name.
 
     Raises:
-        ValueError: If stage is unknown or if the model key is not registered
-            for that stage. Error messages include valid options.
+        ValueError: If role is unknown or if the model key is not registered
+            for that role. Error messages include valid options.
     """
 
-    stage_key = _normalize(stage)
+    role_key = _normalize(role)
     model_key = _normalize(model_name)
-    registered_stages = {registered_stage for (registered_stage, _) in _REGISTRY}
-    if stage_key not in registered_stages:
-        valid_stages = ", ".join(sorted(registered_stages))
-        raise ValueError(f"Unknown stage '{stage}'. Valid stages: {valid_stages}")
+    registered_roles = {registered_role for (registered_role, _) in _REGISTRY}
+    if role_key not in registered_roles:
+        valid_roles = ", ".join(sorted(registered_roles))
+        raise ValueError(f"Unknown role '{role}'. Valid roles: {valid_roles}")
 
-    registration = _REGISTRY.get((stage_key, model_key))
+    registration = _REGISTRY.get((role_key, model_key))
     if registration is None:
-        valid_keys = ", ".join(list_model_keys(stage_key))
+        valid_keys = ", ".join(list_model_keys(role_key))
         raise ValueError(
-            f"Unknown model '{model_name}' for stage '{stage}'. "
+            f"Unknown model '{model_name}' for role '{role}'. "
             f"Valid model keys: {valid_keys}. "
             "Register new models in fof8_ml.models.registry."
         )
     return registration
 
 
-def list_model_keys(stage: str) -> list[str]:
-    """List sorted model keys registered for a stage."""
+def list_model_keys(role: str) -> list[str]:
+    """List sorted model keys registered for a role."""
 
-    stage_key = _normalize(stage)
-    keys = [key for (registered_stage, key) in _REGISTRY if registered_stage == stage_key]
+    role_key = _normalize(role)
+    keys = [key for (registered_role, key) in _REGISTRY if registered_role == role_key]
     return sorted(keys)
 
 
-def get_model_family(stage: str, model_name: str) -> str | None:
+def get_model_family(role: str, model_name: str) -> str | None:
     """Return wrapper family for a model key, or `None` if not registered."""
 
-    registration = _REGISTRY.get((_normalize(stage), _normalize(model_name)))
+    registration = _REGISTRY.get((_normalize(role), _normalize(model_name)))
     return None if registration is None else registration.family
 
 
-# Stage 1 classifier model aliases.
-register_model("stage1", "s1_catboost", "catboost", CatBoostClassifierWrapper)
-register_model("stage1", "catboost_career_threshold", "catboost", CatBoostClassifierWrapper)
-register_model("stage1", "career_threshold_catboost", "catboost", CatBoostClassifierWrapper)
+register_model("classifier", "catboost_classifier", "catboost", CatBoostClassifierWrapper)
+register_model("classifier", "xgb_classifier", "xgb", XGBoostClassifierWrapper)
 
-register_model("stage1", "xgb", "xgb", XGBoostClassifierWrapper)
-register_model("stage1", "career_threshold_xgb", "xgb", XGBoostClassifierWrapper)
-register_model("stage1", "xgboost_career_threshold", "xgb", XGBoostClassifierWrapper)
-
-# Stage 2 regressor model aliases.
-register_model("stage2", "s2_catboost", "catboost", CatBoostRegressorWrapper)
-register_model("stage2", "catboost_career_threshold", "catboost", CatBoostRegressorWrapper)
-register_model("stage2", "career_threshold_catboost", "catboost", CatBoostRegressorWrapper)
-
-register_model("stage2", "s2_xgb", "xgb", XGBoostRegressorWrapper)
-register_model("stage2", "xgb", "xgb", XGBoostRegressorWrapper)
-register_model("stage2", "career_threshold_xgb", "xgb", XGBoostRegressorWrapper)
-register_model("stage2", "xgboost_career_threshold", "xgb", XGBoostRegressorWrapper)
-
-register_model("stage2", "reg_tweedie", "sklearn", SklearnRegressorWrapper)
-register_model("stage2", "reg_gamma", "sklearn", SklearnRegressorWrapper)
-register_model("stage2", "sklearn_tweedie", "sklearn", SklearnRegressorWrapper)
-register_model("stage2", "sklearn_gamma", "sklearn", SklearnRegressorWrapper)
+register_model("regressor", "catboost_tweedie_regressor", "catboost", CatBoostRegressorWrapper)
+register_model("regressor", "xgb_regressor", "xgb", XGBoostRegressorWrapper)
+register_model("regressor", "sklearn_tweedie_regressor", "sklearn", SklearnRegressorWrapper)
+register_model("regressor", "sklearn_gamma_regressor", "sklearn", SklearnRegressorWrapper)

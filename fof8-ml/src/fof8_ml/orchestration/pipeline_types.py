@@ -21,8 +21,8 @@ class PreparedData:
 
     X_train: pl.DataFrame
     X_test: pl.DataFrame
-    y_cls: np.ndarray  # Stage 1 binary target
-    y_reg: np.ndarray  # Stage 2 continuous target
+    y_cls: np.ndarray  # classifier binary target
+    y_reg: np.ndarray  # regressor continuous target
     meta_train: pl.DataFrame
     meta_test: pl.DataFrame
     timeline: TimelineInfo  # year ranges, buffer, etc.
@@ -40,8 +40,8 @@ class CVResult:
 
 
 @dataclass
-class Stage1Result:
-    """Complete Stage 1 output, consumed by Stage 2 and logging."""
+class ClassifierResult:
+    """Complete classifier output, consumed by logging."""
 
     cv_result: CVResult
     calibrated_oof_probs: np.ndarray

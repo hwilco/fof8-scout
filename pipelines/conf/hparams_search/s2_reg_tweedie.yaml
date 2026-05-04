@@ -1,4 +1,0 @@
-# @package hydra.sweeper
-search_space:
-  model.params.power: range(1.1, 1.9, step=0.1)
-  model.params.alpha: interval(0.001, 10.0)

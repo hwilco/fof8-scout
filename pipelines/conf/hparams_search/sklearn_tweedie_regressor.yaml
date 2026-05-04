@@ -1,0 +1,22 @@
+# @package hydra.sweeper
+search_space:
+  # Tweedie variance power:
+  # 1.0 behaves like Poisson, 2.0 like Gamma. Keep the bounds just inside
+  # those endpoints for stable compound Poisson-Gamma behavior.
+  model.params.power:
+    type: float
+    low: 1.05
+    high: 1.95
+
+  # Regularization is the main bias/variance control for this GLM. Search it
+  # on a log scale so Optuna covers weak and strong shrinkage efficiently.
+  model.params.alpha:
+    type: float
+    low: 0.0001
+    high: 100.0
+    log: true
+
+  # Feature ablation toggles (safe for Optuna JSON serialization).
+  ablation.toggles.no_position:
+    type: categorical
+    choices: [true, false]

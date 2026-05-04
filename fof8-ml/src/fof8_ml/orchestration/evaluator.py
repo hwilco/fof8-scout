@@ -69,12 +69,12 @@ def optimize_threshold(
     return float(best_threshold), float(best_f1_0)
 
 
-def compute_stage1_final_metrics(
+def compute_classifier_final_metrics(
     y_true: np.ndarray,
     calibrated_probs: np.ndarray,
     threshold: float,
 ) -> dict[str, float]:
-    """Compute all Stage 1 final metrics (bust precision, hit recall, PR-AUC, etc.)."""
+    """Compute all classifier final metrics (bust precision, hit recall, PR-AUC, etc.)."""
     final_preds = (calibrated_probs >= threshold).astype(int)
 
     busts_filtered = np.sum((y_true == 0) & (final_preds == 0))
@@ -90,33 +90,42 @@ def compute_stage1_final_metrics(
     f1_bust = f1_score(y_true, final_preds, pos_label=0)
 
     return {
-        "s1_oof_busts_filtered": float(busts_filtered),
-        "s1_oof_hit_recall": float(hit_recall),
-        "s1_oof_f1_bust": float(f1_bust),
-        "s1_oof_precision_bust": float(bust_precision),
-        "s1_oof_recall_bust": float(bust_recall),
-        "s1_oof_pr_auc": float(pr_auc),
-        "s1_oof_roc_auc": float(roc_auc),
+        "classifier_oof_busts_filtered": float(busts_filtered),
+        "classifier_oof_hit_recall": float(hit_recall),
+        "classifier_oof_f1_bust": float(f1_bust),
+        "classifier_oof_precision_bust": float(bust_precision),
+        "classifier_oof_recall_bust": float(bust_recall),
+        "classifier_oof_pr_auc": float(pr_auc),
+        "classifier_oof_roc_auc": float(roc_auc),
     }
 
 
-def compute_stage2_oof_metrics(
-    y_true_log: np.ndarray,
-    oof_predictions_log: np.ndarray,
+def compute_regressor_oof_metrics(
+    y_true: np.ndarray,
+    oof_predictions: np.ndarray,
+    target_space: str = "log",
 ) -> dict[str, float]:
-    """Compute Stage 2 OOF RMSE and MAE in original (expm1) space.
+    """Compute regressor OOF RMSE and MAE in original target space.
 
     Args:
-        y_true_log: Ground truth continuous labels in log1p space.
-        oof_predictions_log: Predicted continuous labels in log1p space.
+        y_true: Ground truth continuous labels in `target_space`.
+        oof_predictions: Predicted continuous labels in `target_space`.
+        target_space: Either "log" for log1p labels/predictions or "raw" for
+            labels/predictions already in original target units.
     """
-    y_real = np.expm1(y_true_log)
-    y_pred = np.expm1(oof_predictions_log)
+    if target_space == "log":
+        y_real = np.expm1(y_true)
+        y_pred = np.expm1(oof_predictions)
+    elif target_space == "raw":
+        y_real = y_true
+        y_pred = np.maximum(oof_predictions, 0)
+    else:
+        raise ValueError(f"Unsupported target_space '{target_space}'. Expected 'log' or 'raw'.")
 
     rmse = float(np.sqrt(mean_squared_error(y_real, y_pred)))
     mae = float(mean_absolute_error(y_real, y_pred))
 
     return {
-        "s2_oof_rmse": rmse,
-        "s2_oof_mae": mae,
+        "regressor_oof_rmse": rmse,
+        "regressor_oof_mae": mae,
     }

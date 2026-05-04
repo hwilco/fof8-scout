@@ -8,7 +8,7 @@ from fof8_ml.orchestration.pipeline_runner import (
     finalize_pipeline_run,
     select_optimization_metric,
 )
-from fof8_ml.orchestration.stage2_regressor import run_regressor_stage
+from fof8_ml.orchestration.regressor import run_regressor
 from omegaconf import DictConfig
 
 # Suppress Optuna deprecation warnings
@@ -25,7 +25,7 @@ logging.getLogger("matplotlib").setLevel(logging.ERROR)
 
 @hydra.main(version_base=None, config_path="conf", config_name="regressor_pipeline")
 def main(cfg: DictConfig) -> float:
-    """Train and evaluate the Stage 2 Intensity Regressor.
+    """Train and evaluate the Regressor Intensity Regressor.
 
     Training is performed on ground truth positive cases (y_cls == 1) only.
 
@@ -49,7 +49,7 @@ def main(cfg: DictConfig) -> float:
         )
         ctx.logger.log_feature_schema(ctx.data)
 
-        available_metrics = run_regressor_stage(ctx)
+        available_metrics = run_regressor(ctx)
 
         if not ctx.sweep_context.quiet:
             print("\nRegressor Training Complete. Model saved to MLflow.")

@@ -19,26 +19,26 @@ from fof8_ml.evaluation.plotting import (
     log_feature_importance,
 )
 from fof8_ml.models.base import ModelWrapper
-from fof8_ml.orchestration.pipeline_types import PreparedData, Stage1Result
+from fof8_ml.orchestration.pipeline_types import PreparedData, ClassifierResult
 
 # Global tracking flags
 _TRACKING_INITIALIZED = False
 _USING_REMOTE = None
 
-STAGE_RUN_NAMES = {
-    "stage1": "Stage1_Sieve_Classifier",
-    "stage2": "Stage2_Intensity_Regressor",
+ROLE_RUN_NAMES = {
+    "classifier": "Classifier",
+    "regressor": "Regressor",
 }
 
 
-def resolve_stage_run_name(stage_name: str) -> str:
-    """Return the canonical nested MLflow run name for a pipeline stage."""
-    normalized_stage = stage_name.strip().lower()
-    if normalized_stage not in STAGE_RUN_NAMES:
+def resolve_model_role_name(role_name: str) -> str:
+    """Return the canonical display name for a model role."""
+    normalized_role = role_name.strip().lower()
+    if normalized_role not in ROLE_RUN_NAMES:
         raise ValueError(
-            f"Unsupported stage '{stage_name}'. Expected one of: {sorted(STAGE_RUN_NAMES.keys())}"
+            f"Unsupported model role '{role_name}'. Expected one of: {sorted(ROLE_RUN_NAMES.keys())}"
         )
-    return STAGE_RUN_NAMES[normalized_stage]
+    return ROLE_RUN_NAMES[normalized_role]
 
 
 def flatten_dict(d: dict, parent_key: str = "", sep: str = ".") -> dict[str, object]:
@@ -206,14 +206,14 @@ class ExperimentLogger:
 
     def log_classifier_results(
         self,
-        result: Stage1Result,
+        result: ClassifierResult,
         model: ModelWrapper,
         data: PreparedData,
         cfg: DictConfig,
         quiet: bool,
     ) -> None:
-        """Log Stage 1 metrics, artifacts, and optimal threshold."""
-        mlflow.log_params({"s1_optimal_threshold": result.optimal_threshold})
+        """Log Classifier metrics, artifacts, and optimal threshold."""
+        mlflow.log_params({"classifier_optimal_threshold": result.optimal_threshold})
         mlflow.log_metrics(result.metrics)
 
         if not quiet:
@@ -233,18 +233,18 @@ class ExperimentLogger:
                     pl.Series("cleared_sieve", result.final_predictions),
                 ]
             )
-            oof_df.write_csv("stage1_oof_results.csv")
-            mlflow.log_artifact("stage1_oof_results.csv")
+            oof_df.write_csv("classifier_oof_results.csv")
+            mlflow.log_artifact("classifier_oof_results.csv")
 
             if cfg.diagnostics.log_importance or cfg.diagnostics.log_shap:
                 log_feature_importance(
                     model,
-                    "Stage 1 Importance",
+                    "Classifier Importance",
                     X=data.X_train,
                     log_shap=cfg.diagnostics.log_shap,
                 )
 
-        model.log_model("stage1_model")
+        model.log_model("classifier_model", X=data.X_train)
 
     def log_regressor_results(
         self,
@@ -254,35 +254,43 @@ class ExperimentLogger:
         cfg: DictConfig,
         quiet: bool,
     ) -> None:
-        """Log Stage 2 metrics and artifacts."""
+        """Log Regressor metrics and artifacts."""
         mlflow.log_metrics(metrics)
-        model.log_model("stage2_model")
+        model.log_model("regressor_model", X=X_reg)
 
         if not quiet:
             if cfg.diagnostics.log_importance or cfg.diagnostics.log_shap:
                 log_feature_importance(
                     model,
-                    "Stage 2 Importance",
+                    "Regressor Importance",
                     X=X_reg,
                     log_shap=cfg.diagnostics.log_shap,
                 )
 
-    def start_stage_run(self, stage_name: str, ctx: object) -> mlflow.ActiveRun:
-        """Start a nested MLflow run for a pipeline stage."""
-        normalized_stage = stage_name.strip().lower()
-        run_name = resolve_stage_run_name(normalized_stage)
-        active_run = mlflow.start_run(run_name=run_name, nested=True)
-        mlflow.set_tag("model_stage", normalized_stage)
+    @contextlib.contextmanager
+    def start_model_run(self, role_name: str, ctx: object) -> Iterator[mlflow.ActiveRun | None]:
+        """Tag the active pipeline run for a model role without opening a nested run."""
+        normalized_role = role_name.strip().lower()
+        resolve_model_role_name(normalized_role)
+        active_run = mlflow.active_run()
+        if active_run is None:
+            with mlflow.start_run(run_name=ROLE_RUN_NAMES[normalized_role]) as run:
+                mlflow.set_tag("model_role", normalized_role)
+                yield run
+            return
+
+        mlflow.set_tag("model_role", normalized_role)
+        mlflow.set_tag("model_run_layout", "flat")
         sweep_name = getattr(ctx, "sweep_name", None)
         sweep_run_id = getattr(ctx, "sweep_run_id", None)
         if sweep_name:
             mlflow.set_tag("sweep_name", str(sweep_name))
         if sweep_run_id:
             mlflow.set_tag("sweep_run_id", str(sweep_run_id))
-        return active_run
+        yield active_run
 
-    def log_stage_params(self, model_cfg: DictConfig, prefix: str) -> None:
-        """Log stage-specific model parameters."""
+    def log_model_params(self, model_cfg: DictConfig, prefix: str) -> None:
+        """Log role-specific model parameters."""
         params = cast(dict[str, Any], OmegaConf.to_container(model_cfg.params, resolve=True))
         log_params_safe(flatten_dict(params, parent_key=prefix))
 
@@ -298,7 +306,7 @@ class ExperimentLogger:
             metric_name: Name of the metric being written.
             score: Numeric value of the metric.
             metrics_filename: Output filename inside the outputs/ directory.
-                Defaults to 'metrics.json'. Use stage-specific names (e.g.
+                Defaults to 'metrics.json'. Use role-specific names (e.g.
                 'classifier_metrics.json') when running independent pipelines.
         """
         try:

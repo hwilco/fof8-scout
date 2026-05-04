@@ -1,4 +1,4 @@
-name: "catboost_career_threshold"
+name: "catboost_classifier"
 params:
   iterations: 3000
   learning_rate: 0.03032307975089054

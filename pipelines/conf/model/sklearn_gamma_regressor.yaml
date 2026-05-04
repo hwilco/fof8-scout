@@ -1,4 +1,4 @@
-name: "sklearn_gamma"
+name: "sklearn_gamma_regressor"
 params:
   alpha: 1.0 # Regularization strength
   max_iter: 1000

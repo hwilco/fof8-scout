@@ -1,4 +1,4 @@
-"""Run batch Stage 1 inference against random historical draft classes.
+"""Run batch Classifier inference against random historical draft classes.
 
 The script loads both the trained model and the persisted `feature_schema.json`
 artifact from MLflow, then applies that schema contract before prediction.
@@ -19,21 +19,24 @@ from fof8_ml.data.schema import (
     FeatureSchema,
     FeatureSchemaError,
 )
-from fof8_ml.orchestration.experiment_logger import resolve_stage_run_name
 from hydra.utils import to_absolute_path
 from mlflow.entities import Run
 from omegaconf import DictConfig
 
 
-def resolve_stage1_run(
-    client: mlflow.tracking.MlflowClient, parent_run_id: str, experiment_ids: list[str]
+def resolve_classifier_run(
+    client: mlflow.tracking.MlflowClient, run_id: str, experiment_ids: list[str]
 ) -> Optional[Run]:
-    """Resolve the canonical Stage 1 nested run under a parent pipeline run."""
-    stage1_name = resolve_stage_run_name("stage1")
-    nested_runs = client.search_runs(
-        experiment_ids=experiment_ids, filter_string=f"tags.mlflow.parentRunId = '{parent_run_id}'"
-    )
-    return next((r for r in nested_runs if r.data.tags.get("mlflow.runName") == stage1_name), None)
+    """Resolve a flattened Classifier run."""
+    _ = experiment_ids
+    try:
+        run = client.get_run(run_id)
+    except Exception:
+        return None
+
+    if run.data.tags.get("model_role") == "classifier":
+        return run
+    return None
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="classifier_pipeline")
@@ -63,24 +66,18 @@ def main(cfg: DictConfig) -> None:
     # Get all experiment IDs
     experiment_ids: list[str] = [str(e.experiment_id) for e in client.search_experiments()]
 
-    # Find the Stage 1 nested run
-    stage1_name = resolve_stage_run_name("stage1")
-    stage1_run = resolve_stage1_run(client, parent_run_id, experiment_ids)
+    # Find the flattened Classifier run.
+    classifier_run = resolve_classifier_run(client, parent_run_id, experiment_ids)
 
-    if not stage1_run:
-        print(f"Could not find Stage 1 nested run ({stage1_name}) for parent {parent_run_id}.")
-        # Fallback: maybe the run_id provided IS the stage1 run?
-        run_info = client.get_run(parent_run_id)
-        if run_info.data.tags.get("mlflow.runName") == stage1_name:
-            stage1_run = run_info
-        else:
-            print("Failed to find Stage 1 model.")
-            return
+    if not classifier_run:
+        print(f"Could not find flattened Classifier run for run {parent_run_id}.")
+        print("Failed to find Classifier model.")
+        return
 
-    print(f"Loading Stage 1 Model from Run: {stage1_run.info.run_id}")
-    stage1_model_uri = f"runs:/{stage1_run.info.run_id}/stage1_model"
+    print(f"Loading Classifier Model from Run: {classifier_run.info.run_id}")
+    classifier_model_uri = f"runs:/{classifier_run.info.run_id}/classifier_model"
     schema_local_path = client.download_artifacts(
-        stage1_run.info.run_id, FEATURE_SCHEMA_ARTIFACT_PATH
+        classifier_run.info.run_id, FEATURE_SCHEMA_ARTIFACT_PATH
     )
     with open(schema_local_path) as f:
         schema = FeatureSchema.from_dict(json.load(f))
@@ -89,12 +86,12 @@ def main(cfg: DictConfig) -> None:
     # We need to know if it's CatBoost or XGBoost. We can check the run params or tags.
     # Or just try both.
     try:
-        model = mlflow.catboost.load_model(stage1_model_uri)
+        model = mlflow.catboost.load_model(classifier_model_uri)
         is_catboost = True
         print("Loaded CatBoost model.")
     except Exception:
         try:
-            model = mlflow.xgboost.load_model(stage1_model_uri)
+            model = mlflow.xgboost.load_model(classifier_model_uri)
             is_catboost = False
             print("Loaded XGBoost model.")
         except Exception as e:

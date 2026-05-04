@@ -32,7 +32,7 @@ def run_cv_classifier(
 
     for fold, (train_idx, val_idx) in enumerate(skf.split(indices, y)):
         if not quiet:
-            print(f"--- S1 Fold {fold} ---")
+            print(f"--- Classifier Fold {fold} ---")
         X_cv_train, X_cv_val = X[train_idx], X[val_idx]
         y_cv_train, y_cv_val = y[train_idx], y[val_idx]
 
@@ -43,7 +43,7 @@ def run_cv_classifier(
         thread_count = model_cfg.params.get("thread_count", -1)
         model = get_model_wrapper(
             model_cfg.name,
-            "stage1",
+            "classifier",
             seed,
             params,
             use_gpu=use_gpu,
@@ -82,8 +82,12 @@ def run_cv_regressor(
     seed: int,
     use_gpu: bool = False,
     quiet: bool = False,
+    target_space: str = "log",
 ) -> CVResult:
     """Run k-fold CV for a regressor. Returns CVResult with OOF predictions."""
+    if target_space not in {"log", "raw"}:
+        raise ValueError(f"Unsupported target_space '{target_space}'. Expected 'log' or 'raw'.")
+
     kf = KFold(n_splits=cv_cfg.n_folds, shuffle=cv_cfg.shuffle, random_state=seed)
     indices = np.arange(len(X))
     oof_preds = np.zeros(len(X))
@@ -93,7 +97,7 @@ def run_cv_regressor(
 
     for fold, (train_idx, val_idx) in enumerate(kf.split(indices)):
         if not quiet:
-            print(f"--- S2 Fold {fold} ---")
+            print(f"--- Regressor Fold {fold} ---")
         X_cv_train, X_cv_val = X[train_idx], X[val_idx]
         y_cv_train, y_cv_val = y[train_idx], y[val_idx]
 
@@ -104,7 +108,7 @@ def run_cv_regressor(
         thread_count = model_cfg.params.get("thread_count", -1)
         model = get_model_wrapper(
             model_cfg.name,
-            "stage2",
+            "regressor",
             seed,
             params,
             use_gpu=use_gpu,
@@ -117,8 +121,12 @@ def run_cv_regressor(
 
         oof_preds[val_idx] = y_val_pred
 
-        y_val_real = np.expm1(y_cv_val)
-        y_val_pred_real = np.expm1(y_val_pred)
+        if target_space == "log":
+            y_val_real = np.expm1(y_cv_val)
+            y_val_pred_real = np.expm1(y_val_pred)
+        else:
+            y_val_real = y_cv_val
+            y_val_pred_real = np.maximum(y_val_pred, 0)
 
         rmse = float(np.sqrt(mean_squared_error(y_val_real, y_val_pred_real)))
         mae = float(mean_absolute_error(y_val_real, y_val_pred_real))
@@ -137,7 +145,7 @@ def run_cv_regressor(
 
 def train_final_model(
     model_cfg: DictConfig,
-    stage: str,
+    role: str,
     X: pl.DataFrame,
     y: np.ndarray,
     avg_best_iterations: int,
@@ -160,7 +168,7 @@ def train_final_model(
 
     model = get_model_wrapper(
         model_cfg.name,
-        stage,
+        role,
         seed,
         final_params,
         use_gpu=use_gpu,
