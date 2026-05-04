@@ -15,7 +15,13 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
 
     positive_mask = (data.y_cls == 1).astype(bool)
     X_reg = data.X_train.filter(pl.Series(positive_mask))
-    target_space = str(cfg.target.regressor_intensity.target_space).strip().lower()
+    regressor_cfg = cfg.target.regressor_intensity
+    target_space_value = (
+        regressor_cfg.get("target_space", "log")
+        if hasattr(regressor_cfg, "get")
+        else getattr(regressor_cfg, "target_space", "log")
+    )
+    target_space = str(target_space_value).strip().lower()
     if target_space not in {"raw", "log"}:
         raise ValueError(
             f"Unsupported regressor target_space '{target_space}'. Expected 'raw' or 'log'."

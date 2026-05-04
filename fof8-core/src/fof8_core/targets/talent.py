@@ -42,12 +42,8 @@ def get_peak_overall(loader: FOF8Loader, k: int = 1, timeframe: int | None = Non
 
         if timeframe is not None:
             lf_exhibition = (
-                lf_exhibition.join(
-                    lf_exhibition.group_by("Player_ID")
-                    .agg(pl.col("Year").min().alias("First_Year"))
-                    .select(["Player_ID", "First_Year"]),
-                    on="Player_ID",
-                    how="left",
+                lf_exhibition.with_columns(
+                    pl.col("Year").min().over("Player_ID").alias("First_Year")
                 )
                 .filter(pl.col("Year") <= (pl.col("First_Year") + timeframe - 1))
                 .drop("First_Year")

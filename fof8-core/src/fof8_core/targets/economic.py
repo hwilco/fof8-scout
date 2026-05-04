@@ -41,11 +41,7 @@ def get_economic_targets(loader: FOF8Loader, merit_threshold: float = 0) -> pl.D
     """Build canonical economic targets from core target sources."""
     df_merit = get_merit_cap_share(loader)
 
-    all_ids = df_merit.select("Player_ID").unique()
-
-    base_df = all_ids.join(
-        df_merit.select(["Player_ID", "Career_Merit_Cap_Share"]), on="Player_ID", how="left"
-    )
+    base_df = df_merit.select(["Player_ID", "Career_Merit_Cap_Share"])
     return add_economic_derived_columns(base_df, merit_threshold=merit_threshold).select(
         ECONOMIC_OUTPUT_COLUMNS
     )
