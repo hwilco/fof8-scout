@@ -110,7 +110,7 @@ class DataLoader:
         data_cfg = {
             "league": cfg.data.league_name,
             "features": cfg.data.features_path,
-            "threshold": cfg.target.stage1_sieve.merit_threshold,
+            "threshold": cfg.target.classifier_sieve.merit_threshold,
             "positions": cfg.positions,
             "buffer": cfg.split.right_censor_buffer,
             "test_pct": cfg.split.test_split_pct,
@@ -162,7 +162,7 @@ class DataLoader:
 
         # --- Runtime Filtering & Target Labeling ---
         df = df.with_columns(
-            (pl.col("Career_Merit_Cap_Share") > cfg.target.stage1_sieve.merit_threshold)
+            (pl.col("Career_Merit_Cap_Share") > cfg.target.classifier_sieve.merit_threshold)
             .alias("Cleared_Sieve")
             .cast(pl.Int8)
         )
@@ -189,8 +189,8 @@ class DataLoader:
 
         metadata_cols = ["Player_ID", "Year", "First_Name", "Last_Name"]
         target_cols = [
-            cfg.target.stage1_sieve.target_col,
-            cfg.target.stage2_intensity.target_col,
+            cfg.target.classifier_sieve.target_col,
+            cfg.target.regressor_intensity.target_col,
         ] + list(cfg.target.leakage_prevention.drop_cols)
         feature_cols = [c for c in df.columns if c not in metadata_cols and c not in target_cols]
 
@@ -205,8 +205,8 @@ class DataLoader:
             X_train = apply_position_mask(X_train)
             X_test = apply_position_mask(X_test)
 
-        y_cls = y_train_df.get_column(cfg.target.stage1_sieve.target_col).to_numpy()
-        y_reg = y_train_df.get_column(cfg.target.stage2_intensity.target_col).to_numpy()
+        y_cls = y_train_df.get_column(cfg.target.classifier_sieve.target_col).to_numpy()
+        y_reg = y_train_df.get_column(cfg.target.regressor_intensity.target_col).to_numpy()
 
         timeline = TimelineInfo(
             initial_year=initial_year,

@@ -1,0 +1,20 @@
+# @package _global_
+
+# Focused tuning run for the Regressor intensity regressor.
+
+defaults:
+  - override /hparams_search: sklearn_tweedie_regressor
+
+experiment_name: "Regressor_Tweedie_Hyperopt_v1"
+quiet_sweep: true
+
+optimization:
+  metric: "regressor_oof_rmse"
+  direction: "minimize"
+
+hydra:
+  sweeper:
+    n_trials: 75
+    direction: ${optimization.direction}
+    study_name: sklearn_tweedie_regressor_tuning_v1
+    storage: sqlite:///fof8-ml/optuna.db

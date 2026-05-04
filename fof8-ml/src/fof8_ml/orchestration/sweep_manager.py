@@ -10,7 +10,8 @@ from hydra.core.hydra_config import HydraConfig
 from hydra.types import RunMode
 from omegaconf import DictConfig, OmegaConf
 
-from fof8_ml.orchestration.experiment_logger import preserve_cwd, resolve_stage_run_name
+from fof8_ml.models.registry import get_model_family
+from fof8_ml.orchestration.experiment_logger import preserve_cwd
 
 
 @dataclass
@@ -41,22 +42,99 @@ class SweepManager:
         if not isinstance(model_cfg, dict):
             return {}
 
+        model_name = model_cfg.get("name")
+        model_family = None
+        if isinstance(model_name, str):
+            for role in ("regressor", "classifier"):
+                model_family = get_model_family(role=role, model_name=model_name)
+                if model_family is not None:
+                    break
+
         return {
-            "model_name": model_cfg.get("name"),
-            "model_family": model_cfg.get("family"),
+            "model_name": model_name,
+            "model_family": model_family,
             "model_params": model_cfg.get("params", {}),
         }
 
-    def _find_stage_run(self, parent_run_id: str, stage_name: str) -> Optional[str]:
-        run_name = resolve_stage_run_name(stage_name)
-        child_runs = self.client.search_runs(
-            experiment_ids=[self.experiment_id],
-            filter_string=f"tags.mlflow.parentRunId = '{parent_run_id}'",
-            max_results=100,
-        )
-        for run in child_runs:
-            if run.data.tags.get("mlflow.runName") == run_name:
-                return run.info.run_id
+    def _resolve_flat_role_run(self, pipeline_run_id: str, role_name: str) -> Optional[str]:
+        """Return the pipeline run when it owns the requested flattened role."""
+
+        normalized_role = role_name.strip().lower()
+        try:
+            pipeline_run = self.client.get_run(pipeline_run_id)
+            if pipeline_run.data.tags.get("model_role") == normalized_role:
+                return pipeline_run_id
+        except Exception:
+            pass
+        return None
+
+    def _resolve_model_uri(self, run_id: str, artifact_path: str) -> str:
+        """Resolve a model URI across MLflow 2 run artifacts and MLflow 3 logged models."""
+
+        runs_uri = f"runs:/{run_id}/{artifact_path}"
+        try:
+            artifacts = self.client.list_artifacts(run_id, artifact_path)
+            if any(artifact.path == f"{artifact_path}/MLmodel" for artifact in artifacts):
+                return runs_uri
+        except Exception:
+            pass
+
+        run = self.client.get_run(run_id)
+        try:
+            logged_models = self.client.search_logged_models(
+                experiment_ids=[run.info.experiment_id],
+                filter_string=f"source_run_id = '{run_id}'",
+                max_results=100,
+            )
+        except Exception:
+            logged_models = self.client.search_logged_models(
+                experiment_ids=[run.info.experiment_id],
+                filter_string=f"name = '{artifact_path}'",
+                max_results=100,
+            )
+
+        matches = [
+            model
+            for model in logged_models
+            if model.name == artifact_path and model.source_run_id == run_id
+        ]
+        if not matches:
+            return runs_uri
+
+        best_model = max(matches, key=lambda model: model.last_updated_timestamp or 0)
+        return f"models:/{best_model.model_id}"
+
+    def _register_role_model(
+        self,
+        *,
+        pipeline_run_id: str,
+        role_run_id: str,
+        artifact_path: str,
+        registered_name: str,
+    ) -> None:
+        model_uri = self._resolve_model_uri(role_run_id, artifact_path)
+        try:
+            model_version = mlflow.register_model(model_uri=model_uri, name=registered_name)
+        except Exception as exc:
+            error = str(exc)[:500]
+            self.client.set_tag(pipeline_run_id, "model_registration_error", error)
+            raise
+
+        self.client.set_tag(pipeline_run_id, "registered_model_name", registered_name)
+        self.client.set_tag(pipeline_run_id, "registered_model_uri", model_uri)
+        if getattr(model_version, "version", None) is not None:
+            self.client.set_tag(
+                pipeline_run_id, "registered_model_version", str(model_version.version)
+            )
+
+    def _registration_target(self, cfg: DictConfig) -> tuple[str, str, str] | None:
+        """Return role, artifact path, and registry name for champion model registration."""
+
+        model_name = str(cfg.model.name)
+        if get_model_family(role="regressor", model_name=model_name) is not None:
+            return ("regressor", "regressor_model", "fof8-scout-regressor")
+        if get_model_family(role="classifier", model_name=model_name) is not None:
+            return ("classifier", "classifier_model", "fof8-scout-classifier")
         return None
 
     def detect_sweep(self, cfg: DictConfig) -> SweepContext:
@@ -202,12 +280,23 @@ class SweepManager:
             self.client.set_tag(pipeline_run_id, "champion", "true")
             self.client.set_tag(ctx.sweep_run_id, "best_params", str(champ_params))
 
-            stage2_run_id = self._find_stage_run(pipeline_run_id, "stage2")
-            if stage2_run_id is not None:
-                mlflow.register_model(
-                    model_uri=f"runs:/{stage2_run_id}/stage2_model",
-                    name="fof8-scout-regressor",
-                )
+            registration_target = self._registration_target(cfg)
+            if registration_target is not None:
+                role_name, artifact_path, registered_name = registration_target
+                role_run_id = self._resolve_flat_role_run(pipeline_run_id, role_name)
+            else:
+                role_run_id = None
+
+            if role_run_id is not None and registration_target is not None:
+                try:
+                    self._register_role_model(
+                        pipeline_run_id=pipeline_run_id,
+                        role_run_id=role_run_id,
+                        artifact_path=artifact_path,
+                        registered_name=registered_name,
+                    )
+                except Exception:
+                    pass
 
         return is_new_best
 

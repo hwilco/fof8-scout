@@ -1,0 +1,21 @@
+# @package _global_
+
+# CatBoost Tweedie tuning run for the Regressor intensity regressor.
+
+defaults:
+  - override /model: catboost_tweedie_regressor
+  - override /hparams_search: catboost_tweedie_regressor
+
+experiment_name: "Regressor_CatBoost_Tweedie_Hyperopt_v1"
+quiet_sweep: true
+
+optimization:
+  metric: "regressor_oof_rmse"
+  direction: "minimize"
+
+hydra:
+  sweeper:
+    n_trials: 100
+    direction: ${optimization.direction}
+    study_name: catboost_tweedie_regressor_tuning_v2
+    storage: sqlite:///fof8-ml/optuna.db

@@ -40,7 +40,7 @@ categorical choices (they can surface as OmegaConf `ListConfig`). To preserve fe
 ablation sweeps with combinations, use scalar toggles and resolve them into concrete
 include/exclude lists inside orchestration.
 
-### Canonical config shape (classifier example)
+### Canonical config shape (shared across classifier/regressor)
 
 - Base lists:
   - `include_features` (optional explicit include patterns)
@@ -54,6 +54,16 @@ include/exclude lists inside orchestration.
 Resolver behavior lives in:
 - `fof8-ml/src/fof8_ml/orchestration/data_loader.py` (`resolve_feature_ablation_config`)
 - wired in `fof8-ml/src/fof8_ml/orchestration/pipeline_runner.py`
+
+Config source of truth now lives in:
+- `pipelines/conf/ablation/default.yaml`
+
+Both pipelines import that shared config via defaults:
+- `pipelines/conf/classifier_pipeline.yaml` includes `- ablation: default`
+- `pipelines/conf/regressor_pipeline.yaml` includes `- ablation: default`
+
+This prevents drift in group definitions (`ablation.groups`) and toggle mappings
+(`ablation.toggle_to_group`) between classifier and regressor runs.
 
 The resolver:
 - merges base include/exclude lists with enabled ablation groups
@@ -90,7 +100,7 @@ Example:
 - fixed `false`: `no_combine`
 - swept: `no_position`
 
-In base config (`classifier_pipeline.yaml`), set pinned defaults:
+In shared base config (`ablation/default.yaml`), set pinned defaults:
 - `ablation.toggles.no_interviewed: true`
 - `ablation.toggles.no_scout: true`
 - `ablation.toggles.no_delta: true`
@@ -101,6 +111,12 @@ In sweep search space, only include:
 - `ablation.toggles.no_position: {type: categorical, choices: [true, false]}`
 
 Do not include pinned toggles in search space unless you want them tuned.
+
+If classifier/regressor need different defaults, create tiny overlays such as:
+- `pipelines/conf/ablation/classifier.yaml`
+- `pipelines/conf/ablation/regressor.yaml`
+
+and point each pipeline defaults entry to the appropriate ablation profile.
 
 For include-only experiments, prefer:
 - `include_features` as explicit patterns, or

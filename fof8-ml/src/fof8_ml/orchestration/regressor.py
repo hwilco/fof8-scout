@@ -1,0 +1,96 @@
+import mlflow
+import numpy as np
+import polars as pl
+
+from fof8_ml.models.registry import get_model_family
+from fof8_ml.orchestration.evaluator import compute_regressor_oof_metrics
+from fof8_ml.orchestration.pipeline_runner import PipelineContext
+from fof8_ml.orchestration.trainer import run_cv_regressor, train_final_model
+
+
+def _regressor_target_space(model_name: str, params: object) -> str:
+    """Use raw targets only for CatBoost Tweedie; keep legacy log targets otherwise."""
+
+    model_family = get_model_family(role="regressor", model_name=model_name)
+    loss_function = str(getattr(params, "loss_function", ""))
+    if model_family == "catboost" and loss_function.startswith("Tweedie"):
+        return "raw"
+    return "log"
+
+
+def run_regressor(ctx: PipelineContext) -> dict[str, float]:
+    cfg = ctx.cfg
+    data = ctx.data
+    quiet = ctx.sweep_context.quiet
+
+    positive_mask = (data.y_cls == 1).astype(bool)
+    X_reg = data.X_train.filter(pl.Series(positive_mask))
+    target_space = _regressor_target_space(cfg.model.name, cfg.model.params)
+    y_reg_raw = data.y_reg[positive_mask]
+    y_reg_target = y_reg_raw if target_space == "raw" else np.log1p(y_reg_raw)
+
+    if not quiet:
+        n_hits = int(positive_mask.sum())
+        print(f"\nFiltered to {n_hits} ground truth positive cases for regressor training.")
+        print(f"Regressor target space: {target_space}")
+        print("\n" + "=" * 40)
+        print("REGRESSOR: INTENSITY REGRESSOR")
+        print("=" * 40)
+
+    with ctx.logger.start_model_run("regressor", ctx.sweep_context):
+        ctx.logger.log_model_params(cfg.model, prefix="regressor")
+        mlflow.log_param("regressor_target_space", target_space)
+
+        regressor_cv_result = run_cv_regressor(
+            X=X_reg,
+            y=y_reg_target,
+            model_cfg=cfg.model,
+            cv_cfg=cfg.cv,
+            seed=cfg.seed,
+            use_gpu=cfg.use_gpu,
+            quiet=quiet,
+            target_space=target_space,
+        )
+
+        regressor_metrics = compute_regressor_oof_metrics(
+            y_true=y_reg_target,
+            oof_predictions=regressor_cv_result.oof_predictions,
+            target_space=target_space,
+        )
+
+        cv_rmse = [m["rmse"] for m in regressor_cv_result.fold_metrics]
+        cv_mae = [m["mae"] for m in regressor_cv_result.fold_metrics]
+        regressor_metrics["regressor_mean_rmse"] = float(np.mean(cv_rmse))
+        regressor_metrics["regressor_mean_mae"] = float(np.mean(cv_mae))
+
+        avg_best_iters = (
+            int(np.mean(regressor_cv_result.best_iterations))
+            if regressor_cv_result.best_iterations
+            else 100
+        )
+        regressor_model = train_final_model(
+            model_cfg=cfg.model,
+            role="regressor",
+            X=X_reg,
+            y=y_reg_target,
+            avg_best_iterations=avg_best_iters,
+            seed=cfg.seed,
+            use_gpu=cfg.use_gpu,
+            quiet=quiet,
+        )
+
+        ctx.logger.log_regressor_results(regressor_metrics, regressor_model, X_reg, cfg, quiet)
+
+        mlflow.log_metrics(
+            {
+                "regressor_oof_rmse": regressor_metrics["regressor_oof_rmse"],
+                "regressor_oof_mae": regressor_metrics["regressor_oof_mae"],
+            }
+        )
+
+    return {
+        "regressor_oof_rmse": regressor_metrics["regressor_oof_rmse"],
+        "regressor_oof_mae": regressor_metrics["regressor_oof_mae"],
+        "regressor_mean_rmse": regressor_metrics["regressor_mean_rmse"],
+        "regressor_mean_mae": regressor_metrics["regressor_mean_mae"],
+    }

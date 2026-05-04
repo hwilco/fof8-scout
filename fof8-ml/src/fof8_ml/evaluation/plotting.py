@@ -13,7 +13,7 @@ from fof8_ml.models.base import ModelWrapper
 
 def log_feature_importance(
     wrapper: ModelWrapper,
-    stage_name: str,
+    role_name: str,
     X: pl.DataFrame | None = None,
     log_shap: bool = False,
 ) -> None:
@@ -22,7 +22,7 @@ def log_feature_importance(
 
     Args:
         wrapper: The trained model wrapper (ModelWrapper).
-        stage_name: Name of the pipeline stage.
+        role_name: Name of the model role.
         X: Optional feature data for SHAP values.
         log_shap: Boolean indicating whether to log SHAP plots.
     """
@@ -53,11 +53,11 @@ def log_feature_importance(
         fi_plot_df.get_column("Importance").to_list()[::-1],
         color="steelblue",
     )
-    ax.set_title(f"{stage_name}{title_suffix}")
+    ax.set_title(f"{role_name}{title_suffix}")
     plt.tight_layout()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        plot_name_base = f"{stage_name.lower().replace(' ', '_')}"
+        plot_name_base = f"{role_name.lower().replace(' ', '_')}"
         plot_path = os.path.join(tmpdir, f"{plot_name_base}_importance.png")
         fig.savefig(plot_path)
         mlflow.log_artifact(plot_path)
@@ -96,7 +96,7 @@ def log_feature_importance(
 
                 fig_shap = plt.figure(figsize=(12, 8))
                 shap.summary_plot(shap_values, X_sample, show=False)
-                plt.title(f"{stage_name} - Global SHAP Influence")
+                plt.title(f"{role_name} - Global SHAP Influence")
                 plt.tight_layout()
 
                 shap_path = os.path.join(tmpdir, f"{plot_name_base}_shap_global.png")
@@ -145,7 +145,7 @@ def log_feature_importance(
 
                         fig_pos = plt.figure(figsize=(12, 8))
                         shap.summary_plot(shap_pos_filtered, X_pos_filtered, show=False)
-                        plt.title(f"{stage_name} - SHAP Influence ({pos})")
+                        plt.title(f"{role_name} - SHAP Influence ({pos})")
                         plt.tight_layout()
 
                         pos_path = os.path.join(
@@ -156,7 +156,7 @@ def log_feature_importance(
                         plt.close(fig_pos)
 
             except Exception as e:
-                logging.warning(f"Could not generate SHAP plots for {stage_name}: {e}")
+                logging.warning(f"Could not generate SHAP plots for {role_name}: {e}")
 
     plt.close(fig)
 

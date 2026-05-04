@@ -1,16 +1,17 @@
 defaults:
   - _self_
+  - ablation: default
   - data: fof8_base
   - target: economic
   - split: chronological
   - cv: kfold_5
-  - model: reg_tweedie
-  - hparams_search: s2_reg_tweedie
+  - model: catboost_tweedie_regressor
+  - hparams_search: catboost_tweedie_regressor
   - experiment: null
   - override hydra/sweeper: optuna
 
 # --- Experiment Metadata ---
-experiment_name: "S2_Intensity_Regressor"
+experiment_name: "Intensity_Regressor"
 
 # --- Execution Settings ---
 quiet_sweep: true            # If true, suppresses non-essential output during sweeps
@@ -20,13 +21,23 @@ seed: 42                     # Global random seed
 # --- Data Slicing & Feature Logic ---
 positions: "all"
 mask_positional_features: true
-include_features: null
-exclude_features: ["Position", "Scout_*", "Delta_*", "Interviewed"]
 
 # --- Optimization Targets ---
 optimization:
-  metric: "s2_oof_rmse"
+  metric: "regressor_oof_rmse"
   direction: "minimize"
+
+# --- Feature Ablation Settings ---
+ablation:
+  toggles:
+    no_position: false
+    no_position_group: false
+    no_combine: false
+    no_interviewed: true
+    no_zscores: false
+    no_scout: true
+    no_delta: true
+    no_college: true
 
 diagnostics:
   log_importance: true
@@ -46,7 +57,7 @@ hydra:
     subdir: ${hydra.job.num}
   sweeper:
     direction: ${optimization.direction}
-    study_name: s2_regressor_v1
+    study_name: regressor_v1
     n_trials: 20
     sampler:
       _target_: optuna.samplers.TPESampler

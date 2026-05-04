@@ -40,11 +40,11 @@ def _make_cfg(**overrides):
                 "features_path": "features.parquet",
             },
             "target": {
-                "stage1_sieve": {
+                "classifier_sieve": {
                     "merit_threshold": 0.025,
                     "target_col": "Cleared_Sieve",
                 },
-                "stage2_intensity": {"target_col": "DPO"},
+                "regressor_intensity": {"target_col": "DPO"},
                 "leakage_prevention": {"drop_cols": []},
             },
             "positions": "all",
@@ -61,7 +61,7 @@ def _data_cfg_for_hash(cfg):
     return {
         "league": cfg.data.league_name,
         "features": cfg.data.features_path,
-        "threshold": cfg.target.stage1_sieve.merit_threshold,
+        "threshold": cfg.target.classifier_sieve.merit_threshold,
         "positions": cfg.positions,
         "buffer": cfg.split.right_censor_buffer,
         "test_pct": cfg.split.test_split_pct,
@@ -81,7 +81,7 @@ def test_data_cache_hash_changes_for_cache_relevant_fields():
     base_hash = _get_data_cache_cfg_hash(_data_cfg_for_hash(base_cfg))
 
     changed_cfgs = [
-        _make_cfg(**{"target.stage1_sieve.merit_threshold": 0.05}),
+        _make_cfg(**{"target.classifier_sieve.merit_threshold": 0.05}),
         _make_cfg(positions=["QB", "WR"]),
         _make_cfg(**{"split.test_split_pct": 0.25}),
         _make_cfg(mask_positional_features=True),

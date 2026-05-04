@@ -1,16 +1,17 @@
 defaults:
   - _self_
+  - ablation: default
   - data: fof8_base
   - target: economic
   - split: chronological
   - cv: kfold_5
-  - model: s1_catboost
-  - hparams_search: s1_catboost_career_threshold
+  - model: catboost_classifier
+  - hparams_search: catboost_classifier_career_threshold
   - experiment: null
   - override hydra/sweeper: optuna
 
 # --- Experiment Metadata ---
-experiment_name: "S1_Sieve_Classifier"
+experiment_name: "Classifier"
 
 # --- Execution Settings ---
 quiet_sweep: true            # If true, suppresses non-essential output during sweeps
@@ -20,48 +21,23 @@ seed: 42                     # Global random seed
 # --- Data Slicing & Feature Logic ---
 positions: "all"
 mask_positional_features: true
-include_features: null
-exclude_features: []
+
+# --- Optimization Targets ---
+optimization:
+  metric: "classifier_oof_pr_auc"
+  direction: "maximize"
+
+# --- Feature Ablation Settings ---
 ablation:
   toggles:
     no_position: false
+    no_position_group: false
     no_combine: false
     no_interviewed: true
     no_zscores: false
     no_scout: true
     no_delta: true
-  toggle_to_group:
-    no_position: no_position
-    no_combine: no_combine
-    no_interviewed: no_interviewed
-    no_zscores: no_zscores
-    no_scout: no_scout
-    no_delta: no_delta
-  groups:
-    no_position:
-      - "Position"
-    no_combine:
-      - "Dash"
-      - "Strength"
-      - "Agility"
-      - "Jump"
-      - "Position_Specific"
-      - "Height"
-      - "Weight"
-    no_interviewed:
-      - "Interviewed"
-    no_zscores:
-      - "*_Z"
-    no_scout:
-      - "Scout_*"
-    no_delta:
-      - "Delta_*"
-  invalid_combinations: []
-
-# --- Optimization Targets ---
-optimization:
-  metric: "s1_oof_pr_auc"
-  direction: "maximize"
+    no_college: false
 
 diagnostics:
   log_importance: true
@@ -81,7 +57,7 @@ hydra:
     subdir: ${hydra.job.num}
   sweeper:
     direction: ${optimization.direction}
-    study_name: s1_classifier_v1
+    study_name: classifier_v1
     n_trials: 20
     sampler:
       _target_: optuna.samplers.TPESampler

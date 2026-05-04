@@ -5,6 +5,7 @@ import mlflow
 import numpy as np
 import polars as pl
 import torch
+from mlflow.models import infer_signature
 
 from .base import ModelWrapper
 
@@ -30,9 +31,23 @@ class CatBoostWrapper(ModelWrapper):
         assert self.model is not None
         return self.model.get_best_iteration()
 
-    def log_model(self, name: str) -> None:
+    def _signature_kwargs(self, X: pl.DataFrame | None) -> dict[str, Any]:
+        if X is None:
+            return {}
         assert self.model is not None
-        mlflow.catboost.log_model(self.model, name=name)
+        input_example, _ = self._prepare_data(X.head(5))
+        try:
+            prediction = self.model.predict(input_example)
+            return {
+                "input_example": input_example,
+                "signature": infer_signature(input_example, prediction),
+            }
+        except Exception:
+            return {"input_example": input_example}
+
+    def log_model(self, name: str, X: pl.DataFrame | None = None) -> None:
+        assert self.model is not None
+        mlflow.catboost.log_model(self.model, artifact_path=name, **self._signature_kwargs(X))
 
     def get_feature_importance(self) -> tuple[list[str], np.ndarray]:
         """Returns feature names and importance values from CatBoost."""
@@ -99,8 +114,42 @@ class CatBoostClassifierWrapper(CatBoostWrapper):
         X_pd, _ = self._prepare_data(X)
         return self.model.predict_proba(X_pd)[:, 1]
 
+    def log_model(self, name: str, X: pl.DataFrame | None = None) -> None:
+        assert self.model is not None
+        if X is None:
+            mlflow.catboost.log_model(self.model, artifact_path=name)
+            return
+
+        input_example, _ = self._prepare_data(X.head(5))
+        try:
+            prediction = self.model.predict_proba(input_example)[:, 1]
+            signature = infer_signature(input_example, prediction)
+            mlflow.catboost.log_model(
+                self.model,
+                artifact_path=name,
+                input_example=input_example,
+                signature=signature,
+            )
+        except Exception:
+            mlflow.catboost.log_model(
+                self.model,
+                artifact_path=name,
+                input_example=input_example,
+            )
+
 
 class CatBoostRegressorWrapper(CatBoostWrapper):
+    def _compose_loss_function(self, params: dict[str, Any]) -> None:
+        """Render tunable Tweedie variance power into CatBoost's loss syntax."""
+
+        variance_power = params.pop("variance_power", None)
+        if variance_power is None:
+            return
+
+        loss_function = str(params.get("loss_function", "RMSE"))
+        if loss_function == "Tweedie":
+            params["loss_function"] = f"Tweedie:variance_power={variance_power}"
+
     def __init__(
         self,
         random_seed: int,
@@ -119,9 +168,10 @@ class CatBoostRegressorWrapper(CatBoostWrapper):
             if "devices" in clean_params:
                 clean_params["devices"] = str(clean_params["devices"])
 
-        for key in ["eval_metric", "iterations", "auto_class_weights"]:
+        for key in ["eval_metric", "auto_class_weights"]:
             clean_params.pop(key, None)
         clean_params.setdefault("loss_function", "RMSE")
+        self._compose_loss_function(clean_params)
 
         # Prevent verbosity conflict
         if not any(

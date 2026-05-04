@@ -3,6 +3,7 @@ import numpy as np
 import polars as pl
 import torch
 import xgboost as xgb
+from mlflow.models import infer_signature
 
 from .base import ModelWrapper
 
@@ -13,8 +14,21 @@ class XGBoostWrapper(ModelWrapper):
     def get_best_iteration(self) -> int:
         return getattr(self.model, "best_iteration", 0)
 
-    def log_model(self, name: str) -> None:
-        mlflow.xgboost.log_model(self.model, name=name)
+    def _signature_kwargs(self, X: pl.DataFrame | None) -> dict[str, object]:
+        if X is None:
+            return {}
+        input_example = X.head(5).to_pandas()
+        try:
+            prediction = self.model.predict(input_example)
+            return {
+                "input_example": input_example,
+                "signature": infer_signature(input_example, prediction),
+            }
+        except Exception:
+            return {"input_example": input_example}
+
+    def log_model(self, name: str, X: pl.DataFrame | None = None) -> None:
+        mlflow.xgboost.log_model(self.model, artifact_path=name, **self._signature_kwargs(X))
 
     def get_feature_importance(self) -> tuple[list[str], np.ndarray]:
         """Returns feature names and importance values from XGBoost."""
@@ -55,6 +69,28 @@ class XGBoostClassifierWrapper(XGBoostWrapper):
 
     def predict_proba(self, X: pl.DataFrame) -> np.ndarray:
         return self.model.predict_proba(X)[:, 1]
+
+    def log_model(self, name: str, X: pl.DataFrame | None = None) -> None:
+        if X is None:
+            mlflow.xgboost.log_model(self.model, artifact_path=name)
+            return
+
+        input_example = X.head(5).to_pandas()
+        try:
+            prediction = self.model.predict_proba(input_example)[:, 1]
+            signature = infer_signature(input_example, prediction)
+            mlflow.xgboost.log_model(
+                self.model,
+                artifact_path=name,
+                input_example=input_example,
+                signature=signature,
+            )
+        except Exception:
+            mlflow.xgboost.log_model(
+                self.model,
+                artifact_path=name,
+                input_example=input_example,
+            )
 
 
 class XGBoostRegressorWrapper(XGBoostWrapper):

@@ -1,0 +1,48 @@
+# @package _global_
+
+include_features: null
+exclude_features: []
+ablation:
+  toggles:
+    no_position: false
+    no_position_group: false
+    no_combine: false
+    no_interviewed: true
+    no_zscores: false
+    no_scout: true
+    no_delta: true
+    no_college: true
+  toggle_to_group:
+    no_position: no_position
+    no_position_group: no_position_group
+    no_combine: no_combine
+    no_interviewed: no_interviewed
+    no_zscores: no_zscores
+    no_scout: no_scout
+    no_delta: no_delta
+    no_college: no_college
+  groups:
+    no_position:
+      - "Position"
+    no_position_group:
+      - "Position_Group"
+    no_combine:
+      - "Dash"
+      - "Strength"
+      - "Agility"
+      - "Jump"
+      - "Position_Specific"
+      - "Height"
+      - "Weight"
+    no_interviewed:
+      - "Interviewed"
+    no_zscores:
+      - "*_Z"
+    no_scout:
+      - "Scout_*"
+    no_delta:
+      - "Delta_*"
+    no_college:
+      - "College_*"
+      - "College"
+  invalid_combinations: []

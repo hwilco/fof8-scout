@@ -40,6 +40,28 @@ def test_regressor_preserves_configured_loss_function(monkeypatch, loss_function
     assert captured["regressor"]["loss_function"] == loss_function
 
 
+def test_regressor_composes_tweedie_variance_power(monkeypatch):
+    captured = _patch_catboost_constructors(monkeypatch)
+
+    CatBoostRegressorWrapper(
+        random_seed=7,
+        use_gpu=False,
+        loss_function="Tweedie",
+        variance_power=1.7,
+    )
+
+    assert captured["regressor"]["loss_function"] == "Tweedie:variance_power=1.7"
+    assert "variance_power" not in captured["regressor"]
+
+
+def test_regressor_preserves_configured_iterations(monkeypatch):
+    captured = _patch_catboost_constructors(monkeypatch)
+
+    CatBoostRegressorWrapper(random_seed=7, use_gpu=False, iterations=1234)
+
+    assert captured["regressor"]["iterations"] == 1234
+
+
 def test_gpu_does_not_force_devices_when_not_configured(monkeypatch):
     captured = _patch_catboost_constructors(monkeypatch)
     monkeypatch.setattr("fof8_ml.models.catboost_wrapper.torch.cuda.is_available", lambda: True)

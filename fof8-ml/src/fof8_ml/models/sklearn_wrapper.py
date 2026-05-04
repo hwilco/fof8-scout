@@ -4,6 +4,7 @@ import joblib
 import mlflow
 import numpy as np
 import polars as pl
+from mlflow.models import infer_signature
 from sklearn.linear_model import GammaRegressor, TweedieRegressor
 
 from fof8_ml.data.preprocessing import preprocess_for_sklearn
@@ -58,9 +59,23 @@ class SklearnRegressorWrapper(ModelWrapper):
     def get_best_iteration(self) -> int:
         return 0
 
-    def log_model(self, name: str) -> None:
+    def _signature_kwargs(self, X: pl.DataFrame | None) -> dict[str, Any]:
+        signature_kwargs: dict[str, Any] = {}
+        if X is not None:
+            input_example = self.transform(X.head(5)).to_pandas()
+            try:
+                prediction = self.model.predict(input_example)
+                signature_kwargs = {
+                    "input_example": input_example,
+                    "signature": infer_signature(input_example, prediction),
+                }
+            except Exception:
+                signature_kwargs = {"input_example": input_example}
+        return signature_kwargs
+
+    def log_model(self, name: str, X: pl.DataFrame | None = None) -> None:
         assert self.columns is not None
-        mlflow.sklearn.log_model(self.model, name=name)
+        mlflow.sklearn.log_model(self.model, artifact_path=name, **self._signature_kwargs(X))
         joblib.dump(self.scaler, f"{name}_scaler.joblib")
         mlflow.log_artifact(f"{name}_scaler.joblib")
 

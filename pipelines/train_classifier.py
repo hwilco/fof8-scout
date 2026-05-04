@@ -8,7 +8,7 @@ from fof8_ml.orchestration.pipeline_runner import (
     finalize_pipeline_run,
     select_optimization_metric,
 )
-from fof8_ml.orchestration.stage1_classifier import run_classifier_stage
+from fof8_ml.orchestration.classifier import run_classifier
 from omegaconf import DictConfig
 
 # Suppress Optuna deprecation warnings
@@ -25,7 +25,7 @@ logging.getLogger("matplotlib").setLevel(logging.ERROR)
 
 @hydra.main(version_base=None, config_path="conf", config_name="classifier_pipeline")
 def main(cfg: DictConfig) -> float:
-    """Train and evaluate the Stage 1 Sieve Classifier.
+    """Train and evaluate the Classifier Sieve Classifier.
 
     Args:
         cfg: Hydra config from classifier_pipeline.yaml.
@@ -47,7 +47,7 @@ def main(cfg: DictConfig) -> float:
         )
         ctx.logger.log_feature_schema(ctx.data)
 
-        available_metrics = run_classifier_stage(ctx)
+        available_metrics = run_classifier(ctx)
 
         if not ctx.sweep_context.quiet:
             print("\nClassifier Training Complete. Model saved to MLflow.")

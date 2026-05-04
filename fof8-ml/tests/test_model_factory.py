@@ -16,20 +16,20 @@ MODEL_CFG_DIR = Path(__file__).resolve().parents[2] / "pipelines" / "conf" / "mo
 
 
 @pytest.mark.parametrize(
-    ("model_name", "stage", "expected_cls"),
+    ("model_name", "role", "expected_cls"),
     [
-        ("s1_catboost", "stage1", CatBoostClassifierWrapper),
-        ("xgb", "stage1", XGBoostClassifierWrapper),
-        ("s2_catboost", "stage2", CatBoostRegressorWrapper),
-        ("s2_xgb", "stage2", XGBoostRegressorWrapper),
-        ("reg_tweedie", "stage2", SklearnRegressorWrapper),
-        ("reg_gamma", "stage2", SklearnRegressorWrapper),
+        ("catboost_classifier", "classifier", CatBoostClassifierWrapper),
+        ("xgb_classifier", "classifier", XGBoostClassifierWrapper),
+        ("catboost_tweedie_regressor", "regressor", CatBoostRegressorWrapper),
+        ("xgb_regressor", "regressor", XGBoostRegressorWrapper),
+        ("sklearn_tweedie_regressor", "regressor", SklearnRegressorWrapper),
+        ("sklearn_gamma_regressor", "regressor", SklearnRegressorWrapper),
     ],
 )
-def test_get_model_wrapper_aliases(model_name, stage, expected_cls):
+def test_get_model_wrapper_aliases(model_name, role, expected_cls):
     model = get_model_wrapper(
         model_name=model_name,
-        stage=stage,
+        role=role,
         random_seed=42,
         params={"iterations": 10} if "catboost" in model_name else {},
     )
@@ -37,22 +37,19 @@ def test_get_model_wrapper_aliases(model_name, stage, expected_cls):
 
 
 @pytest.mark.parametrize(
-    ("cfg_file", "stage", "expected_cls"),
+    ("cfg_file", "role", "expected_cls"),
     [
-        ("s1_catboost.yaml", "stage1", CatBoostClassifierWrapper),
-        ("career_threshold_catboost.yaml", "stage1", CatBoostClassifierWrapper),
-        ("career_threshold_catboost.yaml", "stage2", CatBoostRegressorWrapper),
-        ("career_threshold_xgb.yaml", "stage1", XGBoostClassifierWrapper),
-        ("career_threshold_xgb.yaml", "stage2", XGBoostRegressorWrapper),
-        ("reg_tweedie.yaml", "stage2", SklearnRegressorWrapper),
-        ("reg_gamma.yaml", "stage2", SklearnRegressorWrapper),
+        ("catboost_classifier.yaml", "classifier", CatBoostClassifierWrapper),
+        ("catboost_tweedie_regressor.yaml", "regressor", CatBoostRegressorWrapper),
+        ("sklearn_tweedie_regressor.yaml", "regressor", SklearnRegressorWrapper),
+        ("sklearn_gamma_regressor.yaml", "regressor", SklearnRegressorWrapper),
     ],
 )
-def test_all_model_configs_resolve_to_expected_wrapper_family(cfg_file, stage, expected_cls):
+def test_all_model_configs_resolve_to_expected_wrapper_family(cfg_file, role, expected_cls):
     cfg = OmegaConf.load(MODEL_CFG_DIR / cfg_file)
     model = get_model_wrapper(
         model_name=cfg.name,
-        stage=stage,
+        role=role,
         random_seed=42,
         # Phase 6 scope is name-to-wrapper resolution (registry routing), not
         # validating every hyperparameter payload here.
@@ -65,62 +62,62 @@ def test_unknown_model_name_error_lists_valid_keys():
     with pytest.raises(ValueError) as exc_info:
         get_model_wrapper(
             model_name="totally_unknown_model",
-            stage="stage2",
+            role="regressor",
             random_seed=42,
             params={},
         )
 
     message = str(exc_info.value)
     assert "Valid model keys" in message
-    for key in list_model_keys("stage2"):
+    for key in list_model_keys("regressor"):
         assert key in message
 
 
-def test_unknown_stage_error_lists_valid_stages():
+def test_unknown_role_error_lists_valid_roles():
     with pytest.raises(ValueError) as exc_info:
-        resolve_model(stage="stage9", model_name="xgb")
+        resolve_model(role="role9", model_name="xgb")
 
     message = str(exc_info.value)
-    assert "Valid stages" in message
-    assert "stage1" in message
-    assert "stage2" in message
+    assert "Valid roles" in message
+    assert "classifier" in message
+    assert "regressor" in message
 
 
-def test_resolve_model_is_case_insensitive_for_stage_and_name():
-    registration = resolve_model(stage="STAGE1", model_name=" XGB ")
+def test_resolve_model_is_case_insensitive_for_role_and_name():
+    registration = resolve_model(role="CLASSIFIER", model_name=" XGB_CLASSIFIER ")
     assert registration.family == "xgb"
 
 
 def test_duplicate_registration_raises_with_normalized_key():
     with pytest.raises(ValueError) as exc_info:
-        register_model(" stage1 ", "S1_CATBOOST", "catboost", CatBoostClassifierWrapper)
+        register_model(" classifier ", "CATBOOST_CLASSIFIER", "catboost", CatBoostClassifierWrapper)
 
     message = str(exc_info.value)
     assert "Duplicate model registration" in message
-    assert "stage='stage1'" in message
-    assert "key='s1_catboost'" in message
+    assert "role='classifier'" in message
+    assert "key='catboost_classifier'" in message
 
 
 def test_all_model_config_names_are_registered():
     config_names = {
         str(OmegaConf.load(cfg_path).name).lower() for cfg_path in MODEL_CFG_DIR.glob("*.yaml")
     }
-    registered_names = set(list_model_keys("stage1")) | set(list_model_keys("stage2"))
+    registered_names = set(list_model_keys("classifier")) | set(list_model_keys("regressor"))
     missing = config_names - registered_names
     assert not missing, f"Model config names missing from registry: {sorted(missing)}"
 
 
 def test_quiet_params_for_registry_models():
-    cat_quiet = apply_quiet_params("catboost_career_threshold", {"iterations": 100})
+    cat_quiet = apply_quiet_params("catboost_classifier", {"iterations": 100})
     assert cat_quiet["logging_level"] == "Silent"
 
-    xgb_quiet = apply_quiet_params("xgboost_career_threshold", {"max_depth": 4})
+    xgb_quiet = apply_quiet_params("xgb_classifier", {"max_depth": 4})
     assert xgb_quiet["verbosity"] == 0
 
-    sklearn_quiet = apply_quiet_params("sklearn_tweedie", {"alpha": 1.0})
+    sklearn_quiet = apply_quiet_params("sklearn_tweedie_regressor", {"alpha": 1.0})
     assert sklearn_quiet == {"alpha": 1.0}
 
 
 def test_quiet_params_is_case_insensitive():
-    cat_quiet = apply_quiet_params(" CATBOOST_CAREER_THRESHOLD ", {"iterations": 100})
+    cat_quiet = apply_quiet_params(" CATBOOST_CLASSIFIER ", {"iterations": 100})
     assert cat_quiet["logging_level"] == "Silent"

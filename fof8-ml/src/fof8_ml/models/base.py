@@ -39,7 +39,7 @@ class ModelWrapper(ABC):
         pass
 
     @abstractmethod
-    def log_model(self, name: str) -> None:
+    def log_model(self, name: str, X: pl.DataFrame | None = None) -> None:
         """Log the model to MLflow."""
         pass
 
