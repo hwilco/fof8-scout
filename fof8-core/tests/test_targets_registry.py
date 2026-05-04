@@ -38,7 +38,20 @@ def test_registry_contains_builtin_targets():
         "annual_financials",
         "peak_overall",
         "merit_cap_share",
+        "economic_targets",
+        "dpo_targets",
+        "draft_outcome_targets",
         "career_value_metrics",
         "awards",
     }
     assert required.issubset(set(TARGET_REGISTRY.keys()))
+
+
+def test_registry_passes_kwargs_to_parameterized_targets(monkeypatch, mock_loader):
+    def fake_economic(loader, merit_threshold=0.0):
+        assert loader is mock_loader
+        return pl.DataFrame({"merit_threshold": [merit_threshold]})
+
+    monkeypatch.setitem(TARGET_REGISTRY, "economic_targets", fake_economic)
+    out = get_target("economic_targets", mock_loader, merit_threshold=0.2)
+    assert out["merit_threshold"][0] == 0.2

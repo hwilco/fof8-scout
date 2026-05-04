@@ -1,0 +1,108 @@
+from contextlib import nullcontext
+from types import SimpleNamespace
+
+import numpy as np
+import polars as pl
+import pytest
+from fof8_ml.orchestration.pipeline_types import CVResult
+from fof8_ml.orchestration.regressor import run_regressor
+
+
+def _make_context(*, target_space: str, loss_function: str, y_reg: np.ndarray, y_cls: np.ndarray):
+    cfg = SimpleNamespace(
+        model=SimpleNamespace(
+            name="catboost_tweedie_regressor",
+            params=SimpleNamespace(loss_function=loss_function),
+        ),
+        target=SimpleNamespace(
+            regressor_intensity=SimpleNamespace(
+                target_col="Positive_Career_Merit_Cap_Share",
+                target_space=target_space,
+            )
+        ),
+        cv=SimpleNamespace(n_folds=2, shuffle=True),
+        seed=42,
+        use_gpu=False,
+    )
+    data = SimpleNamespace(
+        X_train=pl.DataFrame({"feature": [1.0, 2.0, 3.0, 4.0]}),
+        y_cls=y_cls,
+        y_reg=y_reg,
+    )
+    logger = SimpleNamespace(
+        start_model_run=lambda *_args, **_kwargs: nullcontext(),
+        log_model_params=lambda *_args, **_kwargs: None,
+        log_regressor_results=lambda *_args, **_kwargs: None,
+    )
+    sweep_context = SimpleNamespace(quiet=True)
+    return SimpleNamespace(cfg=cfg, data=data, logger=logger, sweep_context=sweep_context)
+
+
+def test_run_regressor_rejects_invalid_target_space():
+    ctx = _make_context(
+        target_space="invalid",
+        loss_function="Tweedie",
+        y_reg=np.array([1.0, 2.0, 3.0, 4.0]),
+        y_cls=np.array([1, 1, 1, 1]),
+    )
+    with pytest.raises(ValueError, match="Unsupported regressor target_space"):
+        run_regressor(ctx)
+
+
+def test_run_regressor_requires_raw_space_for_tweedie():
+    ctx = _make_context(
+        target_space="log",
+        loss_function="Tweedie",
+        y_reg=np.array([1.0, 2.0, 3.0, 4.0]),
+        y_cls=np.array([1, 1, 1, 1]),
+    )
+    with pytest.raises(ValueError, match="requires target.regressor_intensity.target_space='raw'"):
+        run_regressor(ctx)
+
+
+def test_run_regressor_rejects_negative_targets_for_tweedie():
+    ctx = _make_context(
+        target_space="raw",
+        loss_function="Tweedie",
+        y_reg=np.array([1.0, -0.5, 3.0, 4.0]),
+        y_cls=np.array([1, 1, 1, 1]),
+    )
+    with pytest.raises(ValueError, match="requires non-negative regressor targets"):
+        run_regressor(ctx)
+
+
+def test_run_regressor_uses_configured_target_space(monkeypatch):
+    captured = {}
+
+    def fake_run_cv_regressor(*, X, y, target_space, **_kwargs):
+        captured["y"] = y
+        captured["target_space"] = target_space
+        return CVResult(
+            oof_predictions=np.array([0.1, 0.2, 0.3, 0.4]),
+            best_iterations=[10, 12],
+            fold_metrics=[{"rmse": 1.0, "mae": 1.0}, {"rmse": 1.2, "mae": 1.1}],
+        )
+
+    monkeypatch.setattr("fof8_ml.orchestration.regressor.get_model_family", lambda **_: "catboost")
+    monkeypatch.setattr("fof8_ml.orchestration.regressor.run_cv_regressor", fake_run_cv_regressor)
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.regressor.compute_regressor_oof_metrics",
+        lambda **_kwargs: {"regressor_oof_rmse": 1.0, "regressor_oof_mae": 1.0},
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.regressor.train_final_model", lambda **_kwargs: object()
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.regressor.mlflow.log_param", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.regressor.mlflow.log_metrics", lambda *_args, **_kwargs: None
+    )
+
+    y_reg = np.array([2.0, 3.0, 4.0, 5.0])
+    y_cls = np.array([1, 1, 1, 1])
+    ctx = _make_context(target_space="log", loss_function="RMSE", y_reg=y_reg, y_cls=y_cls)
+    run_regressor(ctx)
+
+    assert captured["target_space"] == "log"
+    assert np.allclose(captured["y"], np.log1p(y_reg))

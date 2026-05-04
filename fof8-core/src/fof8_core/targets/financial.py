@@ -49,23 +49,6 @@ def get_annual_financials(loader: FOF8Loader) -> pl.DataFrame:
         )
 
 
-def get_peak_overall(loader: FOF8Loader, k: int = 3) -> pl.DataFrame:
-    """
-    Calculates the mean of the top k Current_Overall values for each player,
-    using the league-scout post-exhibition ratings.
-    """
-    with pl.StringCache():
-        lf_ratings = loader.scan_file("player_ratings_season_*.csv")
-
-        return (
-            lf_ratings.filter(pl.col("Scouting") == "Exhibition")
-            .select(["Player_ID", "Current_Overall"])
-            .group_by("Player_ID")
-            .agg(pl.col("Current_Overall").top_k(k).mean().alias("Peak_Overall"))
-            .collect()
-        )
-
-
 def get_merit_cap_share(loader: FOF8Loader) -> pl.DataFrame:
     """
     Calculates pure merit-based earnings by subtracting the total expected cap share

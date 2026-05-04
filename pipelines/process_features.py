@@ -32,7 +32,6 @@ def main(cfg: DictConfig) -> None:
         absolute_raw_path,
         cfg.data.league_name,
         year_range,
-        final_sim_year,
         positions=None,
         active_team_id=cfg.data.active_team_id,
         merit_threshold=0,

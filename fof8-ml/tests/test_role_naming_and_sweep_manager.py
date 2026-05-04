@@ -194,8 +194,6 @@ def test_register_role_model_records_model_version_tags(monkeypatch):
         model_uri="models:/model-id",
         name="fof8-scout-regressor",
     )
-    client.set_tag.assert_any_call(
-        "pipeline-run", "registered_model_name", "fof8-scout-regressor"
-    )
+    client.set_tag.assert_any_call("pipeline-run", "registered_model_name", "fof8-scout-regressor")
     client.set_tag.assert_any_call("pipeline-run", "registered_model_uri", "models:/model-id")
     client.set_tag.assert_any_call("pipeline-run", "registered_model_version", "7")

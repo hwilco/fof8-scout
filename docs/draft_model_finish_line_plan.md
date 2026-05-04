@@ -45,6 +45,12 @@ Secondary output:
 Goal: make targets configurable enough to compare DPO, economic value, and overall-based
 targets without rewriting pipeline code.
 
+Target-family convention:
+
+- `Peak_Overall` is a talent target.
+- `Career_Merit_Cap_Share` is an economic target.
+- `DPO` is a composite target (talent x economic) and should stay a baseline/comparison target.
+
 ### Repo Changes
 
 1. Add target columns to the processed feature store.

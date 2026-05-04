@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, cast
 import polars as pl
 from fof8_core.features.position_masks import apply_position_mask
 from fof8_core.loader import FOF8Loader
+from fof8_core.targets.draft_outcomes import DRAFT_OUTCOME_LEAKAGE_COLUMNS
 from omegaconf import DictConfig
 
 from fof8_ml.orchestration.pipeline_types import PreparedData, TimelineInfo
@@ -110,7 +111,10 @@ class DataLoader:
         data_cfg = {
             "league": cfg.data.league_name,
             "features": cfg.data.features_path,
+            "classifier_target_col": cfg.target.classifier_sieve.target_col,
             "threshold": cfg.target.classifier_sieve.merit_threshold,
+            "regressor_target_col": cfg.target.regressor_intensity.target_col,
+            "regressor_target_space": cfg.target.regressor_intensity.get("target_space", "log"),
             "positions": cfg.positions,
             "buffer": cfg.split.right_censor_buffer,
             "test_pct": cfg.split.test_split_pct,
@@ -160,12 +164,14 @@ class DataLoader:
 
         df = pl.read_parquet(features_file)
 
-        # --- Runtime Filtering & Target Labeling ---
-        df = df.with_columns(
-            (pl.col("Career_Merit_Cap_Share") > cfg.target.classifier_sieve.merit_threshold)
-            .alias("Cleared_Sieve")
-            .cast(pl.Int8)
+        missing_target_cols = sorted(
+            c for c in DRAFT_OUTCOME_LEAKAGE_COLUMNS if c not in df.columns
         )
+        if missing_target_cols:
+            raise ValueError(
+                "Processed features are missing draft outcome target columns "
+                f"{missing_target_cols}. Re-run feature processing."
+            )
 
         if cfg.positions and cfg.positions != "all":
             pos_list = [cfg.positions] if isinstance(cfg.positions, str) else list(cfg.positions)
@@ -191,7 +197,9 @@ class DataLoader:
         target_cols = [
             cfg.target.classifier_sieve.target_col,
             cfg.target.regressor_intensity.target_col,
-        ] + list(cfg.target.leakage_prevention.drop_cols)
+            *DRAFT_OUTCOME_LEAKAGE_COLUMNS,
+        ]
+        target_cols = list(dict.fromkeys(target_cols))
         feature_cols = [c for c in df.columns if c not in metadata_cols and c not in target_cols]
 
         X_train = train_df.select(feature_cols)

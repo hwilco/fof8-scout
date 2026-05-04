@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import polars as pl
 import pytest
+from fof8_core.targets.draft_outcomes import DRAFT_OUTCOME_LEAKAGE_COLUMNS
 from fof8_ml.orchestration.data_loader import (
     _GLOBAL_DATA_CACHE,
     DataLoader,
@@ -42,10 +43,13 @@ def _make_cfg(**overrides):
             "target": {
                 "classifier_sieve": {
                     "merit_threshold": 0.025,
-                    "target_col": "Cleared_Sieve",
+                    "target_col": "Economic_Success",
                 },
-                "regressor_intensity": {"target_col": "DPO"},
-                "leakage_prevention": {"drop_cols": []},
+                "regressor_intensity": {
+                    "target_col": "Positive_Career_Merit_Cap_Share",
+                    "target_space": "raw",
+                    "target_family": "economic",
+                },
             },
             "positions": "all",
             "split": {"right_censor_buffer": 3, "test_split_pct": 0.2},
@@ -61,7 +65,10 @@ def _data_cfg_for_hash(cfg):
     return {
         "league": cfg.data.league_name,
         "features": cfg.data.features_path,
+        "classifier_target_col": cfg.target.classifier_sieve.target_col,
         "threshold": cfg.target.classifier_sieve.merit_threshold,
+        "regressor_target_col": cfg.target.regressor_intensity.target_col,
+        "regressor_target_space": cfg.target.regressor_intensity.target_space,
         "positions": cfg.positions,
         "buffer": cfg.split.right_censor_buffer,
         "test_pct": cfg.split.test_split_pct,
@@ -82,6 +89,9 @@ def test_data_cache_hash_changes_for_cache_relevant_fields():
 
     changed_cfgs = [
         _make_cfg(**{"target.classifier_sieve.merit_threshold": 0.05}),
+        _make_cfg(**{"target.classifier_sieve.target_col": "Cleared_Sieve"}),
+        _make_cfg(**{"target.regressor_intensity.target_col": "Positive_DPO"}),
+        _make_cfg(**{"target.regressor_intensity.target_space": "log"}),
         _make_cfg(positions=["QB", "WR"]),
         _make_cfg(**{"split.test_split_pct": 0.25}),
         _make_cfg(mask_positional_features=True),
@@ -106,6 +116,12 @@ def test_feature_ablation_does_not_poison_cached_base_data(monkeypatch):
             "feat_drop": [100, 200],
             "Career_Merit_Cap_Share": [0.8, 0.1],
             "DPO": [0.8, 0.1],
+            "Positive_Career_Merit_Cap_Share": [0.8, 0.1],
+            "Positive_DPO": [0.8, 0.1],
+            "Economic_Success": [1, 1],
+            "Cleared_Sieve": [1, 1],
+            "Peak_Overall": [1.0, 1.0],
+            "Career_Games_Played": [16, 16],
         }
     )
 
@@ -126,3 +142,67 @@ def test_feature_ablation_does_not_poison_cached_base_data(monkeypatch):
     loaded_again = loader.load(cfg)
     assert loaded_again.X_train.columns == base_cols
     assert "feat_drop" in loaded_again.X_train.columns
+
+
+def test_loader_raises_clear_error_for_missing_economic_target_column(monkeypatch):
+    cfg = _make_cfg()
+    loader = DataLoader(exp_root=".", quiet=True)
+
+    source_df = pl.DataFrame(
+        {
+            "Player_ID": [1],
+            "Year": [2020],
+            "First_Name": ["A"],
+            "Last_Name": ["One"],
+            "Position_Group": ["QB"],
+            "feat_keep": [10],
+            "Career_Merit_Cap_Share": [0.8],  # Missing all other economic target/context columns
+        }
+    )
+
+    monkeypatch.setattr("fof8_ml.orchestration.data_loader.os.path.exists", lambda _: True)
+    monkeypatch.setattr("fof8_ml.orchestration.data_loader.pl.read_parquet", lambda _: source_df)
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.data_loader.FOF8Loader",
+        lambda **_: SimpleNamespace(initial_sim_year=2019, final_sim_year=2025),
+    )
+
+    with pytest.raises(
+        ValueError, match="Processed features are missing draft outcome target columns"
+    ):
+        loader.load(cfg)
+
+
+def test_loader_dedupes_target_columns_when_targets_overlap_leakage(monkeypatch):
+    cfg = _make_cfg()
+    loader = DataLoader(exp_root=".", quiet=True)
+
+    source_df = pl.DataFrame(
+        {
+            "Player_ID": [1, 2],
+            "Year": [2020, 2021],
+            "First_Name": ["A", "B"],
+            "Last_Name": ["One", "Two"],
+            "Position_Group": ["QB", "WR"],
+            "feat_keep": [10, 20],
+            "Career_Merit_Cap_Share": [0.8, 0.1],
+            "DPO": [0.8, 0.1],
+            "Positive_Career_Merit_Cap_Share": [0.8, 0.1],
+            "Positive_DPO": [0.8, 0.1],
+            "Economic_Success": [1, 1],
+            "Cleared_Sieve": [1, 1],
+            "Peak_Overall": [1.0, 1.0],
+            "Career_Games_Played": [16, 16],
+        }
+    )
+
+    monkeypatch.setattr("fof8_ml.orchestration.data_loader.os.path.exists", lambda _: True)
+    monkeypatch.setattr("fof8_ml.orchestration.data_loader.pl.read_parquet", lambda _: source_df)
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.data_loader.FOF8Loader",
+        lambda **_: SimpleNamespace(initial_sim_year=2019, final_sim_year=2025),
+    )
+
+    data = loader.load(cfg)
+    assert len(data.target_columns) == len(set(data.target_columns))
+    assert set(DRAFT_OUTCOME_LEAKAGE_COLUMNS).issubset(set(data.target_columns))

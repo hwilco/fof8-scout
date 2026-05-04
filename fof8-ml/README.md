@@ -114,7 +114,7 @@ Batch inference loads this artifact and raises explicit schema mismatch errors f
 The trained classifier and regressor are separate MLflow model artifacts with separate feature contracts. A complete expected-value model should load each model with its own `feature_schema.json`, prepare the full feature frame twice, and combine only the prediction arrays:
 
 ```text
-complete_prediction(X) = P(clear_sieve | X) * E(DPO | clear_sieve, X)
+complete_prediction(X) = P(clear_sieve | X) * E(positive_economic_value | clear_sieve, X)
 ```
 
 ```python
@@ -175,6 +175,12 @@ Key rules:
 - Let the schema drop extra columns and reject missing required columns.
 - For CatBoost Tweedie regressor runs, predictions are already in raw target space; do not apply `expm1`.
 - If a future regressor is trained on log targets, convert its output back with `np.expm1` before stitching.
+
+Default target-family setup:
+
+- Classifier target: `Economic_Success`
+- Regressor target: `Positive_Career_Merit_Cap_Share`
+- Composite baseline target available for comparison: `DPO` via `fof8_core.targets.composite`
 
 ### Extension Guides
 See [`docs/architecture_extensions.md`](../docs/architecture_extensions.md) for:

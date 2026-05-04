@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
+from fof8_core.targets.draft_outcomes import DRAFT_OUTCOME_TARGET_COLUMNS
 from fof8_ml.data.career_threshold_dataset import build_career_threshold_dataset
 from fof8_ml.data.categorical import bucket_rare_colleges, cast_categoricals_to_enum
 from fof8_ml.data.economic_dataset import build_economic_dataset
@@ -203,7 +204,7 @@ def test_build_career_threshold_dataset_preserves_undrafted(mock_loader):
 def test_build_economic_dataset_preserves_undrafted_peak(mock_loader):
     with patch("fof8_ml.data.economic_dataset.FOF8Loader", return_value=mock_loader):
         X, y, metadata = build_economic_dataset(
-            raw_path="fake", league_name="fake", year_range=[2024, 2024], final_sim_year=2024
+            raw_path="fake", league_name="fake", year_range=[2024, 2024]
         )
 
         assert len(X) == 3
@@ -211,6 +212,13 @@ def test_build_economic_dataset_preserves_undrafted_peak(mock_loader):
         # But her target row should exist.
         assert y["Cleared_Sieve"][1] == 0
         assert y["DPO"][1] == 0.0
+        assert y["Economic_Success"][1] == 0
+        assert y["Positive_DPO"][1] == 0.0
+        assert y["Positive_Career_Merit_Cap_Share"][1] == 0.0
+
+        # Target-like derived columns are not model features.
+        for col in DRAFT_OUTCOME_TARGET_COLUMNS:
+            assert col not in X.columns
 
         # Verify metadata
         assert metadata["First_Name"][1] == "Jane"

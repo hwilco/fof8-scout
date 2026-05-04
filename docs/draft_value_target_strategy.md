@@ -17,17 +17,16 @@ The model should support draft decisions in a game that mimics NFL roster buildi
 This means target and metric choices should be judged by draft-board usefulness, not by
 plain global regression error.
 
-## Current DPO Target
+## Current DPO Baseline
 
-The current economic target is:
+The current composite baseline target is:
 
 ```text
 DPO = Peak_Overall * Career_Merit_Cap_Share
 ```
 
-`Peak_Overall` is a post-career/scouted rating proxy. `Career_Merit_Cap_Share` is a
-market/economic outcome that subtracts expected rookie-contract cost from actual career
-cap share.
+`Peak_Overall` is a talent/scouted rating proxy. `Career_Merit_Cap_Share` is an
+economic outcome that subtracts expected rookie-contract cost from actual career cap share.
 
 ### What DPO Gets Right
 
@@ -45,7 +44,7 @@ cap share.
   draft surplus.
 - It is hard to explain as a trade-value unit.
 
-Recommendation: keep DPO as a baseline/comparison target, but do not treat it as the
+Recommendation: keep DPO as a composite baseline/comparison target, but do not treat it as the
 long-term primary regression target without target-selection experiments.
 
 ## Overall-Based Vs Economic Targets

@@ -121,7 +121,7 @@ The Fix: During your expansion phase, you must dynamically recalculate the Z-sco
 3. The Stage 1 Guillotine
 Once the Z-scores are correctly re-calculated, your two-stage architecture perfectly handles the absurdity of the projection.
 
-The Stage 1 Sieve will see the terrible positional Z-scores and output a P_Sieve (career-threshold probability) of something like 0.001. Even if the Stage 2 Intensity model gets confused by the OOD weight and spits out an artificially high Expected DPO (Draft Prospect Outcome, Career_Merit_Cap_Share * Peak_Overall), the final Universal_EDV calculation (0.001 * Expected_DPO) will crush their value down to zero, naturally burying them at the bottom of the draft board for that position.
+The Stage 1 Sieve will see the terrible positional Z-scores and output a P_Sieve (career-threshold probability) of something like 0.001. Even if the Stage 2 Intensity model gets confused by the OOD weight and spits out an artificially high expected intensity (default target: `Positive_Career_Merit_Cap_Share`; composite baseline option: `DPO = Peak_Overall * Career_Merit_Cap_Share`), the final Universal_EDV calculation will crush their value down to zero, naturally burying them at the bottom of the draft board for that position.
 
 4. Bounding the Transitions (The Compute Saver)
 While the model will mathematically resolve the issue and reject the player, evaluating impossible FOF8 position changes wastes inference compute and litters your draft board with noise.

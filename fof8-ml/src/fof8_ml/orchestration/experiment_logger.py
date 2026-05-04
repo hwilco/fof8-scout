@@ -19,7 +19,7 @@ from fof8_ml.evaluation.plotting import (
     log_feature_importance,
 )
 from fof8_ml.models.base import ModelWrapper
-from fof8_ml.orchestration.pipeline_types import PreparedData, ClassifierResult
+from fof8_ml.orchestration.pipeline_types import ClassifierResult, PreparedData
 
 # Global tracking flags
 _TRACKING_INITIALIZED = False
@@ -36,7 +36,8 @@ def resolve_model_role_name(role_name: str) -> str:
     normalized_role = role_name.strip().lower()
     if normalized_role not in ROLE_RUN_NAMES:
         raise ValueError(
-            f"Unsupported model role '{role_name}'. Expected one of: {sorted(ROLE_RUN_NAMES.keys())}"
+            f"Unsupported model role '{role_name}'. "
+            f"Expected one of: {sorted(ROLE_RUN_NAMES.keys())}"
         )
     return ROLE_RUN_NAMES[normalized_role]
 

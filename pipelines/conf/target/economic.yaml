@@ -1,11 +1,9 @@
+target_name: "draft_outcome_targets"
 classifier_sieve:
-  target_col: "Cleared_Sieve"
+  target_col: "Economic_Success"
   merit_threshold: 0
   min_positive_recall: 0.95
 regressor_intensity:
-  target_col: "DPO"
-leakage_prevention:
-  drop_cols:
-    - "Career_Merit_Cap_Share"
-    - "Peak_Overall"
-    - "Career_Games_Played"
+  target_col: "Positive_Career_Merit_Cap_Share"
+  target_space: "raw"
+  target_family: "economic"
