@@ -28,6 +28,7 @@ class PreparedData:
     timeline: TimelineInfo  # year ranges, buffer, etc.
     metadata_columns: List[str]
     target_columns: List[str]
+    outcomes_train: pl.DataFrame | None = None
 
 
 @dataclass

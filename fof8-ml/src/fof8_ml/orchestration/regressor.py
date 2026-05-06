@@ -3,7 +3,7 @@ import numpy as np
 import polars as pl
 
 from fof8_ml.models.registry import get_model_family
-from fof8_ml.orchestration.evaluator import compute_regressor_oof_metrics
+from fof8_ml.orchestration.evaluator import compute_cross_outcome_metrics, compute_regressor_oof_metrics
 from fof8_ml.orchestration.pipeline_runner import PipelineContext
 from fof8_ml.orchestration.trainer import run_cv_regressor, train_final_model
 
@@ -15,6 +15,9 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
 
     positive_mask = (data.y_cls == 1).astype(bool)
     X_reg = data.X_train.filter(pl.Series(positive_mask))
+    if "Year" not in data.meta_train.columns:
+        raise ValueError("PreparedData.meta_train must include 'Year' for draft-aware metrics.")
+    draft_year = data.meta_train["Year"].to_numpy()[positive_mask]
     regressor_cfg = cfg.target.regressor_intensity
     target_space_value = (
         regressor_cfg.get("target_space", "log")
@@ -72,6 +75,24 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
             y_true=y_reg_target,
             oof_predictions=regressor_cv_result.oof_predictions,
             target_space=target_space,
+            draft_year=draft_year,
+        )
+        y_score_raw = (
+            np.expm1(regressor_cv_result.oof_predictions)
+            if target_space == "log"
+            else np.maximum(regressor_cv_result.oof_predictions, 0)
+        )
+        outcomes_positive = (
+            data.outcomes_train.filter(pl.Series(positive_mask))
+            if data.outcomes_train is not None
+            else None
+        )
+        regressor_metrics.update(
+            compute_cross_outcome_metrics(
+                y_score=y_score_raw,
+                outcome_columns=outcomes_positive,
+                draft_year=draft_year,
+            )
         )
 
         cv_rmse = [m["rmse"] for m in regressor_cv_result.fold_metrics]
@@ -101,6 +122,7 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
             {
                 "regressor_oof_rmse": regressor_metrics["regressor_oof_rmse"],
                 "regressor_oof_mae": regressor_metrics["regressor_oof_mae"],
+                "regressor_draft_value_score": regressor_metrics["regressor_draft_value_score"],
             }
         )
 
@@ -109,4 +131,5 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
         "regressor_oof_mae": regressor_metrics["regressor_oof_mae"],
         "regressor_mean_rmse": regressor_metrics["regressor_mean_rmse"],
         "regressor_mean_mae": regressor_metrics["regressor_mean_mae"],
+        "regressor_draft_value_score": regressor_metrics["regressor_draft_value_score"],
     }

@@ -28,6 +28,16 @@ def _make_context(*, target_space: str, loss_function: str, y_reg: np.ndarray, y
         X_train=pl.DataFrame({"feature": [1.0, 2.0, 3.0, 4.0]}),
         y_cls=y_cls,
         y_reg=y_reg,
+        meta_train=pl.DataFrame({"Year": [2020, 2020, 2021, 2021]}),
+        outcomes_train=pl.DataFrame(
+            {
+                "Positive_Career_Merit_Cap_Share": y_reg,
+                "Career_Merit_Cap_Share": y_reg,
+                "Peak_Overall": [50.0, 55.0, 60.0, 65.0],
+                "Career_Games_Played": [16.0, 32.0, 48.0, 64.0],
+                "Economic_Success": y_cls,
+            }
+        ),
     )
     logger = SimpleNamespace(
         start_model_run=lambda *_args, **_kwargs: nullcontext(),
@@ -87,7 +97,11 @@ def test_run_regressor_uses_configured_target_space(monkeypatch):
     monkeypatch.setattr("fof8_ml.orchestration.regressor.run_cv_regressor", fake_run_cv_regressor)
     monkeypatch.setattr(
         "fof8_ml.orchestration.regressor.compute_regressor_oof_metrics",
-        lambda **_kwargs: {"regressor_oof_rmse": 1.0, "regressor_oof_mae": 1.0},
+        lambda **_kwargs: {
+            "regressor_oof_rmse": 1.0,
+            "regressor_oof_mae": 1.0,
+            "regressor_draft_value_score": 0.75,
+        },
     )
     monkeypatch.setattr(
         "fof8_ml.orchestration.regressor.train_final_model", lambda **_kwargs: object()

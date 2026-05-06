@@ -19,6 +19,7 @@ _GLOBAL_DATA_CACHE: Dict[str, Any] = {
     "y_cls": None,
     "y_reg": None,
     "meta_train": None,
+    "outcomes_train": None,
     "last_cfg_hash": None,
 }
 
@@ -148,6 +149,7 @@ class DataLoader:
                 timeline=timeline,
                 metadata_columns=_GLOBAL_DATA_CACHE["metadata_columns"],
                 target_columns=_GLOBAL_DATA_CACHE["target_columns"],
+                outcomes_train=_GLOBAL_DATA_CACHE["outcomes_train"],
             )
 
         loader = FOF8Loader(base_path=absolute_raw_path, league_name=cfg.data.league_name)
@@ -205,6 +207,7 @@ class DataLoader:
         X_train = train_df.select(feature_cols)
         y_train_df = train_df.select(target_cols)
         meta_train = train_df.select(metadata_cols)
+        outcomes_train = train_df.select(target_cols)
 
         X_test = test_df.select(feature_cols)
         meta_test = test_df.select(metadata_cols)
@@ -242,6 +245,7 @@ class DataLoader:
                 "test_year_range": test_year_range,
                 "metadata_columns": metadata_cols,
                 "target_columns": target_cols,
+                "outcomes_train": outcomes_train,
                 "last_cfg_hash": cfg_hash,
             }
         )
@@ -256,6 +260,7 @@ class DataLoader:
             timeline=timeline,
             metadata_columns=metadata_cols,
             target_columns=target_cols,
+            outcomes_train=outcomes_train,
         )
 
     def apply_feature_ablation(
@@ -309,6 +314,7 @@ class DataLoader:
             timeline=data.timeline,
             metadata_columns=data.metadata_columns,
             target_columns=data.target_columns,
+            outcomes_train=data.outcomes_train,
         )
 
     def print_summary(self, data: PreparedData, cfg: DictConfig) -> None:
