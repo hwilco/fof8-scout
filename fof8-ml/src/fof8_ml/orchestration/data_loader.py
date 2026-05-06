@@ -40,6 +40,42 @@ def _coerce_str_list(raw: object) -> List[str]:
     return [str(v) for v in list(raw)]
 
 
+def _resolve_outcome_scorecard_columns(cfg: DictConfig, available_columns: list[str]) -> list[str]:
+    scorecard_cfg = cfg.target.get("outcome_scorecard")
+    if scorecard_cfg is None:
+        return []
+
+    required_columns = _coerce_str_list(scorecard_cfg.get("columns"))
+    optional_columns = _coerce_str_list(scorecard_cfg.get("optional_columns"))
+
+    missing_required = sorted(col for col in required_columns if col not in available_columns)
+    if missing_required:
+        raise ValueError(
+            "Processed features are missing required outcome_scorecard columns "
+            f"{missing_required}. Re-run feature processing or update the target config."
+        )
+
+    resolved_columns = required_columns + [
+        col for col in optional_columns if col in available_columns
+    ]
+    return list(dict.fromkeys(resolved_columns))
+
+
+def _validate_active_target_columns(cfg: DictConfig, available_columns: list[str]) -> None:
+    active_target_cols = [
+        str(cfg.target.classifier_sieve.target_col),
+        str(cfg.target.regressor_intensity.target_col),
+    ]
+    missing_active_targets = sorted(
+        col for col in active_target_cols if col not in available_columns
+    )
+    if missing_active_targets:
+        raise ValueError(
+            "Processed features are missing configured active target columns "
+            f"{missing_active_targets}. Re-run feature processing or update the target config."
+        )
+
+
 def resolve_feature_ablation_config(cfg: DictConfig) -> dict[str, Any]:
     """Resolve include/exclude feature lists from base lists + optional ablation toggles."""
     include_features = _coerce_str_list(cfg.get("include_features"))
@@ -116,6 +152,12 @@ class DataLoader:
             "threshold": cfg.target.classifier_sieve.merit_threshold,
             "regressor_target_col": cfg.target.regressor_intensity.target_col,
             "regressor_target_space": cfg.target.regressor_intensity.get("target_space", "log"),
+            "outcome_scorecard_columns": _coerce_str_list(
+                cfg.target.get("outcome_scorecard", {}).get("columns")
+            ),
+            "outcome_scorecard_optional_columns": _coerce_str_list(
+                cfg.target.get("outcome_scorecard", {}).get("optional_columns")
+            ),
             "positions": cfg.positions,
             "buffer": cfg.split.right_censor_buffer,
             "test_pct": cfg.split.test_split_pct,
@@ -166,6 +208,10 @@ class DataLoader:
 
         df = pl.read_parquet(features_file)
 
+        available_columns = list(df.columns)
+
+        _validate_active_target_columns(cfg, available_columns)
+        scorecard_cols = _resolve_outcome_scorecard_columns(cfg, available_columns)
         missing_target_cols = sorted(
             c for c in DRAFT_OUTCOME_LEAKAGE_COLUMNS if c not in df.columns
         )
@@ -200,6 +246,7 @@ class DataLoader:
             cfg.target.classifier_sieve.target_col,
             cfg.target.regressor_intensity.target_col,
             *DRAFT_OUTCOME_LEAKAGE_COLUMNS,
+            *scorecard_cols,
         ]
         target_cols = list(dict.fromkeys(target_cols))
         feature_cols = [c for c in df.columns if c not in metadata_cols and c not in target_cols]
@@ -207,7 +254,7 @@ class DataLoader:
         X_train = train_df.select(feature_cols)
         y_train_df = train_df.select(target_cols)
         meta_train = train_df.select(metadata_cols)
-        outcomes_train = train_df.select(target_cols)
+        outcomes_train = train_df.select(scorecard_cols) if scorecard_cols else None
 
         X_test = test_df.select(feature_cols)
         meta_test = test_df.select(metadata_cols)

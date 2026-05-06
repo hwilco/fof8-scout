@@ -559,16 +559,23 @@ then each new target/loss/feature decision is evaluated against it.
 
 ### Ticket 1: Add Draft Metrics
 
+- Status: complete as of 2026-05-06.
 - Add metric functions to `fof8_ml.evaluation.metrics`.
 - Add unit tests under `fof8-ml/tests/`.
 - Include grouped NDCG, top-k weighted MAE, bias, calibration slope.
 
 ### Ticket 2: Log Regressor Draft Metrics
 
+- Status: complete as of 2026-05-06 after smoke run.
 - Update `compute_regressor_oof_metrics`.
 - Pass draft year from `meta_train`.
 - Log composite `regressor_draft_value_score`.
 - Set `pipelines/conf/regressor_pipeline.yaml` optimization metric to the composite.
+- Current cross-outcome coverage: economic, talent via `Peak_Overall`, and longevity via
+  `Career_Games_Played`.
+- Deferred optional labels: `Top3_Mean_Current_Overall`, `Award_Count`,
+  `Hall_of_Fame_Flag`, and `Hall_Of_Fame_Points` are wired into the scorecard contract and
+  evaluator when present, but remain optional dataset columns.
 
 ### Ticket 3: Add Complete Model Evaluator
 

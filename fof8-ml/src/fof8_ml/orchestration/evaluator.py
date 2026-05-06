@@ -2,13 +2,6 @@ import warnings
 
 import numpy as np
 import polars as pl
-from fof8_ml.evaluation.metrics import (
-    calibration_slope,
-    mean_ndcg_by_group,
-    topk_bias,
-    topk_weighted_mae,
-    topk_weighted_mae_normalized,
-)
 from sklearn.metrics import (
     auc,
     f1_score,
@@ -18,6 +11,14 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
     roc_auc_score,
+)
+
+from fof8_ml.evaluation.metrics import (
+    calibration_slope,
+    mean_ndcg_by_group,
+    topk_bias,
+    topk_weighted_mae,
+    topk_weighted_mae_normalized,
 )
 
 
@@ -167,8 +168,16 @@ def compute_cross_outcome_metrics(
     draft_year: np.ndarray,
 ) -> dict[str, float]:
     """Evaluate one ranked board against multiple outcome families."""
+    metrics: dict[str, float] = {
+        "cross_outcomes_available": 0.0,
+        "cross_econ_available": 0.0,
+        "cross_talent_available": 0.0,
+        "cross_longevity_available": 0.0,
+        "cross_elite_available": 0.0,
+        "cross_bust_available": 0.0,
+    }
     if outcome_columns is None:
-        return {"cross_outcomes_available": 0.0}
+        return metrics
 
     def _first_available(candidates: list[str]) -> str | None:
         for col in candidates:
@@ -215,50 +224,49 @@ def compute_cross_outcome_metrics(
             vals.append(float(np.mean(1.0 - y_g[order])))
         return float(np.mean(vals)) if vals else 0.0
 
-    metrics: dict[str, float] = {"cross_outcomes_available": 1.0}
+    metrics["cross_outcomes_available"] = 1.0
 
     econ_col = _first_available(
         ["Positive_Career_Merit_Cap_Share", "Career_Merit_Cap_Share", "Positive_DPO"]
     )
     if econ_col is not None:
+        metrics["cross_econ_available"] = 1.0
         y_econ = outcome_columns[econ_col].to_numpy()
-        metrics["cross_econ_mean_ndcg_at_64"] = mean_ndcg_by_group(y_econ, y_score, draft_year, k=64)
+        metrics["cross_econ_mean_ndcg_at_64"] = mean_ndcg_by_group(
+            y_econ, y_score, draft_year, k=64
+        )
         metrics["cross_econ_top64_actual_value"] = _topk_actual_value_by_group(y_econ, k=64)
-    else:
-        metrics["cross_econ_available"] = 0.0
 
     talent_col = _first_available(["Top3_Mean_Current_Overall", "Peak_Overall"])
     if talent_col is not None:
+        metrics["cross_talent_available"] = 1.0
         y_talent = outcome_columns[talent_col].to_numpy()
         metrics["cross_talent_mean_ndcg_at_64"] = mean_ndcg_by_group(
             y_talent, y_score, draft_year, k=64
         )
-    else:
-        metrics["cross_talent_available"] = 0.0
 
     longevity_col = _first_available(["Career_Games_Played"])
     if longevity_col is not None:
+        metrics["cross_longevity_available"] = 1.0
         y_longevity = outcome_columns[longevity_col].to_numpy()
         metrics["cross_longevity_mean_ndcg_at_64"] = mean_ndcg_by_group(
             y_longevity, y_score, draft_year, k=64
         )
-    else:
-        metrics["cross_longevity_available"] = 0.0
 
-    elite_col = _first_available(["Hall_of_Fame_Flag", "HOF_Points", "Award_Count"])
+    elite_col = _first_available(
+        ["Hall_of_Fame_Flag", "Hall_Of_Fame_Points", "HOF_Points", "Award_Count"]
+    )
     if elite_col is not None:
+        metrics["cross_elite_available"] = 1.0
         y_elite_raw = outcome_columns[elite_col].to_numpy()
         y_elite = (y_elite_raw > 0).astype(float)
         metrics["cross_elite_precision_at_64"] = _precision_at_k_by_group(y_elite, k=64)
-    else:
-        metrics["cross_elite_available"] = 0.0
 
     success_col = _first_available(["Economic_Success", "Positive_Career_Merit_Cap_Share"])
     if success_col is not None:
+        metrics["cross_bust_available"] = 1.0
         y_success_raw = outcome_columns[success_col].to_numpy()
         y_success = (y_success_raw > 0).astype(float)
         metrics["cross_bust_rate_at_32"] = _bust_rate_at_k_by_group(y_success, k=32)
-    else:
-        metrics["cross_bust_available"] = 0.0
 
     return metrics

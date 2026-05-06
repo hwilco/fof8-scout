@@ -18,6 +18,8 @@ DRAFT_OUTCOME_CONTEXT_COLUMNS = [
     "Career_Games_Played",
 ]
 
+# Canonical processed outcome columns. These are always excluded from training
+# features and also form the baseline cross-outcome scorecard contract.
 DRAFT_OUTCOME_LEAKAGE_COLUMNS = [
     *DRAFT_OUTCOME_TARGET_COLUMNS,
     *DRAFT_OUTCOME_CONTEXT_COLUMNS,

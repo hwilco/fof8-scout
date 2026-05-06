@@ -24,8 +24,8 @@ mask_positional_features: true
 
 # --- Optimization Targets ---
 optimization:
-  metric: "regressor_oof_rmse"
-  direction: "minimize"
+  metric: "regressor_draft_value_score"
+  direction: "maximize"
 
 # --- Feature Ablation Settings ---
 ablation:

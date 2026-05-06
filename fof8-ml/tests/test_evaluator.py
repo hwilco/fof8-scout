@@ -94,8 +94,51 @@ def test_compute_cross_outcome_metrics_computes_available_families_and_skips_mis
     )
     metrics = compute_cross_outcome_metrics(y_score, outcomes, draft_year)
 
+    assert metrics["cross_outcomes_available"] == 1.0
+    assert metrics["cross_econ_available"] == 1.0
+    assert metrics["cross_talent_available"] == 1.0
+    assert metrics["cross_longevity_available"] == 1.0
+    assert metrics["cross_bust_available"] == 1.0
     assert "cross_econ_mean_ndcg_at_64" in metrics
     assert "cross_talent_mean_ndcg_at_64" in metrics
     assert "cross_longevity_mean_ndcg_at_64" in metrics
     assert "cross_bust_rate_at_32" in metrics
     assert metrics["cross_elite_available"] == 0.0
+
+
+def test_compute_cross_outcome_metrics_supports_hof_naming_variants():
+    y_score = np.array([0.9, 0.8, 0.4, 0.2])
+    draft_year = np.array([2020, 2020, 2021, 2021])
+
+    metrics_flag = compute_cross_outcome_metrics(
+        y_score,
+        pl.DataFrame({"Hall_of_Fame_Flag": [1, 0, 0, 1]}),
+        draft_year,
+    )
+    metrics_points = compute_cross_outcome_metrics(
+        y_score,
+        pl.DataFrame({"Hall_Of_Fame_Points": [10.0, 0.0, 0.0, 5.0]}),
+        draft_year,
+    )
+
+    assert metrics_flag["cross_elite_available"] == 1.0
+    assert "cross_elite_precision_at_64" in metrics_flag
+    assert metrics_points["cross_elite_available"] == 1.0
+    assert "cross_elite_precision_at_64" in metrics_points
+
+
+def test_compute_cross_outcome_metrics_returns_zero_availability_without_outcomes():
+    metrics = compute_cross_outcome_metrics(
+        np.array([0.9, 0.8]),
+        None,
+        np.array([2020, 2020]),
+    )
+
+    assert metrics == {
+        "cross_outcomes_available": 0.0,
+        "cross_econ_available": 0.0,
+        "cross_talent_available": 0.0,
+        "cross_longevity_available": 0.0,
+        "cross_elite_available": 0.0,
+        "cross_bust_available": 0.0,
+    }
