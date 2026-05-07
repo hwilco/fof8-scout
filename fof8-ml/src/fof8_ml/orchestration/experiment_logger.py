@@ -152,7 +152,8 @@ class ExperimentLogger:
         trial_num: Optional[int],
     ) -> None:
         """Log all data/config parameters and Git/DVC metadata."""
-        mlflow.set_tag("data.league", cfg.data.league_name)
+        league_names = cfg.data.get("league_names") or [cfg.data.get("league_name")]
+        mlflow.set_tag("data.leagues", ",".join(str(v) for v in league_names if v))
         mlflow.set_tag("data.raw_path", cfg.data.raw_path)
 
         try:

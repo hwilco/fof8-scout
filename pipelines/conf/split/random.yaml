@@ -1,0 +1,6 @@
+strategy: "random"
+test_split_pct: 0.20
+right_censor_buffer: 20
+seed: 42
+unit: "draft_class"
+stratify_by: ["Universe"]

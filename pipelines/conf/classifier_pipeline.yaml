@@ -3,7 +3,7 @@ defaults:
   - ablation: default
   - data: fof8_base
   - target: economic
-  - split: chronological
+  - split: random
   - cv: kfold_5
   - model: catboost_classifier
   - hparams_search: catboost_classifier_career_threshold

@@ -13,6 +13,10 @@ class TimelineInfo:
     valid_end_year: int
     train_year_range: List[int]
     test_year_range: List[int]
+    universes: List[str] | None = None
+    per_universe: Dict[str, Dict[str, Any]] | None = None
+    split_strategy: str | None = None
+    split_unit: str | None = None
 
 
 @dataclass

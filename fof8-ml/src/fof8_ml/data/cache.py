@@ -31,9 +31,12 @@ def get_data_hash(cfg: DictConfig, year_range: tuple[int, int] | None = None) ->
             pass
 
     if data_identity is None:
-        # Fallback to mtime of the league subdirectory
-        league_dir = raw_dir / cfg.data.league_name
-        data_identity = os.path.getmtime(league_dir) if league_dir.exists() else 0
+        # Fallback to mtimes of configured league subdirectories.
+        league_names = cfg.data.get("league_names") or [cfg.data.get("league_name")]
+        league_dirs = [raw_dir / str(name) for name in league_names if name]
+        data_identity = {str(p.name): os.path.getmtime(p) for p in league_dirs if p.exists()}
+        if not data_identity:
+            data_identity = 0
 
     relevant_keys = {
         "data": OmegaConf.to_container(cfg.data, resolve=True),

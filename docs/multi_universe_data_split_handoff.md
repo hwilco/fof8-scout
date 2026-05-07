@@ -56,8 +56,9 @@ Update `pipelines/process_features.py` to:
    - build that universe's full valid year range
    - call `build_economic_dataset(...)`
    - add `Universe`
-3. Concatenate all universe frames.
-4. Write the pooled `features.parquet`.
+3. Write each normalized universe frame to `fof8-ml/data/processed/universes/<Universe>/features.parquet`.
+4. Concatenate all universe frames.
+5. Write the pooled `features.parquet`.
 
 Support both explicit and discoverable config shapes if practical:
 
@@ -65,7 +66,11 @@ Support both explicit and discoverable config shapes if practical:
 league_names: ["DRAFT003", "DRAFT004", "DRAFT005"]
 # optional alternative:
 league_glob: "DRAFT*"
+year_start_offset: 1
+year_count: 30
 ```
+
+`year_start_offset` and `year_count` are resolved independently per universe.
 
 Retain backward compatibility with existing `league_name` if possible.
 

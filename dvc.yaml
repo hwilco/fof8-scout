@@ -10,6 +10,7 @@ stages:
       - pipelines/conf/transform.yaml
     outs:
       - fof8-ml/data/processed/features.parquet
+      - fof8-ml/data/processed/universes
 
   train_classifier:
     cmd: uv run python pipelines/train_classifier.py

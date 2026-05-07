@@ -1,8 +1,11 @@
 # Ground Truth Data Store Paths
-# Ground Truth Data Store Paths
-league_name: "DRAFT005"                           # The specific FOF8 simulation league directory
-raw_path: "fof8-gen/data/raw"                      # Root path for raw CSV extracts
-processed_dir: "fof8-ml/data/processed"           # Directory for intermediate Parquet artifacts
+league_names: ["DRAFT005", "DRAFT006", "DRAFT007"]  # One or more FOF8 simulation league directories under raw_path
+# league_glob: "DRAFT*"                     # Optional alternative to league_names/league_name
+raw_path: "fof8-gen/data/raw"               # Root path for raw CSV extracts
+processed_dir: "fof8-ml/data/processed"     # Directory for intermediate Parquet artifacts
 features_path: "fof8-ml/data/processed/features.parquet" # Primary materialized data store for training
 
-active_team_id: null                              # Optional: ID of the user's team for scout filtering (null = auto-discover)
+year_start_offset: 1                         # 0 = first sim year, 1 = second sim year
+year_count: 50                             # Optional number of years to materialize per universe. Right censoring is applied after year_start_offset + year_count
+
+active_team_id: null                           # Optional: ID of the user's team for scout filtering (null = auto-discover)

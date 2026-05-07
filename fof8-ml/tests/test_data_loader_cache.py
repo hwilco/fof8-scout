@@ -1,3 +1,5 @@
+import importlib.util
+from pathlib import Path
 from types import SimpleNamespace
 
 import polars as pl
@@ -30,9 +32,23 @@ def reset_global_data_cache():
             "metadata_columns": None,
             "target_columns": None,
             "outcomes_train": None,
+            "universes": None,
+            "per_universe": None,
+            "split_strategy": None,
+            "split_unit": None,
             "last_cfg_hash": None,
         }
     )
+
+
+def _load_process_features_module():
+    module_path = Path(__file__).parents[2] / "pipelines" / "process_features.py"
+    spec = importlib.util.spec_from_file_location("process_features", module_path)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 def _make_cfg(**overrides):
@@ -70,7 +86,7 @@ def _make_cfg(**overrides):
                 },
             },
             "positions": "all",
-            "split": {"right_censor_buffer": 3, "test_split_pct": 0.2},
+            "split": {"strategy": "chronological", "right_censor_buffer": 0, "test_split_pct": 0.2},
             "mask_positional_features": False,
         }
     )
@@ -81,8 +97,10 @@ def _make_cfg(**overrides):
 
 def _data_cfg_for_hash(cfg):
     return {
-        "league": cfg.data.league_name,
+        "leagues": list(cfg.data.get("league_names") or [cfg.data.league_name]),
         "features": cfg.data.features_path,
+        "year_start_offset": cfg.data.get("year_start_offset", None),
+        "year_count": cfg.data.get("year_count", None),
         "classifier_target_col": cfg.target.classifier_sieve.target_col,
         "threshold": cfg.target.classifier_sieve.merit_threshold,
         "regressor_target_col": cfg.target.regressor_intensity.target_col,
@@ -91,6 +109,10 @@ def _data_cfg_for_hash(cfg):
         "outcome_scorecard_optional_columns": list(cfg.target.outcome_scorecard.optional_columns),
         "positions": cfg.positions,
         "buffer": cfg.split.right_censor_buffer,
+        "split_strategy": cfg.split.get("strategy", "chronological"),
+        "split_unit": cfg.split.get("unit", None),
+        "split_seed": cfg.split.get("seed", cfg.get("seed", None)),
+        "stratify_by": list(cfg.split.get("stratify_by", [])),
         "test_pct": cfg.split.test_split_pct,
         "mask": cfg.mask_positional_features,
     }
@@ -116,6 +138,13 @@ def test_data_cache_hash_changes_for_cache_relevant_fields():
         _make_cfg(**{"target.outcome_scorecard.optional_columns": ["Award_Count"]}),
         _make_cfg(positions=["QB", "WR"]),
         _make_cfg(**{"split.test_split_pct": 0.25}),
+        _make_cfg(**{"split.strategy": "random"}),
+        _make_cfg(**{"split.seed": 99}),
+        _make_cfg(**{"split.unit": "row"}),
+        _make_cfg(**{"split.stratify_by": ["Universe"]}),
+        _make_cfg(**{"data.league_names": ["league_a", "league_b"]}),
+        _make_cfg(**{"data.year_start_offset": 1}),
+        _make_cfg(**{"data.year_count": 30}),
         _make_cfg(mask_positional_features=True),
     ]
 
@@ -311,3 +340,152 @@ def test_loader_fails_for_missing_required_outcome_scorecard_column(monkeypatch)
 
     with pytest.raises(ValueError, match="missing required outcome_scorecard columns"):
         loader.load(cfg)
+
+
+def _pooled_source_df() -> pl.DataFrame:
+    rows = []
+    player_id = 1
+    for universe, years in {"league_a": range(2020, 2025), "league_b": range(2030, 2035)}.items():
+        for year in years:
+            rows.append(
+                {
+                    "Universe": universe,
+                    "Player_ID": player_id,
+                    "Year": year,
+                    "First_Name": "A",
+                    "Last_Name": str(player_id),
+                    "Position_Group": "QB",
+                    "feat_keep": player_id,
+                    "Career_Merit_Cap_Share": 0.8,
+                    "DPO": 0.8,
+                    "Positive_Career_Merit_Cap_Share": 0.8,
+                    "Positive_DPO": 0.8,
+                    "Economic_Success": 1,
+                    "Cleared_Sieve": 1,
+                    "Peak_Overall": 70.0,
+                    "Career_Games_Played": 16,
+                    "Top3_Mean_Current_Overall": 72.0,
+                    "Award_Count": 0,
+                }
+            )
+            player_id += 1
+    return pl.DataFrame(rows)
+
+
+def test_chronological_split_is_computed_per_universe(monkeypatch):
+    cfg = _make_cfg(
+        **{
+            "data.league_names": ["league_a", "league_b"],
+            "split.test_split_pct": 0.4,
+            "split.right_censor_buffer": 0,
+        }
+    )
+    loader = DataLoader(exp_root=".", quiet=True)
+
+    monkeypatch.setattr("fof8_ml.orchestration.data_loader.os.path.exists", lambda _: True)
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.data_loader.pl.read_parquet", lambda _: _pooled_source_df()
+    )
+
+    data = loader.load(cfg)
+
+    assert "Universe" not in data.X_train.columns
+    assert set(data.meta_train.columns) == {
+        "Universe",
+        "Player_ID",
+        "Year",
+        "First_Name",
+        "Last_Name",
+    }
+    assert set(data.meta_test.filter(pl.col("Universe") == "league_a")["Year"].to_list()) == {
+        2023,
+        2024,
+    }
+    assert set(data.meta_test.filter(pl.col("Universe") == "league_b")["Year"].to_list()) == {
+        2033,
+        2034,
+    }
+    assert len(data.X_train) == 6
+    assert len(data.X_test) == 4
+
+
+def test_random_draft_class_split_is_deterministic_and_grouped(monkeypatch):
+    cfg = _make_cfg(
+        **{
+            "data.league_names": ["league_a", "league_b"],
+            "split.strategy": "random",
+            "split.unit": "draft_class",
+            "split.seed": 7,
+            "split.test_split_pct": 0.3,
+            "split.right_censor_buffer": 0,
+        }
+    )
+    loader = DataLoader(exp_root=".", quiet=True)
+
+    monkeypatch.setattr("fof8_ml.orchestration.data_loader.os.path.exists", lambda _: True)
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.data_loader.pl.read_parquet", lambda _: _pooled_source_df()
+    )
+
+    first = loader.load(cfg)
+    first_test_groups = set(
+        zip(first.meta_test["Universe"].to_list(), first.meta_test["Year"].to_list())
+    )
+
+    _GLOBAL_DATA_CACHE["last_cfg_hash"] = None
+    second = loader.load(cfg)
+    second_test_groups = set(
+        zip(second.meta_test["Universe"].to_list(), second.meta_test["Year"].to_list())
+    )
+
+    train_groups = set(
+        zip(first.meta_train["Universe"].to_list(), first.meta_train["Year"].to_list())
+    )
+    assert first_test_groups == second_test_groups
+    assert first_test_groups
+    assert first_test_groups.isdisjoint(train_groups)
+
+
+def test_resolve_year_range_uses_offset_and_count():
+    module = _load_process_features_module()
+    cfg = _make_cfg(**{"data.year_start_offset": 1, "data.year_count": 30})
+
+    assert module.resolve_year_range(2020, 2100, cfg) == [2021, 2050]
+
+
+def test_resolve_year_range_clamps_to_final_year():
+    module = _load_process_features_module()
+    cfg = _make_cfg(**{"data.year_start_offset": 1, "data.year_count": 30})
+
+    assert module.resolve_year_range(2020, 2030, cfg) == [2021, 2030]
+
+
+def test_normalize_pooled_frame_casts_enum_columns_to_string():
+    module = _load_process_features_module()
+    df = pl.DataFrame({"College": ["A", "B"], "Score": [1, 2]}).with_columns(
+        pl.col("College").cast(pl.Enum(["A", "B"]))
+    )
+
+    normalized = module.normalize_pooled_frame(df)
+
+    assert normalized.schema["College"] == pl.String
+    assert normalized.schema["Score"] == pl.Int64
+
+
+def test_write_universe_features_writes_normalized_parquet(tmp_path):
+    module = _load_process_features_module()
+    frame = pl.DataFrame({"Universe": ["league_a"], "College": ["A"], "Score": [1]}).with_columns(
+        pl.col("College").cast(pl.Enum(["A"]))
+    )
+    normalized = module.normalize_pooled_frame(frame)
+
+    out_file = module.write_universe_features(normalized, tmp_path, "league_a")
+
+    assert out_file == tmp_path / "universes" / "league_a" / "features.parquet"
+    loaded = pl.read_parquet(out_file)
+    assert loaded.schema["College"] == pl.String
+    assert loaded.to_dict(as_series=False) == {
+        "Universe": ["league_a"],
+        "College": ["A"],
+        "Score": [1],
+    }
