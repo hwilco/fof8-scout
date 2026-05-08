@@ -59,7 +59,7 @@ def test_compute_regressor_oof_metrics_uses_raw_space_directly():
         y_true,
         y_pred,
         target_space="raw",
-        draft_year=np.array([2020, 2021]),
+        draft_group=np.array(["A:2020", "A:2021"], dtype=object),
     )
 
     assert metrics["regressor_oof_rmse"] == pytest.approx(3.5355339)
@@ -74,16 +74,41 @@ def test_compute_regressor_oof_metrics_clips_negative_targets_for_ranking_releva
         y_true,
         y_pred,
         target_space="raw",
-        draft_year=np.array([2020, 2020, 2021]),
+        draft_group=np.array(["A:2020", "A:2020", "A:2021"], dtype=object),
     )
     assert 0.0 <= metrics["regressor_mean_ndcg_at_32"] <= 1.0
     assert 0.0 <= metrics["regressor_mean_ndcg_at_128"] <= 1.0
     assert "regressor_draft_value_score" in metrics
 
 
+def test_compute_regressor_oof_metrics_separates_overlapping_years_by_universe():
+    y_true = np.array([1.0, 0.0, 1.0, 0.0])
+    y_pred = np.array([0.99, 0.01, 0.49, 0.51])
+
+    metrics_year_only = compute_regressor_oof_metrics(
+        y_true,
+        y_pred,
+        target_space="raw",
+        draft_group=np.array(["2020", "2020", "2020", "2020"], dtype=object),
+    )
+    metrics_by_draft_class = compute_regressor_oof_metrics(
+        y_true,
+        y_pred,
+        target_space="raw",
+        draft_group=np.array(["A:2020", "A:2020", "B:2020", "B:2020"], dtype=object),
+    )
+
+    assert metrics_by_draft_class["regressor_mean_ndcg_at_64"] == pytest.approx(0.8154648768)
+    assert metrics_year_only["regressor_mean_ndcg_at_64"] == pytest.approx(0.9197207891)
+    assert (
+        metrics_by_draft_class["regressor_mean_ndcg_at_64"]
+        < metrics_year_only["regressor_mean_ndcg_at_64"]
+    )
+
+
 def test_compute_cross_outcome_metrics_computes_available_families_and_skips_missing():
     y_score = np.array([0.9, 0.8, 0.4, 0.2])
-    draft_year = np.array([2020, 2020, 2021, 2021])
+    draft_group = np.array(["A:2020", "A:2020", "A:2021", "A:2021"], dtype=object)
     outcomes = pl.DataFrame(
         {
             "Career_Merit_Cap_Share": [10.0, 5.0, 0.0, 2.0],
@@ -92,7 +117,7 @@ def test_compute_cross_outcome_metrics_computes_available_families_and_skips_mis
             "Economic_Success": [1, 1, 0, 1],
         }
     )
-    metrics = compute_cross_outcome_metrics(y_score, outcomes, draft_year)
+    metrics = compute_cross_outcome_metrics(y_score, outcomes, draft_group=draft_group)
 
     assert metrics["cross_outcomes_available"] == 1.0
     assert metrics["cross_econ_available"] == 1.0
@@ -108,17 +133,17 @@ def test_compute_cross_outcome_metrics_computes_available_families_and_skips_mis
 
 def test_compute_cross_outcome_metrics_supports_hof_naming_variants():
     y_score = np.array([0.9, 0.8, 0.4, 0.2])
-    draft_year = np.array([2020, 2020, 2021, 2021])
+    draft_group = np.array(["A:2020", "A:2020", "A:2021", "A:2021"], dtype=object)
 
     metrics_flag = compute_cross_outcome_metrics(
         y_score,
         pl.DataFrame({"Hall_of_Fame_Flag": [1, 0, 0, 1]}),
-        draft_year,
+        draft_group=draft_group,
     )
     metrics_points = compute_cross_outcome_metrics(
         y_score,
         pl.DataFrame({"Hall_Of_Fame_Points": [10.0, 0.0, 0.0, 5.0]}),
-        draft_year,
+        draft_group=draft_group,
     )
 
     assert metrics_flag["cross_elite_available"] == 1.0
@@ -131,7 +156,7 @@ def test_compute_cross_outcome_metrics_returns_zero_availability_without_outcome
     metrics = compute_cross_outcome_metrics(
         np.array([0.9, 0.8]),
         None,
-        np.array([2020, 2020]),
+        draft_group=np.array(["A:2020", "A:2020"], dtype=object),
     )
 
     assert metrics == {

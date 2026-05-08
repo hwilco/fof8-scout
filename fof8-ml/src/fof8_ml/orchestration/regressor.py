@@ -18,9 +18,20 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
 
     positive_mask = (data.y_cls == 1).astype(bool)
     X_reg = data.X_train.filter(pl.Series(positive_mask))
-    if "Year" not in data.meta_train.columns:
-        raise ValueError("PreparedData.meta_train must include 'Year' for draft-aware metrics.")
-    draft_year = data.meta_train["Year"].to_numpy()[positive_mask]
+    required_meta_columns = {"Universe", "Year"}
+    missing_meta_columns = sorted(required_meta_columns.difference(data.meta_train.columns))
+    if missing_meta_columns:
+        missing = ", ".join(missing_meta_columns)
+        raise ValueError(
+            "PreparedData.meta_train must include Universe and Year for draft-aware metrics. "
+            f"Missing: {missing}."
+        )
+    meta_positive = data.meta_train.filter(pl.Series(positive_mask))
+    draft_group = (
+        meta_positive.get_column("Universe").cast(pl.Utf8)
+        + ":"
+        + meta_positive.get_column("Year").cast(pl.Utf8)
+    ).to_numpy()
     regressor_cfg = cfg.target.regressor_intensity
     target_space_value = (
         regressor_cfg.get("target_space", "log")
@@ -78,7 +89,7 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
             y_true=y_reg_target,
             oof_predictions=regressor_cv_result.oof_predictions,
             target_space=target_space,
-            draft_year=draft_year,
+            draft_group=draft_group,
         )
         y_score_raw = (
             np.expm1(regressor_cv_result.oof_predictions)
@@ -94,7 +105,7 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
             compute_cross_outcome_metrics(
                 y_score=y_score_raw,
                 outcome_columns=outcomes_positive,
-                draft_year=draft_year,
+                draft_group=draft_group,
             )
         )
 

@@ -16,6 +16,9 @@ from sklearn.metrics import (
 from fof8_ml.evaluation.metrics import (
     calibration_slope,
     mean_ndcg_by_group,
+    mean_topk_bias_by_group,
+    mean_topk_weighted_mae_by_group,
+    mean_topk_weighted_mae_normalized_by_group,
     topk_bias,
     topk_weighted_mae,
     topk_weighted_mae_normalized,
@@ -113,15 +116,18 @@ def compute_regressor_oof_metrics(
     y_true: np.ndarray,
     oof_predictions: np.ndarray,
     target_space: str = "log",
+    draft_group: np.ndarray | None = None,
     draft_year: np.ndarray | None = None,
 ) -> dict[str, float]:
-    """Compute regressor OOF RMSE and MAE in original target space.
+    """Compute regressor OOF metrics in original target space.
 
     Args:
         y_true: Ground truth continuous labels in `target_space`.
         oof_predictions: Predicted continuous labels in `target_space`.
         target_space: Either "log" for log1p labels/predictions or "raw" for
             labels/predictions already in original target units.
+        draft_group: Optional group key for draft-class-aware ranking/error metrics.
+        draft_year: Legacy alias for `draft_group`.
     """
     if target_space == "log":
         y_real = np.expm1(y_true)
@@ -139,17 +145,29 @@ def compute_regressor_oof_metrics(
         "regressor_oof_mae": mae,
     }
 
-    years = draft_year if draft_year is not None else np.zeros_like(y_real, dtype=int)
+    group_key = draft_group if draft_group is not None else draft_year
+    if group_key is None:
+        group_key = np.full(y_real.shape, "all", dtype=object)
+
+    if draft_group is not None or draft_year is not None:
+        top64_weighted_mae = mean_topk_weighted_mae_by_group(y_real, y_pred, group_key, k=64)
+        top64_weighted_mae_normalized = mean_topk_weighted_mae_normalized_by_group(
+            y_real, y_pred, group_key, k=64
+        )
+        top64_bias = mean_topk_bias_by_group(y_real, y_pred, group_key, k=64)
+    else:
+        top64_weighted_mae = topk_weighted_mae(y_real, y_pred, k=64)
+        top64_weighted_mae_normalized = topk_weighted_mae_normalized(y_real, y_pred, k=64)
+        top64_bias = topk_bias(y_real, y_pred, k=64)
+
     metrics.update(
         {
-            "regressor_mean_ndcg_at_32": mean_ndcg_by_group(y_real, y_pred, years, k=32),
-            "regressor_mean_ndcg_at_64": mean_ndcg_by_group(y_real, y_pred, years, k=64),
-            "regressor_mean_ndcg_at_128": mean_ndcg_by_group(y_real, y_pred, years, k=128),
-            "regressor_top64_weighted_mae": topk_weighted_mae(y_real, y_pred, k=64),
-            "regressor_top64_weighted_mae_normalized": topk_weighted_mae_normalized(
-                y_real, y_pred, k=64
-            ),
-            "regressor_top64_bias": topk_bias(y_real, y_pred, k=64),
+            "regressor_mean_ndcg_at_32": mean_ndcg_by_group(y_real, y_pred, group_key, k=32),
+            "regressor_mean_ndcg_at_64": mean_ndcg_by_group(y_real, y_pred, group_key, k=64),
+            "regressor_mean_ndcg_at_128": mean_ndcg_by_group(y_real, y_pred, group_key, k=128),
+            "regressor_top64_weighted_mae": top64_weighted_mae,
+            "regressor_top64_weighted_mae_normalized": top64_weighted_mae_normalized,
+            "regressor_top64_bias": top64_bias,
             "regressor_top64_calibration_slope": calibration_slope(y_real, y_pred),
             "regressor_rmse_positive": rmse,
             "regressor_mae_positive": mae,
@@ -165,9 +183,10 @@ def compute_regressor_oof_metrics(
 def compute_cross_outcome_metrics(
     y_score: np.ndarray,
     outcome_columns: pl.DataFrame | None,
-    draft_year: np.ndarray,
+    draft_group: np.ndarray | None = None,
+    draft_year: np.ndarray | None = None,
 ) -> dict[str, float]:
-    """Evaluate one ranked board against multiple outcome families."""
+    """Evaluate one ranked board against multiple outcome families by draft class."""
     metrics: dict[str, float] = {
         "cross_outcomes_available": 0.0,
         "cross_econ_available": 0.0,
@@ -179,6 +198,10 @@ def compute_cross_outcome_metrics(
     if outcome_columns is None:
         return metrics
 
+    group_key = draft_group if draft_group is not None else draft_year
+    if group_key is None:
+        group_key = np.full(y_score.shape, "all", dtype=object)
+
     def _first_available(candidates: list[str]) -> str | None:
         for col in candidates:
             if col in outcome_columns.columns:
@@ -187,8 +210,8 @@ def compute_cross_outcome_metrics(
 
     def _topk_actual_value_by_group(y_val: np.ndarray, k: int) -> float:
         values: list[float] = []
-        for group in np.unique(draft_year):
-            mask = draft_year == group
+        for group in np.unique(group_key):
+            mask = group_key == group
             if not np.any(mask):
                 continue
             scores_g = y_score[mask]
@@ -200,8 +223,8 @@ def compute_cross_outcome_metrics(
 
     def _precision_at_k_by_group(y_binary: np.ndarray, k: int) -> float:
         vals: list[float] = []
-        for group in np.unique(draft_year):
-            mask = draft_year == group
+        for group in np.unique(group_key):
+            mask = group_key == group
             if not np.any(mask):
                 continue
             scores_g = y_score[mask]
@@ -213,8 +236,8 @@ def compute_cross_outcome_metrics(
 
     def _bust_rate_at_k_by_group(y_success: np.ndarray, k: int) -> float:
         vals: list[float] = []
-        for group in np.unique(draft_year):
-            mask = draft_year == group
+        for group in np.unique(group_key):
+            mask = group_key == group
             if not np.any(mask):
                 continue
             scores_g = y_score[mask]
@@ -232,9 +255,7 @@ def compute_cross_outcome_metrics(
     if econ_col is not None:
         metrics["cross_econ_available"] = 1.0
         y_econ = outcome_columns[econ_col].to_numpy()
-        metrics["cross_econ_mean_ndcg_at_64"] = mean_ndcg_by_group(
-            y_econ, y_score, draft_year, k=64
-        )
+        metrics["cross_econ_mean_ndcg_at_64"] = mean_ndcg_by_group(y_econ, y_score, group_key, k=64)
         metrics["cross_econ_top64_actual_value"] = _topk_actual_value_by_group(y_econ, k=64)
 
     talent_col = _first_available(["Top3_Mean_Current_Overall", "Peak_Overall"])
@@ -242,7 +263,7 @@ def compute_cross_outcome_metrics(
         metrics["cross_talent_available"] = 1.0
         y_talent = outcome_columns[talent_col].to_numpy()
         metrics["cross_talent_mean_ndcg_at_64"] = mean_ndcg_by_group(
-            y_talent, y_score, draft_year, k=64
+            y_talent, y_score, group_key, k=64
         )
 
     longevity_col = _first_available(["Career_Games_Played"])
@@ -250,7 +271,7 @@ def compute_cross_outcome_metrics(
         metrics["cross_longevity_available"] = 1.0
         y_longevity = outcome_columns[longevity_col].to_numpy()
         metrics["cross_longevity_mean_ndcg_at_64"] = mean_ndcg_by_group(
-            y_longevity, y_score, draft_year, k=64
+            y_longevity, y_score, group_key, k=64
         )
 
     elite_col = _first_available(

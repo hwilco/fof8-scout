@@ -36,7 +36,7 @@ def ndcg_at_k(y_true: np.ndarray, y_score: np.ndarray, k: int) -> float:
 def mean_ndcg_by_group(
     y_true: np.ndarray, y_score: np.ndarray, groups: np.ndarray, k: int
 ) -> float:
-    """Compute mean NDCG@k over groups (e.g., draft years)."""
+    """Compute mean NDCG@k over groups such as draft classes."""
     if y_true.size == 0:
         return 0.0
     values = []
@@ -81,6 +81,48 @@ def topk_bias(y_true: np.ndarray, y_pred: np.ndarray, k: int) -> float:
     weights = np.arange(k_eff, 0, -1, dtype=float)
     bias = np.average(y_pred[order] - y_true[order], weights=weights)
     return float(bias)
+
+
+def mean_topk_weighted_mae_by_group(
+    y_true: np.ndarray, y_pred: np.ndarray, groups: np.ndarray, k: int
+) -> float:
+    """Compute mean top-k weighted MAE over groups such as draft classes."""
+    if y_true.size == 0:
+        return 0.0
+
+    values = []
+    for group in np.unique(groups):
+        mask = groups == group
+        values.append(topk_weighted_mae(y_true[mask], y_pred[mask], k))
+    return float(np.mean(values)) if values else 0.0
+
+
+def mean_topk_weighted_mae_normalized_by_group(
+    y_true: np.ndarray, y_pred: np.ndarray, groups: np.ndarray, k: int
+) -> float:
+    """Compute mean normalized top-k weighted MAE over groups such as draft classes."""
+    if y_true.size == 0:
+        return 0.0
+
+    values = []
+    for group in np.unique(groups):
+        mask = groups == group
+        values.append(topk_weighted_mae_normalized(y_true[mask], y_pred[mask], k))
+    return float(np.mean(values)) if values else 0.0
+
+
+def mean_topk_bias_by_group(
+    y_true: np.ndarray, y_pred: np.ndarray, groups: np.ndarray, k: int
+) -> float:
+    """Compute mean top-k weighted bias over groups such as draft classes."""
+    if y_true.size == 0:
+        return 0.0
+
+    values = []
+    for group in np.unique(groups):
+        mask = groups == group
+        values.append(topk_bias(y_true[mask], y_pred[mask], k))
+    return float(np.mean(values)) if values else 0.0
 
 
 def calibration_slope(y_true: np.ndarray, y_pred: np.ndarray) -> float:
