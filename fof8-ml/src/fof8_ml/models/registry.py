@@ -10,13 +10,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import cast
 
-from fof8_ml.models.base import ModelWrapper
+from fof8_ml.models.base import ModelFamily, ModelRole, ModelWrapper
 from fof8_ml.models.catboost_wrapper import CatBoostClassifierWrapper, CatBoostRegressorWrapper
 from fof8_ml.models.sklearn_wrapper import SklearnRegressorWrapper
 from fof8_ml.models.xgboost_wrapper import XGBoostClassifierWrapper, XGBoostRegressorWrapper
 
-Role = str
 ModelKey = str
 
 
@@ -24,30 +24,43 @@ ModelKey = str
 class ModelRegistration:
     """Immutable metadata for one registered model key."""
 
-    role: Role
+    role: ModelRole
     key: ModelKey
-    family: str
+    family: ModelFamily
     builder: Callable[..., ModelWrapper]
 
 
-_REGISTRY: dict[tuple[Role, ModelKey], ModelRegistration] = {}
+_REGISTRY: dict[tuple[ModelRole, ModelKey], ModelRegistration] = {}
 
 
-def _normalize(name: str) -> str:
-    """Normalize role and model names for case-insensitive lookup."""
+def _normalize_model_key(name: str) -> str:
+    """Normalize model names for case-insensitive lookup."""
 
     return name.strip().lower()
 
 
-def register_model(role: str, key: str, family: str, builder: Callable[..., ModelWrapper]) -> None:
+def _normalize_role(role: ModelRole | str) -> ModelRole:
+    normalized = role.strip().lower()
+    if normalized not in {"classifier", "regressor"}:
+        valid_roles = ", ".join(sorted({"classifier", "regressor"}))
+        raise ValueError(f"Unknown role '{role}'. Valid roles: {valid_roles}")
+    return cast(ModelRole, normalized)
+
+
+def register_model(
+    role: ModelRole,
+    key: str,
+    family: ModelFamily,
+    builder: Callable[..., ModelWrapper],
+) -> None:
     """Register a model wrapper builder for a `(role, model_key)` pair.
 
     Raises:
         ValueError: If the normalized role/key pair is already registered.
     """
 
-    role_key = _normalize(role)
-    model_key = _normalize(key)
+    role_key = _normalize_role(role)
+    model_key = _normalize_model_key(key)
     registry_key = (role_key, model_key)
 
     if registry_key in _REGISTRY:
@@ -69,12 +82,8 @@ def resolve_model(role: str, model_name: str) -> ModelRegistration:
             for that role. Error messages include valid options.
     """
 
-    role_key = _normalize(role)
-    model_key = _normalize(model_name)
-    registered_roles = {registered_role for (registered_role, _) in _REGISTRY}
-    if role_key not in registered_roles:
-        valid_roles = ", ".join(sorted(registered_roles))
-        raise ValueError(f"Unknown role '{role}'. Valid roles: {valid_roles}")
+    role_key = _normalize_role(role)
+    model_key = _normalize_model_key(model_name)
 
     registration = _REGISTRY.get((role_key, model_key))
     if registration is None:
@@ -87,18 +96,18 @@ def resolve_model(role: str, model_name: str) -> ModelRegistration:
     return registration
 
 
-def list_model_keys(role: str) -> list[str]:
+def list_model_keys(role: ModelRole | str) -> list[str]:
     """List sorted model keys registered for a role."""
 
-    role_key = _normalize(role)
+    role_key = _normalize_role(role)
     keys = [key for (registered_role, key) in _REGISTRY if registered_role == role_key]
     return sorted(keys)
 
 
-def get_model_family(role: str, model_name: str) -> str | None:
+def get_model_family(role: ModelRole | str, model_name: str) -> ModelFamily | None:
     """Return wrapper family for a model key, or `None` if not registered."""
 
-    registration = _REGISTRY.get((_normalize(role), _normalize(model_name)))
+    registration = _REGISTRY.get((_normalize_role(role), _normalize_model_key(model_name)))
     return None if registration is None else registration.family
 
 

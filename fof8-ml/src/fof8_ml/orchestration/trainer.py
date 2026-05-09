@@ -9,7 +9,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.model_selection import GroupKFold, KFold, StratifiedGroupKFold, StratifiedKFold
 
 from fof8_ml.evaluation.metrics import calculate_career_threshold_metrics
-from fof8_ml.models.base import ModelWrapper
+from fof8_ml.models.base import ModelRole, ModelWrapper
 from fof8_ml.models.factory import (
     apply_interactive_progress_params,
     apply_quiet_params,
@@ -220,7 +220,7 @@ def run_cv_regressor(
 
 def train_final_model(
     model_cfg: DictConfig,
-    role: str,
+    role: ModelRole,
     X: pl.DataFrame,
     y: np.ndarray,
     avg_best_iterations: int,
@@ -262,7 +262,7 @@ def train_final_model(
 
 def train_model_with_validation(
     model_cfg: DictConfig,
-    role: str,
+    role: ModelRole,
     X_train: pl.DataFrame,
     y_train: np.ndarray,
     X_val: pl.DataFrame,
