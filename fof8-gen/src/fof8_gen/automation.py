@@ -8,7 +8,7 @@ import argparse
 import os
 from pathlib import Path
 
-from .metadata import load_metadata
+from .metadata import load_metadata, parse_universe_range
 
 
 def main() -> None:
@@ -51,15 +51,38 @@ def main() -> None:
         help="override the default snapshot output directory (default: <metadata_directory>)",
     )
     parser.add_argument(
+        "--output-root",
+        type=str,
+        metavar="DIR",
+        help="parent directory for generated universe folders (default: <metadata_directory>)",
+    )
+    parser.add_argument(
         "--snapshot-only",
         action="store_true",
         help="only run the export and snapshot logic, then exit (useful for manual recovery)",
+    )
+    parser.add_argument(
+        "--generate-universes",
+        type=str,
+        metavar="START:END",
+        help="generate and run an inclusive universe range like DRAFT009:DRAFT014",
+    )
+    parser.add_argument(
+        "--overwrite-metadata",
+        action="store_true",
+        help=(
+            "allow generated metadata.yaml files to be overwritten when using --generate-universes"
+        ),
     )
 
     args = parser.parse_args()
 
     if not args.metadata:
         print("ERROR: Metadata file path is required. Use --metadata <path>")
+        return
+
+    if args.snapshot_only and args.generate_universes:
+        print("ERROR: --snapshot-only cannot be combined with --generate-universes")
         return
 
     metadata_path = Path(args.metadata).resolve()
@@ -80,6 +103,24 @@ def main() -> None:
     runner = AutomationRunner()
     if args.snapshot_only:
         runner.snapshot_only(fof8_dir=args.fof8_dir, league_name=league_name, output_dir=output_dir)
+        return
+
+    if args.generate_universes:
+        try:
+            universe_names = parse_universe_range(args.generate_universes)
+        except ValueError as e:
+            print(f"ERROR: {e}")
+            return
+
+        output_root = Path(args.output_root) if args.output_root else metadata_path.parent
+        runner.generate_universes(
+            fof8_dir=args.fof8_dir,
+            base_metadata_path=metadata_path,
+            universe_names=universe_names,
+            output_root=output_root,
+            num_iterations=args.iterations,
+            overwrite_metadata=args.overwrite_metadata,
+        )
         return
 
     runner.run(

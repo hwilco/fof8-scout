@@ -81,8 +81,13 @@ See the [fof8-gen README](./fof8-gen/README.md) for full setup and usage.
 
 **Quick setup** (from the repo root):
 ```powershell
-uv sync --package fof8-gen
+uv sync --all-packages --group dev
 ```
+
+`fof8-gen` can now run in two ways on the Windows host:
+
+- Advance and export an existing universe from the `Begin Training Camp` screen.
+- Generate a range of brand-new universes from one metadata template with `--generate-universes`, then run the normal export/sim loop for each one.
 
 ### fof8-ml (Dev Container)
 
