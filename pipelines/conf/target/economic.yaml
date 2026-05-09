@@ -19,3 +19,13 @@ outcome_scorecard:
     - "Award_Count"
     - "Hall_of_Fame_Flag"
     - "Hall_Of_Fame_Points"
+  elite:
+    enabled: true
+    source_column: "Career_Merit_Cap_Share"
+    quantile: 0.95
+    scope: "position_group"
+    scope_column: "Position_Group"
+    fallback_scope: "global"
+    min_group_size: 100
+    top_k_precision: 32
+    top_k_recall: 64

@@ -117,18 +117,38 @@ def test_compute_cross_outcome_metrics_computes_available_families_and_skips_mis
             "Economic_Success": [1, 1, 0, 1],
         }
     )
-    metrics = compute_cross_outcome_metrics(y_score, outcomes, draft_group=draft_group)
+    elite_cfg = {
+        "enabled": True,
+        "source_column": "Career_Merit_Cap_Share",
+        "quantile": 0.75,
+        "scope": "position_group",
+        "scope_column": "Position_Group",
+        "fallback_scope": "global",
+        "min_group_size": 2,
+        "top_k_precision": 32,
+        "top_k_recall": 64,
+    }
+    meta = pl.DataFrame({"Position_Group": ["QB", "QB", "WR", "WR"]})
+    metrics = compute_cross_outcome_metrics(
+        y_score,
+        outcomes,
+        draft_group=draft_group,
+        meta_columns=meta,
+        elite_cfg=elite_cfg,
+    )
 
     assert metrics["cross_outcomes_available"] == 1.0
     assert metrics["cross_econ_available"] == 1.0
     assert metrics["cross_talent_available"] == 1.0
     assert metrics["cross_longevity_available"] == 1.0
     assert metrics["cross_bust_available"] == 1.0
+    assert metrics["cross_elite_available"] == 1.0
     assert "cross_econ_mean_ndcg_at_64" in metrics
     assert "cross_talent_mean_ndcg_at_64" in metrics
     assert "cross_longevity_mean_ndcg_at_64" in metrics
     assert "cross_bust_rate_at_32" in metrics
-    assert metrics["cross_elite_available"] == 0.0
+    assert "cross_elite_precision_at_32" in metrics
+    assert "cross_elite_recall_at_64" in metrics
 
 
 def test_compute_cross_outcome_metrics_supports_hof_naming_variants():
@@ -147,9 +167,46 @@ def test_compute_cross_outcome_metrics_supports_hof_naming_variants():
     )
 
     assert metrics_flag["cross_elite_available"] == 1.0
-    assert "cross_elite_precision_at_64" in metrics_flag
+    assert "cross_elite_precision_at_32" in metrics_flag
+    assert "cross_elite_recall_at_64" in metrics_flag
     assert metrics_points["cross_elite_available"] == 1.0
-    assert "cross_elite_precision_at_64" in metrics_points
+    assert "cross_elite_precision_at_32" in metrics_points
+    assert "cross_elite_recall_at_64" in metrics_points
+
+
+def test_compute_cross_outcome_metrics_uses_global_fallback_for_small_position_groups():
+    y_score = np.array([0.95, 0.85, 0.4, 0.2])
+    draft_group = np.array(["A:2020", "A:2020", "A:2021", "A:2021"], dtype=object)
+    outcomes = pl.DataFrame(
+        {
+            "Career_Merit_Cap_Share": [100.0, 80.0, 5.0, 0.0],
+            "Economic_Success": [1, 1, 1, 0],
+        }
+    )
+    meta = pl.DataFrame({"Position_Group": ["QB", "WR", "TE", "RB"]})
+    elite_cfg = {
+        "enabled": True,
+        "source_column": "Career_Merit_Cap_Share",
+        "quantile": 0.75,
+        "scope": "position_group",
+        "scope_column": "Position_Group",
+        "fallback_scope": "global",
+        "min_group_size": 2,
+        "top_k_precision": 32,
+        "top_k_recall": 64,
+    }
+
+    metrics = compute_cross_outcome_metrics(
+        y_score,
+        outcomes,
+        draft_group=draft_group,
+        meta_columns=meta,
+        elite_cfg=elite_cfg,
+    )
+
+    assert metrics["cross_elite_available"] == 1.0
+    assert metrics["cross_elite_precision_at_32"] == pytest.approx(0.25)
+    assert metrics["cross_elite_recall_at_64"] == pytest.approx(0.5)
 
 
 def test_compute_cross_outcome_metrics_returns_zero_availability_without_outcomes():

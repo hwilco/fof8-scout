@@ -1,4 +1,5 @@
 import warnings
+from collections.abc import Mapping
 
 import numpy as np
 import polars as pl
@@ -132,6 +133,68 @@ def prefix_metrics(metrics: dict[str, float], prefix: str) -> dict[str, float]:
     return {f"{prefix}{key}": value for key, value in metrics.items()}
 
 
+def _cfg_get(config: object, key: str, default: object = None) -> object:
+    if config is None:
+        return default
+    if isinstance(config, Mapping):
+        return config.get(key, default)
+    getter = getattr(config, "get", None)
+    if callable(getter):
+        return getter(key, default)
+    return getattr(config, key, default)
+
+
+def fit_elite_thresholds(
+    outcome_columns: pl.DataFrame | None,
+    meta_columns: pl.DataFrame | None,
+    elite_cfg: object | None,
+) -> dict[str, float] | None:
+    """Fit elite thresholds from training outcomes for later holdout application.
+
+    Args:
+        outcome_columns: Training outcome columns containing the elite source outcome.
+        meta_columns: Training metadata columns containing the scope column if grouped.
+        elite_cfg: Config-like object describing elite threshold settings.
+
+    Returns:
+        Threshold mapping keyed by scope value, or `None` when elite derivation is disabled
+        or cannot be fit from the available inputs.
+    """
+    if not bool(_cfg_get(elite_cfg, "enabled", False)) or outcome_columns is None:
+        return None
+
+    source_column = _cfg_get(elite_cfg, "source_column")
+    if source_column is None or str(source_column) not in outcome_columns.columns:
+        return None
+
+    quantile = float(_cfg_get(elite_cfg, "quantile", 0.95))
+    scope = str(_cfg_get(elite_cfg, "scope", "global"))
+    scope_column = str(_cfg_get(elite_cfg, "scope_column", "Position_Group"))
+    fallback_scope = str(_cfg_get(elite_cfg, "fallback_scope", "global"))
+    min_group_size = int(_cfg_get(elite_cfg, "min_group_size", 100))
+
+    y_source = np.maximum(outcome_columns[str(source_column)].to_numpy().astype(float), 0.0)
+    global_threshold = float(np.quantile(y_source, quantile)) if y_source.size else 0.0
+
+    if scope == "global":
+        return {"__global__": global_threshold}
+
+    if meta_columns is None or scope_column not in meta_columns.columns:
+        return {"__global__": global_threshold}
+
+    thresholds: dict[str, float] = {"__global__": global_threshold}
+    scope_values = meta_columns.get_column(scope_column).cast(pl.Utf8).to_numpy()
+    for scope_value in np.unique(scope_values):
+        mask = scope_values == scope_value
+        if int(np.sum(mask)) < min_group_size:
+            continue
+        thresholds[str(scope_value)] = float(np.quantile(y_source[mask], quantile))
+
+    if fallback_scope != "global":
+        thresholds.setdefault("__global__", global_threshold)
+    return thresholds
+
+
 def compute_regressor_oof_metrics(
     y_true: np.ndarray,
     oof_predictions: np.ndarray,
@@ -205,6 +268,9 @@ def compute_cross_outcome_metrics(
     outcome_columns: pl.DataFrame | None,
     draft_group: np.ndarray | None = None,
     draft_year: np.ndarray | None = None,
+    meta_columns: pl.DataFrame | None = None,
+    elite_cfg: object | None = None,
+    elite_thresholds: dict[str, float] | None = None,
 ) -> dict[str, float]:
     """Evaluate one ranked board against multiple outcome families by draft class.
 
@@ -213,6 +279,9 @@ def compute_cross_outcome_metrics(
         outcome_columns: Optional outcome labels used for the cross-outcome scorecard.
         draft_group: Preferred draft-class grouping key, such as `Universe:Year`.
         draft_year: Legacy alias for grouping when only the draft year is available.
+        meta_columns: Metadata columns used by scoped elite definitions.
+        elite_cfg: Config-like object describing derived elite label settings.
+        elite_thresholds: Pre-fit elite thresholds, usually learned on the training split.
 
     Returns:
         Availability flags and cross-outcome metrics for each supported outcome family.
@@ -264,6 +333,52 @@ def compute_cross_outcome_metrics(
             vals.append(float(np.mean(y_g[order])))
         return float(np.mean(vals)) if vals else 0.0
 
+    def _recall_at_k_by_group(y_binary: np.ndarray, k: int) -> float:
+        vals: list[float] = []
+        for group in np.unique(group_key):
+            mask = group_key == group
+            if not np.any(mask):
+                continue
+            scores_g = y_score[mask]
+            y_g = y_binary[mask]
+            positives = float(np.sum(y_g))
+            if positives <= 0:
+                vals.append(0.0)
+                continue
+            k_eff = min(k, y_g.size)
+            order = np.argsort(-scores_g)[:k_eff]
+            vals.append(float(np.sum(y_g[order]) / positives))
+        return float(np.mean(vals)) if vals else 0.0
+
+    def _derived_elite_labels() -> np.ndarray | None:
+        if not bool(_cfg_get(elite_cfg, "enabled", False)):
+            return None
+        if outcome_columns is None:
+            return None
+
+        source_column = _cfg_get(elite_cfg, "source_column")
+        if source_column is None or str(source_column) not in outcome_columns.columns:
+            return None
+
+        thresholds = elite_thresholds or fit_elite_thresholds(outcome_columns, meta_columns, elite_cfg)
+        if not thresholds:
+            return None
+
+        y_source = np.maximum(outcome_columns[str(source_column)].to_numpy().astype(float), 0.0)
+        scope = str(_cfg_get(elite_cfg, "scope", "global"))
+        scope_column = str(_cfg_get(elite_cfg, "scope_column", "Position_Group"))
+        global_threshold = float(thresholds.get("__global__", 0.0))
+
+        if scope == "global" or meta_columns is None or scope_column not in meta_columns.columns:
+            return (y_source >= global_threshold).astype(float)
+
+        scope_values = meta_columns.get_column(scope_column).cast(pl.Utf8).to_numpy()
+        labels = np.zeros(y_source.shape, dtype=float)
+        for idx, scope_value in enumerate(scope_values):
+            threshold = float(thresholds.get(str(scope_value), global_threshold))
+            labels[idx] = 1.0 if y_source[idx] >= threshold else 0.0
+        return labels
+
     def _bust_rate_at_k_by_group(y_success: np.ndarray, k: int) -> float:
         vals: list[float] = []
         for group in np.unique(group_key):
@@ -304,14 +419,25 @@ def compute_cross_outcome_metrics(
             y_longevity, y_score, group_key, k=64
         )
 
-    elite_col = _first_available(
-        ["Hall_of_Fame_Flag", "Hall_Of_Fame_Points", "HOF_Points", "Award_Count"]
-    )
-    if elite_col is not None:
+    derived_elite = _derived_elite_labels()
+    elite_col = None
+    y_elite: np.ndarray | None = None
+    if derived_elite is not None:
+        y_elite = derived_elite
+    else:
+        elite_col = _first_available(
+            ["Hall_of_Fame_Flag", "Hall_Of_Fame_Points", "HOF_Points", "Award_Count"]
+        )
+        if elite_col is not None:
+            y_elite_raw = outcome_columns[elite_col].to_numpy()
+            y_elite = (y_elite_raw > 0).astype(float)
+
+    if y_elite is not None:
         metrics["cross_elite_available"] = 1.0
-        y_elite_raw = outcome_columns[elite_col].to_numpy()
-        y_elite = (y_elite_raw > 0).astype(float)
-        metrics["cross_elite_precision_at_64"] = _precision_at_k_by_group(y_elite, k=64)
+        precision_k = int(_cfg_get(elite_cfg, "top_k_precision", 32))
+        recall_k = int(_cfg_get(elite_cfg, "top_k_recall", 64))
+        metrics["cross_elite_precision_at_32"] = _precision_at_k_by_group(y_elite, k=precision_k)
+        metrics["cross_elite_recall_at_64"] = _recall_at_k_by_group(y_elite, k=recall_k)
 
     success_col = _first_available(["Economic_Success", "Positive_Career_Merit_Cap_Share"])
     if success_col is not None:

@@ -92,6 +92,17 @@ def _make_cfg(**overrides):
                         "Hall_of_Fame_Flag",
                         "Hall_Of_Fame_Points",
                     ],
+                    "elite": {
+                        "enabled": True,
+                        "source_column": "Career_Merit_Cap_Share",
+                        "quantile": 0.95,
+                        "scope": "position_group",
+                        "scope_column": "Position_Group",
+                        "fallback_scope": "global",
+                        "min_group_size": 100,
+                        "top_k_precision": 32,
+                        "top_k_recall": 64,
+                    },
                 },
             },
             "positions": "all",
@@ -116,6 +127,17 @@ def _data_cfg_for_hash(cfg):
         "regressor_target_space": cfg.target.regressor_intensity.target_space,
         "outcome_scorecard_columns": list(cfg.target.outcome_scorecard.columns),
         "outcome_scorecard_optional_columns": list(cfg.target.outcome_scorecard.optional_columns),
+        "outcome_scorecard_elite_enabled": cfg.target.outcome_scorecard.elite.enabled,
+        "outcome_scorecard_elite_source_column": cfg.target.outcome_scorecard.elite.source_column,
+        "outcome_scorecard_elite_quantile": cfg.target.outcome_scorecard.elite.quantile,
+        "outcome_scorecard_elite_scope": cfg.target.outcome_scorecard.elite.scope,
+        "outcome_scorecard_elite_scope_column": cfg.target.outcome_scorecard.elite.scope_column,
+        "outcome_scorecard_elite_fallback_scope": (
+            cfg.target.outcome_scorecard.elite.fallback_scope
+        ),
+        "outcome_scorecard_elite_min_group_size": (
+            cfg.target.outcome_scorecard.elite.min_group_size
+        ),
         "positions": cfg.positions,
         "buffer": cfg.split.right_censor_buffer,
         "split_strategy": cfg.split.get("strategy", "chronological"),
@@ -149,6 +171,7 @@ def test_data_cache_hash_changes_for_cache_relevant_fields():
         _make_cfg(**{"target.regressor_intensity.target_space": "log"}),
         _make_cfg(**{"target.outcome_scorecard.columns": ["Positive_DPO", "Peak_Overall"]}),
         _make_cfg(**{"target.outcome_scorecard.optional_columns": ["Award_Count"]}),
+        _make_cfg(**{"target.outcome_scorecard.elite.quantile": 0.9}),
         _make_cfg(positions=["QB", "WR"]),
         _make_cfg(**{"split.test_split_pct": 0.25}),
         _make_cfg(**{"split.val_split_pct": 0.10}),
@@ -329,6 +352,51 @@ def test_loader_populates_outcomes_train_with_full_available_scorecard(monkeypat
     }
     assert "Top3_Mean_Current_Overall" not in data.X_train.columns
     assert "Award_Count" not in data.X_train.columns
+
+
+def test_loader_auto_includes_elite_source_column_in_scorecard(monkeypatch):
+    cfg = _make_cfg(
+        **{
+            "target.outcome_scorecard.columns": [
+                "Positive_Career_Merit_Cap_Share",
+                "Positive_DPO",
+                "Peak_Overall",
+                "Career_Games_Played",
+            ]
+        }
+    )
+    loader = DataLoader(exp_root=".", quiet=True)
+
+    source_df = pl.DataFrame(
+        {
+            "Player_ID": [1, 2],
+            "Year": [2020, 2021],
+            "First_Name": ["A", "B"],
+            "Last_Name": ["One", "Two"],
+            "Position_Group": ["QB", "WR"],
+            "feat_keep": [10, 20],
+            "Career_Merit_Cap_Share": [0.8, 0.1],
+            "DPO": [0.8, 0.1],
+            "Positive_Career_Merit_Cap_Share": [0.8, 0.1],
+            "Positive_DPO": [0.8, 0.1],
+            "Economic_Success": [1, 1],
+            "Cleared_Sieve": [1, 1],
+            "Peak_Overall": [70.0, 65.0],
+            "Career_Games_Played": [16, 32],
+        }
+    )
+
+    monkeypatch.setattr("fof8_ml.orchestration.data_loader.os.path.exists", lambda _: True)
+    monkeypatch.setattr("fof8_ml.orchestration.data_loader.pl.read_parquet", lambda _: source_df)
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.data_loader.FOF8Loader",
+        lambda **_: SimpleNamespace(initial_sim_year=2019, final_sim_year=2025),
+    )
+
+    data = loader.load(cfg)
+
+    assert data.outcomes_train is not None
+    assert "Career_Merit_Cap_Share" in data.outcomes_train.columns
 
 
 def test_loader_fails_for_missing_required_outcome_scorecard_column(monkeypatch):

@@ -5,6 +5,7 @@ import polars as pl
 from fof8_ml.models.registry import get_model_family
 from fof8_ml.orchestration.evaluator import (
     compute_cross_outcome_metrics,
+    fit_elite_thresholds,
     compute_regressor_oof_metrics,
     prefix_metrics,
     rename_metric_prefix,
@@ -39,8 +40,21 @@ def _empty_like_features(X: pl.DataFrame) -> pl.DataFrame:
 
 def _empty_meta() -> pl.DataFrame:
     return pl.DataFrame(
-        {"Universe": [], "Year": []}, schema={"Universe": pl.String, "Year": pl.Int64}
+        {"Universe": [], "Year": [], "Position_Group": []},
+        schema={"Universe": pl.String, "Year": pl.Int64, "Position_Group": pl.String},
     )
+
+
+def _scope_meta_from_features(X: pl.DataFrame, elite_cfg: object | None) -> pl.DataFrame | None:
+    scope_column = "Position_Group"
+    if elite_cfg is not None and hasattr(elite_cfg, "get"):
+        scope_column = str(elite_cfg.get("scope_column", scope_column))
+    elif isinstance(elite_cfg, dict):
+        scope_column = str(elite_cfg.get("scope_column", scope_column))
+
+    if scope_column in X.columns:
+        return X.select(pl.col(scope_column).cast(pl.Utf8))
+    return None
 
 
 def _rename_regressor_eval_metrics(
@@ -68,6 +82,7 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
     meta_test = getattr(data, "meta_test", _empty_meta())
     outcomes_val = getattr(data, "outcomes_val", None)
     outcomes_test = getattr(data, "outcomes_test", None)
+    elite_cfg = cfg.target.get("outcome_scorecard", {}).get("elite")
 
     positive_mask = (data.y_cls == 1).astype(bool)
     X_reg = data.X_train.filter(pl.Series(positive_mask))
@@ -80,6 +95,15 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
             f"Missing: {missing}."
         )
     meta_positive = data.meta_train.filter(pl.Series(positive_mask))
+    outcomes_train_positive = (
+        data.outcomes_train.filter(pl.Series(positive_mask))
+        if data.outcomes_train is not None
+        else None
+    )
+    scope_meta_positive = _scope_meta_from_features(X_reg, elite_cfg)
+    elite_thresholds = fit_elite_thresholds(
+        outcomes_train_positive, scope_meta_positive, elite_cfg
+    )
     draft_group = (
         meta_positive.get_column("Universe").cast(pl.Utf8)
         + ":"
@@ -205,6 +229,9 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
                             .get_column("Year")
                             .cast(pl.Utf8)
                         ).to_numpy(),
+                        meta_columns=_scope_meta_from_features(X_val_reg, elite_cfg),
+                        elite_cfg=elite_cfg,
+                        elite_thresholds=elite_thresholds,
                     ),
                     "regressor_val_",
                 )
@@ -235,16 +262,14 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
                 if target_space == "log"
                 else np.maximum(regressor_cv_result.oof_predictions, 0)
             )
-            outcomes_positive = (
-                data.outcomes_train.filter(pl.Series(positive_mask))
-                if data.outcomes_train is not None
-                else None
-            )
             regressor_metrics.update(
                 compute_cross_outcome_metrics(
                     y_score=y_score_raw,
-                    outcome_columns=outcomes_positive,
+                    outcome_columns=outcomes_train_positive,
                     draft_group=draft_group,
+                    meta_columns=scope_meta_positive,
+                    elite_cfg=elite_cfg,
+                    elite_thresholds=elite_thresholds,
                 )
             )
 
@@ -324,6 +349,9 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
                         y_score=test_score_raw,
                         outcome_columns=outcomes_test_positive,
                         draft_group=test_draft_group,
+                        meta_columns=_scope_meta_from_features(X_test_reg, elite_cfg),
+                        elite_cfg=elite_cfg,
+                        elite_thresholds=elite_thresholds,
                     ),
                     "regressor_test_",
                 )

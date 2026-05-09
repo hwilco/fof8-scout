@@ -67,6 +67,11 @@ def _resolve_outcome_scorecard_columns(cfg: DictConfig, available_columns: list[
 
     required_columns = _coerce_str_list(scorecard_cfg.get("columns"))
     optional_columns = _coerce_str_list(scorecard_cfg.get("optional_columns"))
+    elite_cfg = scorecard_cfg.get("elite")
+    if elite_cfg and bool(elite_cfg.get("enabled", False)):
+        source_column = elite_cfg.get("source_column")
+        if source_column is not None:
+            required_columns.append(str(source_column))
 
     missing_required = sorted(col for col in required_columns if col not in available_columns)
     if missing_required:
@@ -536,6 +541,27 @@ class DataLoader:
             "outcome_scorecard_optional_columns": _coerce_str_list(
                 cfg.target.get("outcome_scorecard", {}).get("optional_columns")
             ),
+            "outcome_scorecard_elite_enabled": bool(
+                cfg.target.get("outcome_scorecard", {}).get("elite", {}).get("enabled", False)
+            ),
+            "outcome_scorecard_elite_source_column": cfg.target.get("outcome_scorecard", {})
+            .get("elite", {})
+            .get("source_column"),
+            "outcome_scorecard_elite_quantile": cfg.target.get("outcome_scorecard", {})
+            .get("elite", {})
+            .get("quantile"),
+            "outcome_scorecard_elite_scope": cfg.target.get("outcome_scorecard", {})
+            .get("elite", {})
+            .get("scope"),
+            "outcome_scorecard_elite_scope_column": cfg.target.get("outcome_scorecard", {})
+            .get("elite", {})
+            .get("scope_column"),
+            "outcome_scorecard_elite_fallback_scope": cfg.target.get("outcome_scorecard", {})
+            .get("elite", {})
+            .get("fallback_scope"),
+            "outcome_scorecard_elite_min_group_size": cfg.target.get("outcome_scorecard", {})
+            .get("elite", {})
+            .get("min_group_size"),
             "positions": cfg.positions,
             "buffer": cfg.split.right_censor_buffer,
             "split_strategy": cfg.split.get("strategy", "chronological"),
