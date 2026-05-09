@@ -3,6 +3,7 @@ from collections.abc import Mapping
 
 import numpy as np
 import polars as pl
+from omegaconf import DictConfig
 from sklearn.metrics import (
     auc,
     f1_score,
@@ -24,6 +25,8 @@ from fof8_ml.evaluation.metrics import (
     topk_weighted_mae,
     topk_weighted_mae_normalized,
 )
+
+ConfigLike = DictConfig | Mapping[str, object] | None
 
 
 def optimize_threshold(
@@ -133,7 +136,7 @@ def prefix_metrics(metrics: dict[str, float], prefix: str) -> dict[str, float]:
     return {f"{prefix}{key}": value for key, value in metrics.items()}
 
 
-def _cfg_get(config: object, key: str, default: object = None) -> object:
+def _cfg_get(config: ConfigLike, key: str, default: object = None) -> object:
     if config is None:
         return default
     if isinstance(config, Mapping):
@@ -144,10 +147,33 @@ def _cfg_get(config: object, key: str, default: object = None) -> object:
     return getattr(config, key, default)
 
 
+def _cfg_get_str(config: ConfigLike, key: str, default: str) -> str:
+    value = _cfg_get(config, key, default)
+    return default if value is None else str(value)
+
+
+def _cfg_get_float(config: ConfigLike, key: str, default: float) -> float:
+    value = _cfg_get(config, key, default)
+    if isinstance(value, bool):
+        return float(int(value))
+    if isinstance(value, (int, float, str)):
+        return float(value)
+    return default
+
+
+def _cfg_get_int(config: ConfigLike, key: str, default: int) -> int:
+    value = _cfg_get(config, key, default)
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float, str)):
+        return int(value)
+    return default
+
+
 def fit_elite_thresholds(
     outcome_columns: pl.DataFrame | None,
     meta_columns: pl.DataFrame | None,
-    elite_cfg: object | None,
+    elite_cfg: ConfigLike,
 ) -> dict[str, float] | None:
     """Fit elite thresholds from training outcomes for later holdout application.
 
@@ -167,11 +193,11 @@ def fit_elite_thresholds(
     if source_column is None or str(source_column) not in outcome_columns.columns:
         return None
 
-    quantile = float(_cfg_get(elite_cfg, "quantile", 0.95))
-    scope = str(_cfg_get(elite_cfg, "scope", "global"))
-    scope_column = str(_cfg_get(elite_cfg, "scope_column", "Position_Group"))
-    fallback_scope = str(_cfg_get(elite_cfg, "fallback_scope", "global"))
-    min_group_size = int(_cfg_get(elite_cfg, "min_group_size", 100))
+    quantile = _cfg_get_float(elite_cfg, "quantile", 0.95)
+    scope = _cfg_get_str(elite_cfg, "scope", "global")
+    scope_column = _cfg_get_str(elite_cfg, "scope_column", "Position_Group")
+    fallback_scope = _cfg_get_str(elite_cfg, "fallback_scope", "global")
+    min_group_size = _cfg_get_int(elite_cfg, "min_group_size", 100)
 
     y_source = np.maximum(outcome_columns[str(source_column)].to_numpy().astype(float), 0.0)
     global_threshold = float(np.quantile(y_source, quantile)) if y_source.size else 0.0
@@ -269,7 +295,7 @@ def compute_cross_outcome_metrics(
     draft_group: np.ndarray | None = None,
     draft_year: np.ndarray | None = None,
     meta_columns: pl.DataFrame | None = None,
-    elite_cfg: object | None = None,
+    elite_cfg: ConfigLike = None,
     elite_thresholds: dict[str, float] | None = None,
 ) -> dict[str, float]:
     """Evaluate one ranked board against multiple outcome families by draft class.
@@ -360,13 +386,15 @@ def compute_cross_outcome_metrics(
         if source_column is None or str(source_column) not in outcome_columns.columns:
             return None
 
-        thresholds = elite_thresholds or fit_elite_thresholds(outcome_columns, meta_columns, elite_cfg)
+        thresholds = elite_thresholds or fit_elite_thresholds(
+            outcome_columns, meta_columns, elite_cfg
+        )
         if not thresholds:
             return None
 
         y_source = np.maximum(outcome_columns[str(source_column)].to_numpy().astype(float), 0.0)
-        scope = str(_cfg_get(elite_cfg, "scope", "global"))
-        scope_column = str(_cfg_get(elite_cfg, "scope_column", "Position_Group"))
+        scope = _cfg_get_str(elite_cfg, "scope", "global")
+        scope_column = _cfg_get_str(elite_cfg, "scope_column", "Position_Group")
         global_threshold = float(thresholds.get("__global__", 0.0))
 
         if scope == "global" or meta_columns is None or scope_column not in meta_columns.columns:
@@ -434,8 +462,8 @@ def compute_cross_outcome_metrics(
 
     if y_elite is not None:
         metrics["cross_elite_available"] = 1.0
-        precision_k = int(_cfg_get(elite_cfg, "top_k_precision", 32))
-        recall_k = int(_cfg_get(elite_cfg, "top_k_recall", 64))
+        precision_k = _cfg_get_int(elite_cfg, "top_k_precision", 32)
+        recall_k = _cfg_get_int(elite_cfg, "top_k_recall", 64)
         metrics["cross_elite_precision_at_32"] = _precision_at_k_by_group(y_elite, k=precision_k)
         metrics["cross_elite_recall_at_64"] = _recall_at_k_by_group(y_elite, k=recall_k)
 

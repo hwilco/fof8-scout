@@ -1,12 +1,15 @@
+from collections.abc import Mapping
+
 import mlflow
 import numpy as np
 import polars as pl
+from omegaconf import DictConfig
 
 from fof8_ml.models.registry import get_model_family
 from fof8_ml.orchestration.evaluator import (
     compute_cross_outcome_metrics,
-    fit_elite_thresholds,
     compute_regressor_oof_metrics,
+    fit_elite_thresholds,
     prefix_metrics,
     rename_metric_prefix,
 )
@@ -22,6 +25,8 @@ from fof8_ml.orchestration.trainer import (
     train_final_model,
     train_model_with_validation,
 )
+
+ConfigLike = DictConfig | Mapping[str, object] | None
 
 
 def _concat_features(*frames: pl.DataFrame) -> pl.DataFrame:
@@ -45,12 +50,15 @@ def _empty_meta() -> pl.DataFrame:
     )
 
 
-def _scope_meta_from_features(X: pl.DataFrame, elite_cfg: object | None) -> pl.DataFrame | None:
+def _scope_meta_from_features(X: pl.DataFrame, elite_cfg: ConfigLike) -> pl.DataFrame | None:
     scope_column = "Position_Group"
-    if elite_cfg is not None and hasattr(elite_cfg, "get"):
-        scope_column = str(elite_cfg.get("scope_column", scope_column))
-    elif isinstance(elite_cfg, dict):
-        scope_column = str(elite_cfg.get("scope_column", scope_column))
+    if isinstance(elite_cfg, Mapping):
+        raw_scope_column = elite_cfg.get("scope_column", scope_column)
+        scope_column = str(raw_scope_column)
+    else:
+        getter = getattr(elite_cfg, "get", None)
+        if callable(getter):
+            scope_column = str(getter("scope_column", scope_column))
 
     if scope_column in X.columns:
         return X.select(pl.col(scope_column).cast(pl.Utf8))
@@ -68,7 +76,7 @@ def _rename_regressor_eval_metrics(
 
 
 def run_regressor(ctx: PipelineContext) -> dict[str, float]:
-    cfg = ctx.cfg
+    cfg: DictConfig = ctx.cfg
     data = ctx.data
     quiet = ctx.sweep_context.quiet
     progress_every = int(cfg.get("runtime", {}).get("catboost_progress_every", 100))
@@ -101,9 +109,7 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
         else None
     )
     scope_meta_positive = _scope_meta_from_features(X_reg, elite_cfg)
-    elite_thresholds = fit_elite_thresholds(
-        outcomes_train_positive, scope_meta_positive, elite_cfg
-    )
+    elite_thresholds = fit_elite_thresholds(outcomes_train_positive, scope_meta_positive, elite_cfg)
     draft_group = (
         meta_positive.get_column("Universe").cast(pl.Utf8)
         + ":"
