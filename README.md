@@ -81,8 +81,13 @@ See the [fof8-gen README](./fof8-gen/README.md) for full setup and usage.
 
 **Quick setup** (from the repo root):
 ```powershell
-uv sync --package fof8-gen
+uv sync --all-packages --group dev
 ```
+
+`fof8-gen` can now run in two ways on the Windows host:
+
+- Advance and export an existing universe from the `Begin Training Camp` screen.
+- Generate a range of brand-new universes from one metadata template with `--generate-universes`, then run the normal export/sim loop for each one.
 
 ### fof8-ml (Dev Container)
 
@@ -102,12 +107,14 @@ This project uses **[DVC (Data Version Control)](https://dvc.org/)** to manage l
 
 This project uses a hybrid DagsHub/DVC architecture to ensure data lineage across environments.
 
-1.  **Collection (Windows)**: `fof8-gen` exports raw CSVs to `fof8-gen/data/raw/`.
+1.  **Collection (Windows)**: `fof8-gen` exports raw CSVs to universe folders under `fof8-gen/data/raw/`.
 2.  **Versioning (Windows)**: Run `dvc add fof8-gen/data/raw` to update the data version, then `git commit` and `dvc push`.
 3.  **Consumption (Dev Container)**: Run `dvc pull` to sync the latest raw data.
 4.  **Orchestration (Dev Container)**: Run `dvc repro` from the root. This will:
-    -   **Transform**: Run `pipelines/process_features.py` to build a single "Universal Truth" feature store (`features.parquet`).
-    -   **Train**: Run `pipelines/train_classifier.py` and/or `pipelines/train_regressor.py`. These stages dynamically split the parquet in-memory and log independent results to MLflow.
+    -   **Transform**: Run `pipelines/process_features.py` to build a pooled "Universal Truth" feature store (`features.parquet`) from `data.league_names` or the legacy `data.league_name`. The same stage also writes each universe to `fof8-ml/data/processed/universes/<Universe>/features.parquet`.
+    -   **Train**: Run `pipelines/train_classifier.py` and/or `pipelines/train_regressor.py`. These stages dynamically split the parquet in-memory using either chronological or random split configs and log independent results to MLflow.
+
+To materialize a fixed per-universe year window, override `data.year_start_offset` and `data.year_count`. For example, `data.year_start_offset=1 data.year_count=30` starts with each universe's second simulation year and keeps 30 years.
 
 > [!TIP]
 > The `git_commit` is automatically logged as a tag in MLflow, allowing you to trace any model run back to its exact data and code version.

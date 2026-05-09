@@ -70,3 +70,35 @@ def apply_quiet_params(model_name: str, params: dict[str, Any]) -> dict[str, Any
             return quiet_params
 
     return quiet_params
+
+
+def apply_interactive_progress_params(
+    model_name: str,
+    params: dict[str, Any],
+    *,
+    catboost_progress_every: int = 100,
+) -> dict[str, Any]:
+    """Return params with human-friendly training progress for interactive runs.
+
+    This preserves any explicit verbosity/logging config already supplied by the
+    model config. For CatBoost, default to periodic iteration updates so single
+    runs show meaningful progress during early stopping and final refits.
+    """
+
+    interactive_params = params.copy()
+
+    for role in ("classifier", "regressor"):
+        family = get_model_family(role=role, model_name=model_name)
+        if family == "catboost":
+            if not any(
+                key in interactive_params
+                for key in ["verbose", "logging_level", "verbose_eval", "silent"]
+            ):
+                interactive_params["verbose"] = catboost_progress_every
+            return interactive_params
+        if family == "xgb":
+            if "verbosity" not in interactive_params:
+                interactive_params["verbosity"] = 1
+            return interactive_params
+
+    return interactive_params

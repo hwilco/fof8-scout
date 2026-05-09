@@ -10,8 +10,8 @@ experiment_name: "Regressor_CatBoost_Tweedie_Hyperopt_v1"
 quiet_sweep: true
 
 optimization:
-  metric: "regressor_oof_rmse"
-  direction: "minimize"
+  metric: "regressor_draft_value_score"
+  direction: "maximize"
 
 hydra:
   sweeper:

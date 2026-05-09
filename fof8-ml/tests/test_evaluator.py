@@ -1,8 +1,13 @@
 import warnings
 
 import numpy as np
+import polars as pl
 import pytest
-from fof8_ml.orchestration.evaluator import compute_regressor_oof_metrics, optimize_threshold
+from fof8_ml.orchestration.evaluator import (
+    compute_cross_outcome_metrics,
+    compute_regressor_oof_metrics,
+    optimize_threshold,
+)
 
 
 def test_optimize_threshold_warns_and_falls_back_deterministically_when_constraint_infeasible():
@@ -50,7 +55,172 @@ def test_compute_regressor_oof_metrics_uses_raw_space_directly():
     y_true = np.array([10.0, 20.0])
     y_pred = np.array([13.0, 16.0])
 
-    metrics = compute_regressor_oof_metrics(y_true, y_pred, target_space="raw")
+    metrics = compute_regressor_oof_metrics(
+        y_true,
+        y_pred,
+        target_space="raw",
+        draft_group=np.array(["A:2020", "A:2021"], dtype=object),
+    )
 
     assert metrics["regressor_oof_rmse"] == pytest.approx(3.5355339)
     assert metrics["regressor_oof_mae"] == pytest.approx(3.5)
+    assert "regressor_mean_ndcg_at_128" in metrics
+
+
+def test_compute_regressor_oof_metrics_clips_negative_targets_for_ranking_relevance():
+    y_true = np.array([-1.0, 0.0, 2.0])
+    y_pred = np.array([0.9, 0.8, 0.1])
+    metrics = compute_regressor_oof_metrics(
+        y_true,
+        y_pred,
+        target_space="raw",
+        draft_group=np.array(["A:2020", "A:2020", "A:2021"], dtype=object),
+    )
+    assert 0.0 <= metrics["regressor_mean_ndcg_at_32"] <= 1.0
+    assert 0.0 <= metrics["regressor_mean_ndcg_at_128"] <= 1.0
+    assert "regressor_draft_value_score" in metrics
+
+
+def test_compute_regressor_oof_metrics_separates_overlapping_years_by_universe():
+    y_true = np.array([1.0, 0.0, 1.0, 0.0])
+    y_pred = np.array([0.99, 0.01, 0.49, 0.51])
+
+    metrics_year_only = compute_regressor_oof_metrics(
+        y_true,
+        y_pred,
+        target_space="raw",
+        draft_group=np.array(["2020", "2020", "2020", "2020"], dtype=object),
+    )
+    metrics_by_draft_class = compute_regressor_oof_metrics(
+        y_true,
+        y_pred,
+        target_space="raw",
+        draft_group=np.array(["A:2020", "A:2020", "B:2020", "B:2020"], dtype=object),
+    )
+
+    assert metrics_by_draft_class["regressor_mean_ndcg_at_64"] == pytest.approx(0.8154648768)
+    assert metrics_year_only["regressor_mean_ndcg_at_64"] == pytest.approx(0.9197207891)
+    assert (
+        metrics_by_draft_class["regressor_mean_ndcg_at_64"]
+        < metrics_year_only["regressor_mean_ndcg_at_64"]
+    )
+
+
+def test_compute_cross_outcome_metrics_computes_available_families_and_skips_missing():
+    y_score = np.array([0.9, 0.8, 0.4, 0.2])
+    draft_group = np.array(["A:2020", "A:2020", "A:2021", "A:2021"], dtype=object)
+    outcomes = pl.DataFrame(
+        {
+            "Career_Merit_Cap_Share": [10.0, 5.0, 0.0, 2.0],
+            "Peak_Overall": [70.0, 65.0, 60.0, 58.0],
+            "Career_Games_Played": [100.0, 80.0, 60.0, 40.0],
+            "Economic_Success": [1, 1, 0, 1],
+        }
+    )
+    elite_cfg = {
+        "enabled": True,
+        "source_column": "Career_Merit_Cap_Share",
+        "quantile": 0.75,
+        "scope": "position_group",
+        "scope_column": "Position_Group",
+        "fallback_scope": "global",
+        "min_group_size": 2,
+        "top_k_precision": 32,
+        "top_k_recall": 64,
+    }
+    meta = pl.DataFrame({"Position_Group": ["QB", "QB", "WR", "WR"]})
+    metrics = compute_cross_outcome_metrics(
+        y_score,
+        outcomes,
+        draft_group=draft_group,
+        meta_columns=meta,
+        elite_cfg=elite_cfg,
+    )
+
+    assert metrics["cross_outcomes_available"] == 1.0
+    assert metrics["cross_econ_available"] == 1.0
+    assert metrics["cross_talent_available"] == 1.0
+    assert metrics["cross_longevity_available"] == 1.0
+    assert metrics["cross_bust_available"] == 1.0
+    assert metrics["cross_elite_available"] == 1.0
+    assert "cross_econ_mean_ndcg_at_64" in metrics
+    assert "cross_talent_mean_ndcg_at_64" in metrics
+    assert "cross_longevity_mean_ndcg_at_64" in metrics
+    assert "cross_bust_rate_at_32" in metrics
+    assert "cross_elite_precision_at_32" in metrics
+    assert "cross_elite_recall_at_64" in metrics
+
+
+def test_compute_cross_outcome_metrics_supports_hof_naming_variants():
+    y_score = np.array([0.9, 0.8, 0.4, 0.2])
+    draft_group = np.array(["A:2020", "A:2020", "A:2021", "A:2021"], dtype=object)
+
+    metrics_flag = compute_cross_outcome_metrics(
+        y_score,
+        pl.DataFrame({"Hall_of_Fame_Flag": [1, 0, 0, 1]}),
+        draft_group=draft_group,
+    )
+    metrics_points = compute_cross_outcome_metrics(
+        y_score,
+        pl.DataFrame({"Hall_Of_Fame_Points": [10.0, 0.0, 0.0, 5.0]}),
+        draft_group=draft_group,
+    )
+
+    assert metrics_flag["cross_elite_available"] == 1.0
+    assert "cross_elite_precision_at_32" in metrics_flag
+    assert "cross_elite_recall_at_64" in metrics_flag
+    assert metrics_points["cross_elite_available"] == 1.0
+    assert "cross_elite_precision_at_32" in metrics_points
+    assert "cross_elite_recall_at_64" in metrics_points
+
+
+def test_compute_cross_outcome_metrics_uses_global_fallback_for_small_position_groups():
+    y_score = np.array([0.95, 0.85, 0.4, 0.2])
+    draft_group = np.array(["A:2020", "A:2020", "A:2021", "A:2021"], dtype=object)
+    outcomes = pl.DataFrame(
+        {
+            "Career_Merit_Cap_Share": [100.0, 80.0, 5.0, 0.0],
+            "Economic_Success": [1, 1, 1, 0],
+        }
+    )
+    meta = pl.DataFrame({"Position_Group": ["QB", "WR", "TE", "RB"]})
+    elite_cfg = {
+        "enabled": True,
+        "source_column": "Career_Merit_Cap_Share",
+        "quantile": 0.75,
+        "scope": "position_group",
+        "scope_column": "Position_Group",
+        "fallback_scope": "global",
+        "min_group_size": 2,
+        "top_k_precision": 32,
+        "top_k_recall": 64,
+    }
+
+    metrics = compute_cross_outcome_metrics(
+        y_score,
+        outcomes,
+        draft_group=draft_group,
+        meta_columns=meta,
+        elite_cfg=elite_cfg,
+    )
+
+    assert metrics["cross_elite_available"] == 1.0
+    assert metrics["cross_elite_precision_at_32"] == pytest.approx(0.25)
+    assert metrics["cross_elite_recall_at_64"] == pytest.approx(0.5)
+
+
+def test_compute_cross_outcome_metrics_returns_zero_availability_without_outcomes():
+    metrics = compute_cross_outcome_metrics(
+        np.array([0.9, 0.8]),
+        None,
+        draft_group=np.array(["A:2020", "A:2020"], dtype=object),
+    )
+
+    assert metrics == {
+        "cross_outcomes_available": 0.0,
+        "cross_econ_available": 0.0,
+        "cross_talent_available": 0.0,
+        "cross_longevity_available": 0.0,
+        "cross_elite_available": 0.0,
+        "cross_bust_available": 0.0,
+    }

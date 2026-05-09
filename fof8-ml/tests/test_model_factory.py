@@ -8,7 +8,11 @@ from fof8_ml.models import (
     XGBoostClassifierWrapper,
     XGBoostRegressorWrapper,
 )
-from fof8_ml.models.factory import apply_quiet_params, get_model_wrapper
+from fof8_ml.models.factory import (
+    apply_interactive_progress_params,
+    apply_quiet_params,
+    get_model_wrapper,
+)
 from fof8_ml.models.registry import list_model_keys, register_model, resolve_model
 from omegaconf import OmegaConf
 
@@ -121,3 +125,26 @@ def test_quiet_params_for_registry_models():
 def test_quiet_params_is_case_insensitive():
     cat_quiet = apply_quiet_params(" CATBOOST_CLASSIFIER ", {"iterations": 100})
     assert cat_quiet["logging_level"] == "Silent"
+
+
+def test_interactive_progress_params_default_for_catboost():
+    params = apply_interactive_progress_params("catboost_classifier", {"iterations": 100})
+    assert params["verbose"] == 100
+
+
+def test_interactive_progress_params_uses_configured_cadence():
+    params = apply_interactive_progress_params(
+        "catboost_classifier",
+        {"iterations": 100},
+        catboost_progress_every=25,
+    )
+    assert params["verbose"] == 25
+
+
+def test_interactive_progress_params_respects_existing_verbosity():
+    params = apply_interactive_progress_params(
+        "catboost_classifier",
+        {"iterations": 100, "verbose": 7},
+        catboost_progress_every=25,
+    )
+    assert params["verbose"] == 7

@@ -6,28 +6,56 @@ import polars as pl
 import pytest
 from fof8_ml.orchestration.pipeline_types import CVResult
 from fof8_ml.orchestration.regressor import run_regressor
+from omegaconf import OmegaConf
 
 
-def _make_context(*, target_space: str, loss_function: str, y_reg: np.ndarray, y_cls: np.ndarray):
-    cfg = SimpleNamespace(
-        model=SimpleNamespace(
-            name="catboost_tweedie_regressor",
-            params=SimpleNamespace(loss_function=loss_function),
-        ),
-        target=SimpleNamespace(
-            regressor_intensity=SimpleNamespace(
-                target_col="Positive_Career_Merit_Cap_Share",
-                target_space=target_space,
-            )
-        ),
-        cv=SimpleNamespace(n_folds=2, shuffle=True),
-        seed=42,
-        use_gpu=False,
+def _make_context(
+    *,
+    target_space: str,
+    loss_function: str,
+    y_reg: np.ndarray,
+    y_cls: np.ndarray,
+    meta_train: pl.DataFrame | None = None,
+):
+    cfg = OmegaConf.create(
+        {
+            "model": {
+                "name": "catboost_tweedie_regressor",
+                "params": {"loss_function": loss_function},
+            },
+            "target": {
+                "regressor_intensity": {
+                    "target_col": "Positive_Career_Merit_Cap_Share",
+                    "target_space": target_space,
+                }
+            },
+            "cv": {"n_folds": 2, "shuffle": True},
+            "seed": 42,
+            "use_gpu": False,
+            "runtime": {"catboost_progress_every": 100},
+        }
     )
     data = SimpleNamespace(
         X_train=pl.DataFrame({"feature": [1.0, 2.0, 3.0, 4.0]}),
         y_cls=y_cls,
         y_reg=y_reg,
+        meta_train=meta_train
+        if meta_train is not None
+        else pl.DataFrame(
+            {
+                "Universe": ["A", "A", "B", "B"],
+                "Year": [2020, 2020, 2020, 2020],
+            }
+        ),
+        outcomes_train=pl.DataFrame(
+            {
+                "Positive_Career_Merit_Cap_Share": y_reg,
+                "Career_Merit_Cap_Share": y_reg,
+                "Peak_Overall": [50.0, 55.0, 60.0, 65.0],
+                "Career_Games_Played": [16.0, 32.0, 48.0, 64.0],
+                "Economic_Success": y_cls,
+            }
+        ),
     )
     logger = SimpleNamespace(
         start_model_run=lambda *_args, **_kwargs: nullcontext(),
@@ -87,7 +115,11 @@ def test_run_regressor_uses_configured_target_space(monkeypatch):
     monkeypatch.setattr("fof8_ml.orchestration.regressor.run_cv_regressor", fake_run_cv_regressor)
     monkeypatch.setattr(
         "fof8_ml.orchestration.regressor.compute_regressor_oof_metrics",
-        lambda **_kwargs: {"regressor_oof_rmse": 1.0, "regressor_oof_mae": 1.0},
+        lambda **_kwargs: {
+            "regressor_oof_rmse": 1.0,
+            "regressor_oof_mae": 1.0,
+            "regressor_draft_value_score": 0.75,
+        },
     )
     monkeypatch.setattr(
         "fof8_ml.orchestration.regressor.train_final_model", lambda **_kwargs: object()
@@ -106,3 +138,78 @@ def test_run_regressor_uses_configured_target_space(monkeypatch):
 
     assert captured["target_space"] == "log"
     assert np.allclose(captured["y"], np.log1p(y_reg))
+
+
+def test_run_regressor_requires_universe_and_year_for_draft_aware_metrics():
+    ctx = _make_context(
+        target_space="raw",
+        loss_function="RMSE",
+        y_reg=np.array([1.0, 2.0, 3.0, 4.0]),
+        y_cls=np.array([1, 1, 1, 1]),
+        meta_train=pl.DataFrame({"Year": [2020, 2020, 2021, 2021]}),
+    )
+
+    with pytest.raises(ValueError, match="must include Universe and Year"):
+        run_regressor(ctx)
+
+
+def test_run_regressor_passes_one_group_per_universe_year(monkeypatch):
+    captured: dict[str, np.ndarray] = {}
+
+    def fake_run_cv_regressor(**_kwargs):
+        return CVResult(
+            oof_predictions=np.array([0.1, 0.2, 0.3, 0.4]),
+            best_iterations=[10, 12],
+            fold_metrics=[{"rmse": 1.0, "mae": 1.0}, {"rmse": 1.2, "mae": 1.1}],
+        )
+
+    def fake_compute_regressor_oof_metrics(**kwargs):
+        captured["regressor_group"] = kwargs["draft_group"]
+        return {
+            "regressor_oof_rmse": 1.0,
+            "regressor_oof_mae": 1.0,
+            "regressor_draft_value_score": 0.75,
+        }
+
+    def fake_compute_cross_outcome_metrics(**kwargs):
+        captured["cross_group"] = kwargs["draft_group"]
+        return {}
+
+    monkeypatch.setattr("fof8_ml.orchestration.regressor.get_model_family", lambda **_: "catboost")
+    monkeypatch.setattr("fof8_ml.orchestration.regressor.run_cv_regressor", fake_run_cv_regressor)
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.regressor.compute_regressor_oof_metrics",
+        fake_compute_regressor_oof_metrics,
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.regressor.compute_cross_outcome_metrics",
+        fake_compute_cross_outcome_metrics,
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.regressor.train_final_model", lambda **_kwargs: object()
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.regressor.mlflow.log_param", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.regressor.mlflow.log_metrics", lambda *_args, **_kwargs: None
+    )
+
+    ctx = _make_context(
+        target_space="raw",
+        loss_function="RMSE",
+        y_reg=np.array([2.0, 3.0, 4.0, 5.0]),
+        y_cls=np.array([1, 1, 1, 1]),
+        meta_train=pl.DataFrame(
+            {
+                "Universe": ["A", "A", "B", "B"],
+                "Year": [2020, 2020, 2020, 2020],
+            }
+        ),
+    )
+
+    run_regressor(ctx)
+
+    expected = np.array(["A:2020", "A:2020", "B:2020", "B:2020"], dtype=object)
+    assert np.array_equal(captured["regressor_group"], expected)
+    assert np.array_equal(captured["cross_group"], expected)

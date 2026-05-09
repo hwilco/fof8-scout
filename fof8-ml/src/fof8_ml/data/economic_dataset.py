@@ -20,8 +20,10 @@ def build_economic_dataset(
     positions: list[str] | None = None,
     active_team_id: int | None = None,
     merit_threshold: float = 0,
+    universe: str | None = None,
 ) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
     """Build feature, target, and metadata frames for the economic model."""
+    universe = universe or league_name
     loader = FOF8Loader(base_path=raw_path, league_name=league_name)
 
     if active_team_id is None:
@@ -67,5 +69,8 @@ def build_economic_dataset(
     target_columns = DRAFT_OUTCOME_TARGET_COLUMNS
     X = df_model.drop(target_columns)
     y = df_model.select(target_columns)
-    metadata = df_master.select(["Player_ID", "Year", "First_Name", "Last_Name"])
+    metadata = df_master.select(["Player_ID", "Year", "First_Name", "Last_Name"]).with_columns(
+        pl.lit(universe).alias("Universe")
+    )
+    metadata = metadata.select(["Universe", "Player_ID", "Year", "First_Name", "Last_Name"])
     return X, y, metadata

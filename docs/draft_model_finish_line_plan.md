@@ -113,9 +113,23 @@ Target-family convention:
 - Logged config clearly identifies target column and target space.
 - Feature schema still excludes all target columns from model features.
 
-## Phase 2: Draft-Aware Regressor Metrics
+## Phase 2: Draft-Aware And Cross-Outcome Metrics
 
-Goal: evaluate regressors by draft-board usefulness, not only RMSE/MAE.
+Goal: evaluate regressors by draft-board usefulness, not only RMSE/MAE, and avoid
+choosing a target by only measuring how well a model predicts that same target.
+
+You have completed Phase 1 and are starting here. The most important Phase 2 design
+choice is that `NDCG@K` should be computed per draft class:
+
+```text
+for each draft year:
+  rank that year's prospects by model score
+  compute NDCG@K within that year
+average NDCG@K across years
+```
+
+Do not use global historical NDCG as the primary metric. The real decision is made within
+one live draft class, and global NDCG can be dominated by unusually strong or weak years.
 
 ### Repo Changes
 
@@ -135,6 +149,9 @@ Goal: evaluate regressors by draft-board usefulness, not only RMSE/MAE.
    - `calibration_slope`
    - optional `spearman_by_group`
 
+   `mean_ndcg_by_group` should take `group=draft_year` and apply the top-K cutoff inside
+   each group, not after globally ranking all players.
+
 2. Pass draft year metadata into regressor metric calculation.
 
    `PreparedData` already carries `meta_train`; use `Year` as the draft-class group.
@@ -145,7 +162,7 @@ Goal: evaluate regressors by draft-board usefulness, not only RMSE/MAE.
    - `fof8-ml/src/fof8_ml/orchestration/evaluator.py`
    - `fof8-ml/src/fof8_ml/orchestration/pipeline_types.py`
 
-3. Add conditional regressor metrics.
+3. Add same-target conditional regressor metrics.
 
    For the standalone regressor, compute metrics on the success/positive subset:
 
@@ -160,7 +177,104 @@ Goal: evaluate regressors by draft-board usefulness, not only RMSE/MAE.
    regressor_mae_positive
    ```
 
-4. Add composite metric.
+4. Add cross-outcome evaluation metrics.
+
+   Target selection should not be circular. A model trained on economic value should be
+   checked against talent, longevity, and elite outcomes. A model trained on overall should
+   be checked against economic value and draft utility.
+
+   Add a generic evaluation path that accepts:
+
+   ```text
+   y_score = model predictions
+   outcome_columns = independent outcome labels
+   group = draft year
+   ```
+
+   Evaluate the same ranked board against multiple outcome families:
+
+   ```text
+   Economic:
+     Positive_Career_Merit_Cap_Share
+     Career_Merit_Cap_Share
+     Positive_DPO
+
+   Talent:
+     Peak_Overall
+     Top3_Mean_Current_Overall if available
+
+   Longevity:
+     Career_Games_Played
+
+   Elite outcomes:
+     Award_Count if available
+     Hall_of_Fame_Flag or HOF points if available
+     or a derived elite label from a configurable source outcome
+   ```
+
+   Elite evaluation should not rely only on hardcoded award/HOF labels. Add a configurable
+   derived-elite path so the same scorecard can answer "does this board find rare high-end
+   outcomes?" even when explicit awards/HOF labels are unavailable or too sparse.
+
+   Recommended config shape:
+
+   ```yaml
+   target:
+     outcome_scorecard:
+       elite:
+         enabled: true
+         source_column: Career_Merit_Cap_Share
+         quantile: 0.95
+         scope: position_group
+         scope_column: Position_Group
+         fallback_scope: global
+         min_group_size: 100
+         top_k_precision: 32
+         top_k_recall: 64
+   ```
+
+   Default interpretation:
+
+   - `source_column=Career_Merit_Cap_Share`
+   - `quantile=0.95`
+   - `scope=position_group`
+
+   This means a player is labeled elite if their realized outcome is at or above the 95th
+   percentile of the configured source outcome within their `Position_Group`.
+
+   Important leakage rule:
+
+   - derive elite thresholds on the training split only
+   - freeze those thresholds
+   - apply the frozen thresholds to validation/test/holdout evaluation
+
+   Scope behavior:
+
+   - `global`: one threshold across all players
+   - `position_group`: thresholds by `Position_Group`; this should be the default because it
+     balances role awareness against sparse per-position samples
+   - `position`: thresholds by exact `Position`, with fallback when samples are too small
+
+   If explicit elite columns such as `Hall_of_Fame_Flag`, `Hall_Of_Fame_Points`, or
+   `Award_Count` are available, keep them as additional elite outcome families rather than
+   forcing the scorecard to choose only one elite definition.
+
+   The comparison should produce metrics like:
+
+   ```text
+   cross_econ_mean_ndcg_at_64
+   cross_talent_mean_ndcg_at_64
+   cross_longevity_mean_ndcg_at_64
+   cross_elite_precision_at_32
+   cross_elite_recall_at_64
+   cross_econ_top64_actual_value
+   cross_bust_rate_at_32
+   ```
+
+   If some outcome columns are not available yet, build the metric API so they can be added
+   without changing model-training code.
+
+5. Add composite metric.
 
    ```text
    regressor_draft_value_score =
@@ -169,15 +283,42 @@ Goal: evaluate regressors by draft-board usefulness, not only RMSE/MAE.
 
    Set this as the default regressor optimization metric once stable.
 
+   Treat this as a within-target sweep objective. For target selection across economic vs
+   talent vs hybrid targets, use the cross-outcome scorecard rather than this scalar alone.
+
+6. Add an optional portfolio score for target-selection summaries.
+
+   A target-selection report can include a transparent weighted score:
+
+   ```text
+   portfolio_score =
+     0.45 * cross_econ_mean_ndcg_at_64
+   + 0.25 * cross_talent_mean_ndcg_at_64
+   + 0.15 * cross_longevity_mean_ndcg_at_64
+   + 0.15 * cross_elite_precision_at_32
+   - 0.20 * cross_bust_rate_at_32
+   - 0.15 * top64_value_miscalibration
+   ```
+
+   These weights are not objective truth. They are a decision aid that makes tradeoffs
+   explicit. The final decision should still inspect the full scorecard and draft-board
+   artifacts.
+
 ### Acceptance Criteria
 
 - Metrics are logged to MLflow.
 - DVC metric output can write the selected composite score.
-- Metrics are grouped by draft year where appropriate.
+- NDCG@K metrics apply K within each draft year and then average across years.
+- Cross-outcome metrics can evaluate one model's board against economic, talent,
+  longevity, and elite outcome labels when those labels are present.
+- Elite labels can also be derived from a configurable source outcome using thresholds fit on
+  the training split only and then frozen for holdout evaluation.
 - Regression tests cover edge cases:
   - all-zero relevance class
   - fewer than K players in a group
   - negative target values clipped for ranking relevance
+  - missing optional cross-outcome labels are skipped or reported clearly
+  - elite-threshold fallback when a position or position group is too small
 
 ## Phase 3: Complete Stitched Model Evaluation
 
@@ -229,7 +370,14 @@ Goal: evaluate the classifier + regressor as the draft board will actually use t
    complete_top64_calibration_slope
    complete_bust_rate_at_32
    complete_precision_at_32_positive_value
+   complete_elite_precision_at_32
+   complete_elite_recall_at_64
    ```
+
+   The complete-model evaluator should use the same elite definition contract as the
+   regressor cross-outcome scorecard. If elite is derived from a configurable outcome
+   threshold, the evaluator must load or compute thresholds from the training split only and
+   then apply the frozen thresholds to the held-out evaluation set.
 
 4. Add evaluation artifacts.
 
@@ -285,6 +433,7 @@ Primary comparison:
 - complete stitched `draft_value_score`
 - complete top64 weighted MAE normalized
 - complete bias/calibration
+- cross-outcome scorecard: economic, talent, longevity, and elite labels
 
 ### Experiment Set B: Overall Targets
 
@@ -301,7 +450,13 @@ Compare whether these produce better draft boards under:
 - actual economic value
 - actual peak overall
 - games played
+- awards/HOF labels when available
+- bust avoidance
 - manual inspection
+
+The key question is not "does the overall-trained model predict overall?" It is whether
+the overall-trained board holds up against economic and draft-utility outcomes better than
+the economic-trained board holds up against talent outcomes.
 
 ### Experiment Set C: Feature/Ablation Sensitivity
 
@@ -335,7 +490,10 @@ Evaluate complete model quality, not just classifier PR-AUC.
 - Every experiment logs the same metric set.
 - Every experiment has a run name/tag identifying target, loss, target space, and feature
   ablation signature.
-- Results are summarized in a table or MLflow comparison report.
+- Results are summarized in a table or MLflow comparison report with rows as trained
+  target/loss variants and columns as cross-outcome evaluation families.
+- Elite-related experiment summaries should record the elite config used for that run:
+  source column, quantile, scope, and fallback rule.
 
 ## Phase 5: Champion Decision Process
 
@@ -356,6 +514,15 @@ complete_top64_bias
 complete_top64_calibration_slope
 complete_top64_actual_value
 complete_bust_rate_at_32
+cross_econ_mean_ndcg_at_64
+cross_talent_mean_ndcg_at_64
+cross_longevity_mean_ndcg_at_64
+cross_elite_precision_at_32
+cross_elite_recall_at_64
+elite_source_column
+elite_quantile
+elite_scope
+portfolio_score if used
 position-specific failure notes
 manual draft-board notes
 ```
@@ -365,6 +532,8 @@ manual draft-board notes
 Reject a candidate if:
 
 - top64 bias is materially positive and calibration cannot be corrected
+- it wins only on the metric it was trained to predict and fails reasonable cross-outcome
+  checks
 - it wins globally but fails badly for important position groups
 - it relies on target leakage or unavailable inference features
 - it produces a draft board that is not manually credible
@@ -372,6 +541,7 @@ Reject a candidate if:
 Prefer a candidate if:
 
 - it ranks high-value players well within draft classes
+- it is robust across economic, talent, longevity, and elite outcome families
 - it has useful magnitude calibration in top-k decision regions
 - it generalizes across held-out years and positions
 - it supports trade decisions with interpretable units
@@ -454,16 +624,26 @@ then each new target/loss/feature decision is evaluated against it.
 
 ### Ticket 1: Add Draft Metrics
 
+- Status: complete as of 2026-05-06.
 - Add metric functions to `fof8_ml.evaluation.metrics`.
 - Add unit tests under `fof8-ml/tests/`.
 - Include grouped NDCG, top-k weighted MAE, bias, calibration slope.
 
 ### Ticket 2: Log Regressor Draft Metrics
 
+- Status: complete as of 2026-05-06 after smoke run.
 - Update `compute_regressor_oof_metrics`.
 - Pass draft year from `meta_train`.
 - Log composite `regressor_draft_value_score`.
 - Set `pipelines/conf/regressor_pipeline.yaml` optimization metric to the composite.
+- Current cross-outcome coverage: economic, talent via `Peak_Overall`, and longevity via
+  `Career_Games_Played`.
+- Deferred optional labels: `Top3_Mean_Current_Overall`, `Award_Count`,
+  `Hall_of_Fame_Flag`, and `Hall_Of_Fame_Points` are wired into the scorecard contract and
+  evaluator when present, but remain optional dataset columns.
+- Follow-up extension: add configurable derived elite labels with default
+  `Career_Merit_Cap_Share` 95th percentile within `Position_Group`, using training-only
+  threshold fitting and frozen holdout application.
 
 ### Ticket 3: Add Complete Model Evaluator
 

@@ -1,6 +1,7 @@
 from .data_loader import DataLoader
 from .evaluator import (
     compute_classifier_final_metrics,
+    compute_cross_outcome_metrics,
     compute_regressor_oof_metrics,
     optimize_threshold,
 )
@@ -16,6 +17,7 @@ __all__ = [
     "ClassifierResult",
     "optimize_threshold",
     "compute_classifier_final_metrics",
+    "compute_cross_outcome_metrics",
     "compute_regressor_oof_metrics",
     "DataLoader",
     "run_cv_classifier",

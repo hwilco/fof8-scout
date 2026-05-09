@@ -3,8 +3,8 @@ defaults:
   - ablation: default
   - data: fof8_base
   - target: economic
-  - split: chronological
-  - cv: kfold_5
+  - split: grouped_universe
+  - cv: kfold_5  # Used as fallback when no validation positives are available for regressor tuning
   - model: catboost_classifier
   - hparams_search: catboost_classifier_career_threshold
   - experiment: null
@@ -18,13 +18,17 @@ quiet_sweep: true            # If true, suppresses non-essential output during s
 use_gpu: false               # Enable GPU acceleration for supported models
 seed: 42                     # Global random seed
 
+runtime:
+  catboost_progress_every: 100  # For single runs, show CatBoost training progress every N iterations
+  refit_final_model: false      # If true, refit on train+val and score held-out test after tuning
+
 # --- Data Slicing & Feature Logic ---
 positions: "all"
 mask_positional_features: true
 
 # --- Optimization Targets ---
 optimization:
-  metric: "classifier_oof_pr_auc"
+  metric: "classifier_val_pr_auc"
   direction: "maximize"
 
 # --- Feature Ablation Settings ---
@@ -44,7 +48,7 @@ diagnostics:
   log_shap: true
 
 tags:
-  version: "3.0"
+  version: "4.0"
   type: "sieve_classifier"
 
 hydra:

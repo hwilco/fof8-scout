@@ -161,7 +161,12 @@ def log_feature_importance(
     plt.close(fig)
 
 
-def log_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray, threshold: float) -> None:
+def log_confusion_matrix(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    threshold: float,
+    eval_label: str = "oof",
+) -> None:
     """
     Helper to generate and log confusion matrix.
 
@@ -169,22 +174,29 @@ def log_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray, threshold: floa
         y_true: Ground truth labels.
         y_pred: Predicted labels.
         threshold: Classification threshold used.
+        eval_label: Label for evaluation split (e.g., "oof") to use in plot titles and filenames.
+
     """
     cm = confusion_matrix(y_true, y_pred)
     fig, ax = plt.subplots()
     ConfusionMatrixDisplay(cm, display_labels=["Bust", "Hit"]).plot(
         ax=ax, cmap="Blues", values_format="d"
     )
-    ax.set_title(f"OOF Confusion Matrix (Threshold: {threshold:.3f})")
+    display_label = eval_label.upper()
+    ax.set_title(f"{display_label} Confusion Matrix (Threshold: {threshold:.3f})")
     with tempfile.TemporaryDirectory() as tmpdir:
-        path = os.path.join(tmpdir, "oof_confusion_matrix.png")
+        path = os.path.join(tmpdir, f"{eval_label}_confusion_matrix.png")
         fig.savefig(path)
         mlflow.log_artifact(path)
     plt.close(fig)
 
 
 def log_calibration_comparison(
-    y_true: np.ndarray, y_prob_raw: np.ndarray, y_prob_cal: np.ndarray, n_bins: int = 10
+    y_true: np.ndarray,
+    y_prob_raw: np.ndarray,
+    y_prob_cal: np.ndarray,
+    n_bins: int = 10,
+    eval_label: str = "oof",
 ) -> None:
     """
     Generates and logs a reliability diagram comparing raw and calibrated probabilities.
@@ -194,6 +206,7 @@ def log_calibration_comparison(
         y_prob_raw: Uncalibrated probabilities.
         y_prob_cal: Calibrated probabilities.
         n_bins: Number of bins for the calibration curve.
+        eval_label: Label for evaluation split (e.g., "oof") to use in plot titles and filenames.
     """
     from sklearn.calibration import calibration_curve
 
@@ -209,13 +222,13 @@ def log_calibration_comparison(
     ax.set_xlabel("Mean Predicted Probability")
     ax.set_ylim(-0.05, 1.05)
     ax.legend(loc="lower right")
-    ax.set_title("Calibration Reliability Diagram (Pre vs Post)")
+    ax.set_title(f"{eval_label.upper()} Calibration Reliability Diagram (Pre vs Post)")
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        path = os.path.join(tmpdir, "calibration_reliability_plot.png")
+        path = os.path.join(tmpdir, f"{eval_label}_calibration_reliability_plot.png")
         fig.savefig(path)
         mlflow.log_artifact(path)
 

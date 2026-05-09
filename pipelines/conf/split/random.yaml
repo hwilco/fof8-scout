@@ -1,0 +1,8 @@
+strategy: "random"
+test_split_pct: 0.20
+right_censor_buffer: 20
+seed: 42
+# `draft_class` means a whole (Universe, Year) board stays together.
+# Use `row` only for diagnostics; chronological remains the preferred backtest holdout.
+unit: "draft_class"
+stratify_by: ["Universe"]

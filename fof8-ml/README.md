@@ -52,12 +52,18 @@ uv run python pipelines/train_classifier.py experiment_name="Testing_Classifier"
 
 # Run the Intensity Regressor
 uv run python pipelines/train_regressor.py experiment_name="Testing_Regressor"
+
+# Pool multiple universes and use the random split config
+uv run python pipelines/train_classifier.py data.league_names=[DRAFT003,DRAFT004,DRAFT005] split=random
+
+# Rebuild features from each universe's second simulation year, keeping 30 years
+uv run python pipelines/process_features.py data.year_start_offset=1 data.year_count=30
 ```
 
 > [!IMPORTANT]
 > **Data vs ML Decoupling**:
-> - The `transform` stage (handled by DVC) builds the single `features.parquet` file.
-> - The `train` stage handles chronological splitting **in-memory**. This means you can adjust your test split cutoff in `conf/data/fof8_base.yaml` and rerun `dvc repro`—DVC will skip the expensive transformation and only rerun the training.
+> - The `transform` stage (handled by DVC) builds the pooled `features.parquet` file from one or more configured raw universe folders and also writes per-universe parquet files under `fof8-ml/data/processed/universes/<Universe>/features.parquet`.
+> - The `train` stage handles train/test splitting **in-memory** using `pipelines/conf/split/*.yaml`. You can switch between chronological and random splits without rebuilding features.
 
 ### Shared Pipeline Runner
 `pipelines/train_classifier.py` and `pipelines/train_regressor.py` are thin Hydra entrypoints.

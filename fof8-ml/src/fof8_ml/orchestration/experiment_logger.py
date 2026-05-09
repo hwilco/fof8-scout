@@ -9,6 +9,7 @@ from typing import Any, Optional, cast
 import dagshub
 import dvc.api
 import mlflow
+import numpy as np
 import polars as pl
 from omegaconf import DictConfig, OmegaConf
 
@@ -152,7 +153,8 @@ class ExperimentLogger:
         trial_num: Optional[int],
     ) -> None:
         """Log all data/config parameters and Git/DVC metadata."""
-        mlflow.set_tag("data.league", cfg.data.league_name)
+        league_names = cfg.data.get("league_names") or [cfg.data.get("league_name")]
+        mlflow.set_tag("data.leagues", ",".join(str(v) for v in league_names if v))
         mlflow.set_tag("data.raw_path", cfg.data.raw_path)
 
         try:
@@ -184,7 +186,15 @@ class ExperimentLogger:
 
         n_pos = int(data.y_cls.sum())
         n_neg = len(data.y_cls) - n_pos
-        mlflow.log_params({"data.n_pos": n_pos, "data.n_neg": n_neg})
+        mlflow.log_params(
+            {
+                "data.n_pos": n_pos,
+                "data.n_neg": n_neg,
+                "data.n_train_rows": len(data.X_train),
+                "data.n_val_rows": len(data.X_val),
+                "data.n_test_rows": len(data.X_test),
+            }
+        )
 
     def log_feature_schema(self, data: PreparedData) -> None:
         """Persist train/inference feature schema to `feature_schema.json`.
@@ -212,6 +222,10 @@ class ExperimentLogger:
         data: PreparedData,
         cfg: DictConfig,
         quiet: bool,
+        eval_split_label: str = "oof",
+        test_calibrated_probs: np.ndarray | None = None,
+        test_raw_probs: np.ndarray | None = None,
+        test_threshold: float | None = None,
     ) -> None:
         """Log Classifier metrics, artifacts, and optimal threshold."""
         mlflow.log_params({"classifier_optimal_threshold": result.optimal_threshold})
@@ -219,23 +233,51 @@ class ExperimentLogger:
 
         if not quiet:
             log_calibration_comparison(
-                data.y_cls, result.raw_oof_probs, result.calibrated_oof_probs
+                data.y_cls if eval_split_label == "oof" else data.y_cls_val,
+                result.raw_oof_probs,
+                result.calibrated_oof_probs,
+                eval_label=eval_split_label,
             )
-            log_confusion_matrix(data.y_cls, result.final_predictions, result.optimal_threshold)
+            log_confusion_matrix(
+                data.y_cls if eval_split_label == "oof" else data.y_cls_val,
+                result.final_predictions,
+                result.optimal_threshold,
+                eval_label=eval_split_label,
+            )
 
-            # Export OOF DataFrame
+            # Export evaluation-split DataFrame.
             import polars as pl
 
-            oof_df = data.meta_train.with_columns(
+            eval_meta = data.meta_train if eval_split_label == "oof" else data.meta_val
+            eval_y = data.y_cls if eval_split_label == "oof" else data.y_cls_val
+            eval_df = eval_meta.with_columns(
                 [
-                    pl.Series("y_true", data.y_cls),
-                    pl.Series("oof_prob_raw", result.raw_oof_probs),
-                    pl.Series("oof_prob", result.calibrated_oof_probs),
+                    pl.Series("y_true", eval_y),
+                    pl.Series(f"{eval_split_label}_prob_raw", result.raw_oof_probs),
+                    pl.Series(f"{eval_split_label}_prob", result.calibrated_oof_probs),
                     pl.Series("cleared_sieve", result.final_predictions),
                 ]
             )
-            oof_df.write_csv("classifier_oof_results.csv")
-            mlflow.log_artifact("classifier_oof_results.csv")
+            eval_results_path = f"classifier_{eval_split_label}_results.csv"
+            eval_df.write_csv(eval_results_path)
+            mlflow.log_artifact(eval_results_path)
+
+            if (
+                test_calibrated_probs is not None
+                and test_raw_probs is not None
+                and test_threshold is not None
+            ):
+                test_preds = (test_calibrated_probs >= test_threshold).astype(int)
+                test_df = data.meta_test.with_columns(
+                    [
+                        pl.Series("y_true", data.y_cls_test),
+                        pl.Series("test_prob_raw", test_raw_probs),
+                        pl.Series("test_prob", test_calibrated_probs),
+                        pl.Series("cleared_sieve", test_preds),
+                    ]
+                )
+                test_df.write_csv("classifier_test_results.csv")
+                mlflow.log_artifact("classifier_test_results.csv")
 
             if cfg.diagnostics.log_importance or cfg.diagnostics.log_shap:
                 log_feature_importance(
@@ -254,12 +296,22 @@ class ExperimentLogger:
         X_reg: pl.DataFrame,
         cfg: DictConfig,
         quiet: bool,
+        test_predictions: np.ndarray | None = None,
+        test_meta: pl.DataFrame | None = None,
+        test_metrics: dict[str, float] | None = None,
     ) -> None:
         """Log Regressor metrics and artifacts."""
         mlflow.log_metrics(metrics)
+        if test_metrics is not None:
+            mlflow.log_metrics(test_metrics)
         model.log_model("regressor_model", X=X_reg)
 
         if not quiet:
+            if test_predictions is not None and test_meta is not None:
+                test_df = test_meta.with_columns(pl.Series("test_prediction", test_predictions))
+                test_df.write_csv("regressor_test_results.csv")
+                mlflow.log_artifact("regressor_test_results.csv")
+
             if cfg.diagnostics.log_importance or cfg.diagnostics.log_shap:
                 log_feature_importance(
                     model,

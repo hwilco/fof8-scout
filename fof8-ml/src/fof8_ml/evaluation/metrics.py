@@ -13,6 +13,139 @@ from sklearn.metrics import (
 )
 
 
+def ndcg_at_k(y_true: np.ndarray, y_score: np.ndarray, k: int) -> float:
+    """Compute NDCG@k from relevance labels and ranking scores."""
+    if k <= 0 or y_true.size == 0:
+        return 0.0
+
+    relevance = np.maximum(y_true.astype(float), 0.0)
+    if not np.any(relevance > 0):
+        return 0.0
+
+    k_eff = min(k, relevance.size)
+    order = np.argsort(-y_score)[:k_eff]
+    ranked_rel = relevance[order]
+    discounts = 1.0 / np.log2(np.arange(2, k_eff + 2))
+    dcg = float(np.sum((np.power(2.0, ranked_rel) - 1.0) * discounts))
+
+    ideal_rel = np.sort(relevance)[::-1][:k_eff]
+    idcg = float(np.sum((np.power(2.0, ideal_rel) - 1.0) * discounts))
+    return 0.0 if idcg <= 0 else float(dcg / idcg)
+
+
+def mean_ndcg_by_group(
+    y_true: np.ndarray, y_score: np.ndarray, groups: np.ndarray, k: int
+) -> float:
+    """Compute mean NDCG@k over groups such as draft classes.
+
+    Args:
+        y_true: Ground truth relevance labels.
+        y_score: Predicted ranking scores.
+        groups: Group identifiers used to partition the ranking problem.
+        k: Rank cutoff applied within each group.
+
+    Returns:
+        Mean NDCG@k across all unique groups.
+    """
+    if y_true.size == 0:
+        return 0.0
+    values = []
+    for group in np.unique(groups):
+        mask = groups == group
+        values.append(ndcg_at_k(y_true[mask], y_score[mask], k))
+    return float(np.mean(values)) if values else 0.0
+
+
+def topk_weighted_mae(y_true: np.ndarray, y_pred: np.ndarray, k: int) -> float:
+    """Compute weighted MAE on the top-k by predicted value."""
+    if k <= 0 or y_true.size == 0:
+        return 0.0
+
+    k_eff = min(k, y_true.size)
+    order = np.argsort(-y_pred)[:k_eff]
+    errors = np.abs(y_pred[order] - y_true[order])
+    weights = np.arange(k_eff, 0, -1, dtype=float)
+    return float(np.average(errors, weights=weights))
+
+
+def topk_weighted_mae_normalized(y_true: np.ndarray, y_pred: np.ndarray, k: int) -> float:
+    """Compute weighted MAE normalized by weighted absolute target magnitude in top-k."""
+    if k <= 0 or y_true.size == 0:
+        return 0.0
+
+    k_eff = min(k, y_true.size)
+    order = np.argsort(-y_pred)[:k_eff]
+    weights = np.arange(k_eff, 0, -1, dtype=float)
+    scale = float(np.average(np.abs(y_true[order]), weights=weights))
+    mae = topk_weighted_mae(y_true, y_pred, k_eff)
+    return 0.0 if scale <= 1e-12 else float(mae / scale)
+
+
+def topk_bias(y_true: np.ndarray, y_pred: np.ndarray, k: int) -> float:
+    """Compute weighted signed error on the top-k by predicted value."""
+    if k <= 0 or y_true.size == 0:
+        return 0.0
+
+    k_eff = min(k, y_true.size)
+    order = np.argsort(-y_pred)[:k_eff]
+    weights = np.arange(k_eff, 0, -1, dtype=float)
+    bias = np.average(y_pred[order] - y_true[order], weights=weights)
+    return float(bias)
+
+
+def mean_topk_weighted_mae_by_group(
+    y_true: np.ndarray, y_pred: np.ndarray, groups: np.ndarray, k: int
+) -> float:
+    """Compute mean top-k weighted MAE over groups such as draft classes."""
+    if y_true.size == 0:
+        return 0.0
+
+    values = []
+    for group in np.unique(groups):
+        mask = groups == group
+        values.append(topk_weighted_mae(y_true[mask], y_pred[mask], k))
+    return float(np.mean(values)) if values else 0.0
+
+
+def mean_topk_weighted_mae_normalized_by_group(
+    y_true: np.ndarray, y_pred: np.ndarray, groups: np.ndarray, k: int
+) -> float:
+    """Compute mean normalized top-k weighted MAE over groups such as draft classes."""
+    if y_true.size == 0:
+        return 0.0
+
+    values = []
+    for group in np.unique(groups):
+        mask = groups == group
+        values.append(topk_weighted_mae_normalized(y_true[mask], y_pred[mask], k))
+    return float(np.mean(values)) if values else 0.0
+
+
+def mean_topk_bias_by_group(
+    y_true: np.ndarray, y_pred: np.ndarray, groups: np.ndarray, k: int
+) -> float:
+    """Compute mean top-k weighted bias over groups such as draft classes."""
+    if y_true.size == 0:
+        return 0.0
+
+    values = []
+    for group in np.unique(groups):
+        mask = groups == group
+        values.append(topk_bias(y_true[mask], y_pred[mask], k))
+    return float(np.mean(values)) if values else 0.0
+
+
+def calibration_slope(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    """Compute slope of linear calibration fit y_true ~ slope * y_pred + intercept."""
+    if y_true.size == 0:
+        return 0.0
+    pred_var = float(np.var(y_pred))
+    if pred_var <= 1e-12:
+        return 0.0
+    cov = float(np.cov(y_pred, y_true, ddof=0)[0, 1])
+    return float(cov / pred_var)
+
+
 def calculate_career_threshold_metrics(
     y_true: np.ndarray, y_prob: np.ndarray, threshold: float = 0.5
 ) -> dict[str, float]:
