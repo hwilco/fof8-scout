@@ -112,6 +112,26 @@ def compute_classifier_final_metrics(
     }
 
 
+def rename_metric_prefix(
+    metrics: dict[str, float],
+    source_prefix: str,
+    target_prefix: str,
+) -> dict[str, float]:
+    """Return a copy of `metrics` with a metric-name prefix replaced."""
+    renamed: dict[str, float] = {}
+    for key, value in metrics.items():
+        if key.startswith(source_prefix):
+            renamed[key.replace(source_prefix, target_prefix, 1)] = value
+        else:
+            renamed[key] = value
+    return renamed
+
+
+def prefix_metrics(metrics: dict[str, float], prefix: str) -> dict[str, float]:
+    """Prefix metric names without altering the original metric body."""
+    return {f"{prefix}{key}": value for key, value in metrics.items()}
+
+
 def compute_regressor_oof_metrics(
     y_true: np.ndarray,
     oof_predictions: np.ndarray,

@@ -1,0 +1,6 @@
+strategy: "grouped_universe"
+right_censor_buffer: 20
+train_universe_pct: 0.67
+val_universe_pct: 0.13
+test_universe_pct: 0.20
+seed: 42

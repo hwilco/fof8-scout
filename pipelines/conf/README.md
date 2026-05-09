@@ -37,11 +37,16 @@ Split configs live under `split/`:
 
 - `chronological`: applies the right-censor buffer and holds out the latest eligible draft classes within each universe before pooling train/test rows.
 - `random`: applies the same eligibility filter, then randomly splits either rows or whole `(Universe, Year)` draft classes with `split.seed`.
+- `grouped_universe`: applies the eligibility filter, then assigns whole universes to train/validation/test splits.
 
 For `split.unit=draft_class`, the grouping key is the full `(Universe, Year)` pair rather than
 numeric `Year` alone. That is the default for random splits because it preserves whole draft
 boards during pooled-universe training. Row-level random split remains available for diagnostics,
 while chronological split is still the preferred final backtest/reporting holdout.
+
+`grouped_universe` is the default training configuration for unseen-universe generalization.
+It exposes an explicit validation universe set for model selection and keeps test universes
+untouched until final reporting.
 
 Example overrides:
 

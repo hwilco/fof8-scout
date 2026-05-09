@@ -18,20 +18,29 @@ def reset_global_data_cache():
     _GLOBAL_DATA_CACHE.update(
         {
             "X_train": None,
+            "X_val": None,
             "X_test": None,
             "y_cls": None,
+            "y_cls_val": None,
+            "y_cls_test": None,
             "y_reg": None,
+            "y_reg_val": None,
+            "y_reg_test": None,
             "meta_train": None,
+            "meta_val": None,
             "meta_test": None,
             "initial_year": None,
             "final_sim_year": None,
             "valid_start_year": None,
             "valid_end_year": None,
             "train_year_range": None,
+            "val_year_range": None,
             "test_year_range": None,
             "metadata_columns": None,
             "target_columns": None,
             "outcomes_train": None,
+            "outcomes_val": None,
+            "outcomes_test": None,
             "universes": None,
             "per_universe": None,
             "split_strategy": None,
@@ -113,7 +122,11 @@ def _data_cfg_for_hash(cfg):
         "split_unit": cfg.split.get("unit", None),
         "split_seed": cfg.split.get("seed", cfg.get("seed", None)),
         "stratify_by": list(cfg.split.get("stratify_by", [])),
+        "val_pct": cfg.split.get("val_split_pct", None),
         "test_pct": cfg.split.test_split_pct,
+        "train_universe_pct": cfg.split.get("train_universe_pct", None),
+        "val_universe_pct": cfg.split.get("val_universe_pct", None),
+        "test_universe_pct": cfg.split.get("test_universe_pct", None),
         "mask": cfg.mask_positional_features,
     }
 
@@ -138,7 +151,16 @@ def test_data_cache_hash_changes_for_cache_relevant_fields():
         _make_cfg(**{"target.outcome_scorecard.optional_columns": ["Award_Count"]}),
         _make_cfg(positions=["QB", "WR"]),
         _make_cfg(**{"split.test_split_pct": 0.25}),
+        _make_cfg(**{"split.val_split_pct": 0.10}),
         _make_cfg(**{"split.strategy": "random"}),
+        _make_cfg(
+            **{
+                "split.strategy": "grouped_universe",
+                "split.train_universe_pct": 0.6,
+                "split.val_universe_pct": 0.2,
+                "split.test_universe_pct": 0.2,
+            }
+        ),
         _make_cfg(**{"split.seed": 99}),
         _make_cfg(**{"split.unit": "row"}),
         _make_cfg(**{"split.stratify_by": ["Universe"]}),
@@ -342,10 +364,19 @@ def test_loader_fails_for_missing_required_outcome_scorecard_column(monkeypatch)
         loader.load(cfg)
 
 
-def _pooled_source_df() -> pl.DataFrame:
+def _pooled_source_df(universes: list[str] | None = None) -> pl.DataFrame:
     rows = []
     player_id = 1
-    for universe, years in {"league_a": range(2020, 2025), "league_b": range(2030, 2035)}.items():
+    universe_map = {
+        "league_a": range(2020, 2025),
+        "league_b": range(2030, 2035),
+        "league_c": range(2040, 2045),
+        "league_d": range(2050, 2055),
+        "league_e": range(2060, 2065),
+    }
+    selected = universes or list(universe_map.keys())
+    for universe in selected:
+        years = universe_map[universe]
         for year in years:
             rows.append(
                 {
@@ -384,7 +415,8 @@ def test_chronological_split_is_computed_per_universe(monkeypatch):
 
     monkeypatch.setattr("fof8_ml.orchestration.data_loader.os.path.exists", lambda _: True)
     monkeypatch.setattr(
-        "fof8_ml.orchestration.data_loader.pl.read_parquet", lambda _: _pooled_source_df()
+        "fof8_ml.orchestration.data_loader.pl.read_parquet",
+        lambda _: _pooled_source_df(["league_a", "league_b"]),
     )
 
     data = loader.load(cfg)
@@ -406,6 +438,7 @@ def test_chronological_split_is_computed_per_universe(monkeypatch):
         2034,
     }
     assert len(data.X_train) == 6
+    assert len(data.X_val) == 0
     assert len(data.X_test) == 4
 
 
@@ -424,7 +457,8 @@ def test_random_draft_class_split_is_deterministic_and_grouped(monkeypatch):
 
     monkeypatch.setattr("fof8_ml.orchestration.data_loader.os.path.exists", lambda _: True)
     monkeypatch.setattr(
-        "fof8_ml.orchestration.data_loader.pl.read_parquet", lambda _: _pooled_source_df()
+        "fof8_ml.orchestration.data_loader.pl.read_parquet",
+        lambda _: _pooled_source_df(["league_a", "league_b"]),
     )
 
     first = loader.load(cfg)
@@ -444,6 +478,48 @@ def test_random_draft_class_split_is_deterministic_and_grouped(monkeypatch):
     assert first_test_groups == second_test_groups
     assert first_test_groups
     assert first_test_groups.isdisjoint(train_groups)
+
+
+def test_grouped_universe_split_assigns_whole_universes_to_train_val_test(monkeypatch):
+    cfg = _make_cfg(
+        **{
+            "data.league_names": ["league_a", "league_b", "league_c", "league_d", "league_e"],
+            "split.strategy": "grouped_universe",
+            "split.train_universe_pct": 0.6,
+            "split.val_universe_pct": 0.2,
+            "split.test_universe_pct": 0.2,
+            "split.seed": 11,
+            "split.right_censor_buffer": 0,
+        }
+    )
+    loader = DataLoader(exp_root=".", quiet=True)
+
+    monkeypatch.setattr("fof8_ml.orchestration.data_loader.os.path.exists", lambda _: True)
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.data_loader.pl.read_parquet", lambda _: _pooled_source_df()
+    )
+
+    data = loader.load(cfg)
+
+    train_universes = set(data.meta_train["Universe"].to_list())
+    val_universes = set(data.meta_val["Universe"].to_list())
+    test_universes = set(data.meta_test["Universe"].to_list())
+
+    assert train_universes
+    assert val_universes
+    assert test_universes
+    assert train_universes.isdisjoint(val_universes)
+    assert train_universes.isdisjoint(test_universes)
+    assert val_universes.isdisjoint(test_universes)
+    assert train_universes | val_universes | test_universes == {
+        "league_a",
+        "league_b",
+        "league_c",
+        "league_d",
+        "league_e",
+    }
+    assert len(data.X_val) == 5
+    assert len(data.X_test) == 5
 
 
 def test_resolve_year_range_uses_offset_and_count():

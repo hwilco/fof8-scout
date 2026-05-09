@@ -6,6 +6,7 @@ import polars as pl
 import pytest
 from fof8_ml.orchestration.pipeline_types import CVResult
 from fof8_ml.orchestration.regressor import run_regressor
+from omegaconf import OmegaConf
 
 
 def _make_context(
@@ -16,20 +17,23 @@ def _make_context(
     y_cls: np.ndarray,
     meta_train: pl.DataFrame | None = None,
 ):
-    cfg = SimpleNamespace(
-        model=SimpleNamespace(
-            name="catboost_tweedie_regressor",
-            params=SimpleNamespace(loss_function=loss_function),
-        ),
-        target=SimpleNamespace(
-            regressor_intensity=SimpleNamespace(
-                target_col="Positive_Career_Merit_Cap_Share",
-                target_space=target_space,
-            )
-        ),
-        cv=SimpleNamespace(n_folds=2, shuffle=True),
-        seed=42,
-        use_gpu=False,
+    cfg = OmegaConf.create(
+        {
+            "model": {
+                "name": "catboost_tweedie_regressor",
+                "params": {"loss_function": loss_function},
+            },
+            "target": {
+                "regressor_intensity": {
+                    "target_col": "Positive_Career_Merit_Cap_Share",
+                    "target_space": target_space,
+                }
+            },
+            "cv": {"n_folds": 2, "shuffle": True},
+            "seed": 42,
+            "use_gpu": False,
+            "runtime": {"catboost_progress_every": 100},
+        }
     )
     data = SimpleNamespace(
         X_train=pl.DataFrame({"feature": [1.0, 2.0, 3.0, 4.0]}),
