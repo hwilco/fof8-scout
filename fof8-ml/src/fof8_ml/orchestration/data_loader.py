@@ -52,6 +52,15 @@ def _coerce_str_list(raw: object) -> List[str]:
 
 
 def _resolve_outcome_scorecard_columns(cfg: DictConfig, available_columns: list[str]) -> list[str]:
+    """Resolve configured outcome scorecard columns that exist in the dataset.
+
+    Args:
+        cfg: Hydra config containing target outcome scorecard settings.
+        available_columns: Columns present in the processed feature dataset.
+
+    Returns:
+        Ordered required and optional outcome scorecard columns available for evaluation.
+    """
     scorecard_cfg = cfg.target.get("outcome_scorecard")
     if scorecard_cfg is None:
         return []

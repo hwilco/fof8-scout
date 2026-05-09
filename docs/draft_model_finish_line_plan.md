@@ -209,7 +209,55 @@ one live draft class, and global NDCG can be dominated by unusually strong or we
    Elite outcomes:
      Award_Count if available
      Hall_of_Fame_Flag or HOF points if available
+     or a derived elite label from a configurable source outcome
    ```
+
+   Elite evaluation should not rely only on hardcoded award/HOF labels. Add a configurable
+   derived-elite path so the same scorecard can answer "does this board find rare high-end
+   outcomes?" even when explicit awards/HOF labels are unavailable or too sparse.
+
+   Recommended config shape:
+
+   ```yaml
+   target:
+     outcome_scorecard:
+       elite:
+         enabled: true
+         source_column: Career_Merit_Cap_Share
+         quantile: 0.95
+         scope: position_group
+         scope_column: Position_Group
+         fallback_scope: global
+         min_group_size: 100
+         top_k_precision: 32
+         top_k_recall: 64
+   ```
+
+   Default interpretation:
+
+   - `source_column=Career_Merit_Cap_Share`
+   - `quantile=0.95`
+   - `scope=position_group`
+
+   This means a player is labeled elite if their realized outcome is at or above the 95th
+   percentile of the configured source outcome within their `Position_Group`.
+
+   Important leakage rule:
+
+   - derive elite thresholds on the training split only
+   - freeze those thresholds
+   - apply the frozen thresholds to validation/test/holdout evaluation
+
+   Scope behavior:
+
+   - `global`: one threshold across all players
+   - `position_group`: thresholds by `Position_Group`; this should be the default because it
+     balances role awareness against sparse per-position samples
+   - `position`: thresholds by exact `Position`, with fallback when samples are too small
+
+   If explicit elite columns such as `Hall_of_Fame_Flag`, `Hall_Of_Fame_Points`, or
+   `Award_Count` are available, keep them as additional elite outcome families rather than
+   forcing the scorecard to choose only one elite definition.
 
    The comparison should produce metrics like:
 
@@ -217,7 +265,8 @@ one live draft class, and global NDCG can be dominated by unusually strong or we
    cross_econ_mean_ndcg_at_64
    cross_talent_mean_ndcg_at_64
    cross_longevity_mean_ndcg_at_64
-   cross_elite_precision_at_64
+   cross_elite_precision_at_32
+   cross_elite_recall_at_64
    cross_econ_top64_actual_value
    cross_bust_rate_at_32
    ```
@@ -246,7 +295,7 @@ one live draft class, and global NDCG can be dominated by unusually strong or we
      0.45 * cross_econ_mean_ndcg_at_64
    + 0.25 * cross_talent_mean_ndcg_at_64
    + 0.15 * cross_longevity_mean_ndcg_at_64
-   + 0.15 * cross_elite_precision_at_64
+   + 0.15 * cross_elite_precision_at_32
    - 0.20 * cross_bust_rate_at_32
    - 0.15 * top64_value_miscalibration
    ```
@@ -262,11 +311,14 @@ one live draft class, and global NDCG can be dominated by unusually strong or we
 - NDCG@K metrics apply K within each draft year and then average across years.
 - Cross-outcome metrics can evaluate one model's board against economic, talent,
   longevity, and elite outcome labels when those labels are present.
+- Elite labels can also be derived from a configurable source outcome using thresholds fit on
+  the training split only and then frozen for holdout evaluation.
 - Regression tests cover edge cases:
   - all-zero relevance class
   - fewer than K players in a group
   - negative target values clipped for ranking relevance
   - missing optional cross-outcome labels are skipped or reported clearly
+  - elite-threshold fallback when a position or position group is too small
 
 ## Phase 3: Complete Stitched Model Evaluation
 
@@ -318,7 +370,14 @@ Goal: evaluate the classifier + regressor as the draft board will actually use t
    complete_top64_calibration_slope
    complete_bust_rate_at_32
    complete_precision_at_32_positive_value
+   complete_elite_precision_at_32
+   complete_elite_recall_at_64
    ```
+
+   The complete-model evaluator should use the same elite definition contract as the
+   regressor cross-outcome scorecard. If elite is derived from a configurable outcome
+   threshold, the evaluator must load or compute thresholds from the training split only and
+   then apply the frozen thresholds to the held-out evaluation set.
 
 4. Add evaluation artifacts.
 
@@ -433,6 +492,8 @@ Evaluate complete model quality, not just classifier PR-AUC.
   ablation signature.
 - Results are summarized in a table or MLflow comparison report with rows as trained
   target/loss variants and columns as cross-outcome evaluation families.
+- Elite-related experiment summaries should record the elite config used for that run:
+  source column, quantile, scope, and fallback rule.
 
 ## Phase 5: Champion Decision Process
 
@@ -456,7 +517,11 @@ complete_bust_rate_at_32
 cross_econ_mean_ndcg_at_64
 cross_talent_mean_ndcg_at_64
 cross_longevity_mean_ndcg_at_64
-cross_elite_precision_at_64
+cross_elite_precision_at_32
+cross_elite_recall_at_64
+elite_source_column
+elite_quantile
+elite_scope
 portfolio_score if used
 position-specific failure notes
 manual draft-board notes
@@ -576,6 +641,9 @@ then each new target/loss/feature decision is evaluated against it.
 - Deferred optional labels: `Top3_Mean_Current_Overall`, `Award_Count`,
   `Hall_of_Fame_Flag`, and `Hall_Of_Fame_Points` are wired into the scorecard contract and
   evaluator when present, but remain optional dataset columns.
+- Follow-up extension: add configurable derived elite labels with default
+  `Career_Merit_Cap_Share` 95th percentile within `Position_Group`, using training-only
+  threshold fitting and frozen holdout application.
 
 ### Ticket 3: Add Complete Model Evaluator
 

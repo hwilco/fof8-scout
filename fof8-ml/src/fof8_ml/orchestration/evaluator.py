@@ -206,7 +206,17 @@ def compute_cross_outcome_metrics(
     draft_group: np.ndarray | None = None,
     draft_year: np.ndarray | None = None,
 ) -> dict[str, float]:
-    """Evaluate one ranked board against multiple outcome families by draft class."""
+    """Evaluate one ranked board against multiple outcome families by draft class.
+
+    Args:
+        y_score: Model predictions used to rank players within each draft class.
+        outcome_columns: Optional outcome labels used for the cross-outcome scorecard.
+        draft_group: Preferred draft-class grouping key, such as `Universe:Year`.
+        draft_year: Legacy alias for grouping when only the draft year is available.
+
+    Returns:
+        Availability flags and cross-outcome metrics for each supported outcome family.
+    """
     metrics: dict[str, float] = {
         "cross_outcomes_available": 0.0,
         "cross_econ_available": 0.0,

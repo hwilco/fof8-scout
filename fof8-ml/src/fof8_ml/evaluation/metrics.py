@@ -36,7 +36,17 @@ def ndcg_at_k(y_true: np.ndarray, y_score: np.ndarray, k: int) -> float:
 def mean_ndcg_by_group(
     y_true: np.ndarray, y_score: np.ndarray, groups: np.ndarray, k: int
 ) -> float:
-    """Compute mean NDCG@k over groups such as draft classes."""
+    """Compute mean NDCG@k over groups such as draft classes.
+
+    Args:
+        y_true: Ground truth relevance labels.
+        y_score: Predicted ranking scores.
+        groups: Group identifiers used to partition the ranking problem.
+        k: Rank cutoff applied within each group.
+
+    Returns:
+        Mean NDCG@k across all unique groups.
+    """
     if y_true.size == 0:
         return 0.0
     values = []
