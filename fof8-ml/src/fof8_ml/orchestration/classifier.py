@@ -39,6 +39,7 @@ def run_classifier(ctx: PipelineContext) -> dict[str, float]:
     data = ctx.data
     quiet = ctx.sweep_context.quiet
     progress_every = int(cfg.get("runtime", {}).get("catboost_progress_every", 100))
+    refit_final_model = bool(cfg.get("runtime", {}).get("refit_final_model", False))
 
     if not quiet:
         print("\n" + "=" * 40)
@@ -49,9 +50,11 @@ def run_classifier(ctx: PipelineContext) -> dict[str, float]:
         ctx.logger.log_model_params(cfg.model, prefix="classifier")
         mlflow.log_param("target.classifier.target_col", cfg.target.classifier_sieve.target_col)
         has_validation = len(data.X_val) > 0
+        tuning_model = None
         mlflow.log_param(
             "classifier_mode", "validation_holdout" if has_validation else "grouped_cv"
         )
+        mlflow.log_param("classifier_refit_final_model", refit_final_model)
 
         if has_validation:
             if not quiet:
@@ -160,41 +163,51 @@ def run_classifier(ctx: PipelineContext) -> dict[str, float]:
             calibrator=calibrator,
         )
 
-        avg_best_iters = int(np.mean(best_iterations)) if best_iterations else 100
-        final_train_X = (
-            _concat_features(data.X_train, data.X_val) if has_validation else data.X_train
-        )
-        final_train_y = (
-            _concat_targets(data.y_cls, data.y_cls_val) if has_validation else data.y_cls
-        )
-        if has_validation and not quiet:
-            print_refit_phase("classifier", len(data.X_train), len(data.X_val))
-        classifier_model = train_final_model(
-            model_cfg=cfg.model,
-            role="classifier",
-            X=final_train_X,
-            y=final_train_y,
-            avg_best_iterations=avg_best_iters,
-            seed=cfg.seed,
-            interactive_progress_every=progress_every,
-            use_gpu=cfg.use_gpu,
-            quiet=quiet,
-        )
+        should_refit = (not has_validation) or refit_final_model
+        test_raw_probs = None
+        test_calibrated_probs = None
+        test_metrics: dict[str, float] = {}
 
-        if not quiet:
-            print_test_phase("classifier", len(data.X_test))
-        test_raw_probs = classifier_model.predict_proba(data.X_test)
-        test_calibrated_probs = calibrator.predict(test_raw_probs)
-        test_metrics = rename_metric_prefix(
-            compute_classifier_final_metrics(
-                y_true=data.y_cls_test,
-                calibrated_probs=test_calibrated_probs,
-                threshold=best_threshold,
-            ),
-            "classifier_oof_",
-            "classifier_test_",
-        )
-        mlflow.log_metrics(test_metrics)
+        if should_refit:
+            avg_best_iters = int(np.mean(best_iterations)) if best_iterations else 100
+            final_train_X = (
+                _concat_features(data.X_train, data.X_val) if has_validation else data.X_train
+            )
+            final_train_y = (
+                _concat_targets(data.y_cls, data.y_cls_val) if has_validation else data.y_cls
+            )
+            if has_validation and not quiet:
+                print_refit_phase("classifier", len(data.X_train), len(data.X_val))
+            classifier_model = train_final_model(
+                model_cfg=cfg.model,
+                role="classifier",
+                X=final_train_X,
+                y=final_train_y,
+                avg_best_iterations=avg_best_iters,
+                seed=cfg.seed,
+                interactive_progress_every=progress_every,
+                use_gpu=cfg.use_gpu,
+                quiet=quiet,
+            )
+
+            if not quiet:
+                print_test_phase("classifier", len(data.X_test))
+            test_raw_probs = classifier_model.predict_proba(data.X_test)
+            test_calibrated_probs = calibrator.predict(test_raw_probs)
+            test_metrics = rename_metric_prefix(
+                compute_classifier_final_metrics(
+                    y_true=data.y_cls_test,
+                    calibrated_probs=test_calibrated_probs,
+                    threshold=best_threshold,
+                ),
+                "classifier_oof_",
+                "classifier_test_",
+            )
+            mlflow.log_metrics(test_metrics)
+        else:
+            assert tuning_model is not None
+            classifier_model = tuning_model
+            mlflow.log_param("classifier_test_scored", False)
 
         ctx.logger.log_classifier_results(
             classifier_result,
@@ -221,5 +234,5 @@ def run_classifier(ctx: PipelineContext) -> dict[str, float]:
         f"{primary_prefix}f1_bust": classifier_metrics[f"{primary_prefix}f1_bust"],
         f"{primary_prefix}recall_bust": classifier_metrics[f"{primary_prefix}recall_bust"],
         f"{primary_prefix}pr_auc": classifier_metrics[f"{primary_prefix}pr_auc"],
-        "classifier_test_pr_auc": test_metrics["classifier_test_pr_auc"],
+        "classifier_test_pr_auc": test_metrics.get("classifier_test_pr_auc", 0.0),
     }

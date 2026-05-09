@@ -80,6 +80,7 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
     data = ctx.data
     quiet = ctx.sweep_context.quiet
     progress_every = int(cfg.get("runtime", {}).get("catboost_progress_every", 100))
+    refit_final_model = bool(cfg.get("runtime", {}).get("refit_final_model", False))
     X_val = getattr(data, "X_val", _empty_like_features(data.X_train))
     X_test = getattr(data, "X_test", _empty_like_features(data.X_train))
     y_cls_val = getattr(data, "y_cls_val", np.array([], dtype=int))
@@ -159,7 +160,9 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
         val_positive_mask = (y_cls_val == 1).astype(bool)
         test_positive_mask = (y_cls_test == 1).astype(bool)
         has_validation = int(val_positive_mask.sum()) > 0
+        tuning_model = None
         mlflow.log_param("regressor_mode", "validation_holdout" if has_validation else "grouped_cv")
+        mlflow.log_param("regressor_refit_final_model", refit_final_model)
 
         if has_validation:
             if not quiet:
@@ -285,99 +288,112 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
             regressor_metrics["regressor_mean_mae"] = float(np.mean(cv_mae))
             best_iterations = regressor_cv_result.best_iterations
 
-        avg_best_iters = int(np.mean(best_iterations)) if best_iterations else 100
-        final_train_y_raw = (
-            _concat_targets(data.y_reg[positive_mask], y_reg_val[val_positive_mask])
-            if has_validation
-            else y_reg_raw
-        )
-        if has_validation:
-            final_train_X = _concat_features(
-                data.X_train.filter(pl.Series(positive_mask)),
-                X_val.filter(pl.Series(val_positive_mask)),
+        should_refit = (not has_validation) or refit_final_model
+        test_metrics: dict[str, float] = {}
+        test_score_raw = None
+        model_log_X = X_reg
+        if should_refit:
+            avg_best_iters = int(np.mean(best_iterations)) if best_iterations else 100
+            final_train_y_raw = (
+                _concat_targets(data.y_reg[positive_mask], y_reg_val[val_positive_mask])
+                if has_validation
+                else y_reg_raw
             )
-            final_train_y_raw = _concat_targets(
-                data.y_reg[positive_mask], y_reg_val[val_positive_mask]
+            if has_validation:
+                final_train_X = _concat_features(
+                    data.X_train.filter(pl.Series(positive_mask)),
+                    X_val.filter(pl.Series(val_positive_mask)),
+                )
+                final_train_y_raw = _concat_targets(
+                    data.y_reg[positive_mask], y_reg_val[val_positive_mask]
+                )
+            else:
+                final_train_X = X_reg
+            model_log_X = final_train_X
+            final_train_y = (
+                final_train_y_raw if target_space == "raw" else np.log1p(final_train_y_raw)
             )
-        else:
-            final_train_X = X_reg
-        final_train_y = final_train_y_raw if target_space == "raw" else np.log1p(final_train_y_raw)
-        if has_validation and not quiet:
-            print_refit_phase("regressor", len(X_reg), int(val_positive_mask.sum()))
-        regressor_model = train_final_model(
-            model_cfg=cfg.model,
-            role="regressor",
-            X=final_train_X,
-            y=final_train_y,
-            avg_best_iterations=avg_best_iters,
-            seed=cfg.seed,
-            interactive_progress_every=progress_every,
-            use_gpu=cfg.use_gpu,
-            quiet=quiet,
-        )
+            if has_validation and not quiet:
+                print_refit_phase("regressor", len(X_reg), int(val_positive_mask.sum()))
+            regressor_model = train_final_model(
+                model_cfg=cfg.model,
+                role="regressor",
+                X=final_train_X,
+                y=final_train_y,
+                avg_best_iterations=avg_best_iters,
+                seed=cfg.seed,
+                interactive_progress_every=progress_every,
+                use_gpu=cfg.use_gpu,
+                quiet=quiet,
+            )
 
-        X_test_reg = X_test.filter(pl.Series(test_positive_mask))
-        if len(X_test_reg) > 0:
-            if not quiet:
-                print_test_phase("regressor", len(X_test_reg))
-            y_test_reg_raw = y_reg_test[test_positive_mask]
-            y_test_reg_target = (
-                y_test_reg_raw if target_space == "raw" else np.log1p(y_test_reg_raw)
-            )
-            test_predictions = regressor_model.predict(X_test_reg)
-            test_draft_group = (
-                meta_test.filter(pl.Series(test_positive_mask)).get_column("Universe").cast(pl.Utf8)
-                + ":"
-                + meta_test.filter(pl.Series(test_positive_mask)).get_column("Year").cast(pl.Utf8)
-            ).to_numpy()
-            test_metrics = _rename_regressor_eval_metrics(
-                compute_regressor_oof_metrics(
-                    y_true=y_test_reg_target,
-                    oof_predictions=test_predictions,
-                    target_space=target_space,
-                    draft_group=test_draft_group,
-                ),
-                "regressor_test_",
-            )
-            outcomes_test_positive = (
-                outcomes_test.filter(pl.Series(test_positive_mask))
-                if outcomes_test is not None
-                else None
-            )
-            test_score_raw = (
-                np.expm1(test_predictions)
-                if target_space == "log"
-                else np.maximum(test_predictions, 0)
-            )
-            test_metrics.update(
-                prefix_metrics(
-                    compute_cross_outcome_metrics(
-                        y_score=test_score_raw,
-                        outcome_columns=outcomes_test_positive,
+            X_test_reg = X_test.filter(pl.Series(test_positive_mask))
+            if len(X_test_reg) > 0:
+                if not quiet:
+                    print_test_phase("regressor", len(X_test_reg))
+                y_test_reg_raw = y_reg_test[test_positive_mask]
+                y_test_reg_target = (
+                    y_test_reg_raw if target_space == "raw" else np.log1p(y_test_reg_raw)
+                )
+                test_predictions = regressor_model.predict(X_test_reg)
+                test_draft_group = (
+                    meta_test.filter(pl.Series(test_positive_mask))
+                    .get_column("Universe")
+                    .cast(pl.Utf8)
+                    + ":"
+                    + meta_test.filter(pl.Series(test_positive_mask))
+                    .get_column("Year")
+                    .cast(pl.Utf8)
+                ).to_numpy()
+                test_metrics = _rename_regressor_eval_metrics(
+                    compute_regressor_oof_metrics(
+                        y_true=y_test_reg_target,
+                        oof_predictions=test_predictions,
+                        target_space=target_space,
                         draft_group=test_draft_group,
-                        meta_columns=_scope_meta_from_features(X_test_reg, elite_cfg),
-                        elite_cfg=elite_cfg,
-                        elite_thresholds=elite_thresholds,
                     ),
                     "regressor_test_",
                 )
-            )
+                outcomes_test_positive = (
+                    outcomes_test.filter(pl.Series(test_positive_mask))
+                    if outcomes_test is not None
+                    else None
+                )
+                test_score_raw = (
+                    np.expm1(test_predictions)
+                    if target_space == "log"
+                    else np.maximum(test_predictions, 0)
+                )
+                test_metrics.update(
+                    prefix_metrics(
+                        compute_cross_outcome_metrics(
+                            y_score=test_score_raw,
+                            outcome_columns=outcomes_test_positive,
+                            draft_group=test_draft_group,
+                            meta_columns=_scope_meta_from_features(X_test_reg, elite_cfg),
+                            elite_cfg=elite_cfg,
+                            elite_thresholds=elite_thresholds,
+                        ),
+                        "regressor_test_",
+                    )
+                )
         else:
-            test_metrics = {}
-            test_score_raw = None
+            assert tuning_model is not None
+            regressor_model = tuning_model
+            mlflow.log_param("regressor_test_scored", False)
 
-        ctx.logger.log_regressor_results(
-            regressor_metrics,
-            regressor_model,
-            final_train_X,
-            cfg,
-            quiet,
-            test_predictions=test_score_raw,
-            test_meta=meta_test.filter(pl.Series(test_positive_mask))
-            if len(meta_test)
-            else meta_test,
-            test_metrics=test_metrics,
-        )
+            ctx.logger.log_regressor_results(
+                regressor_metrics,
+                regressor_model,
+                model_log_X,
+                cfg,
+                quiet,
+                test_predictions=test_score_raw,
+                test_meta=meta_test.filter(pl.Series(test_positive_mask))
+                if len(meta_test)
+                else meta_test,
+                test_metrics=test_metrics,
+            )
 
         mlflow.log_metrics(
             {

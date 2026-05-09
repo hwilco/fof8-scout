@@ -20,6 +20,7 @@ seed: 42                     # Global random seed
 
 runtime:
   catboost_progress_every: 100
+  refit_final_model: false
 
 # --- Data Slicing & Feature Logic ---
 positions: "all"

@@ -20,6 +20,7 @@ seed: 42                     # Global random seed
 
 runtime:
   catboost_progress_every: 100  # For single runs, show CatBoost training progress every N iterations
+  refit_final_model: false      # If true, refit on train+val and score held-out test after tuning
 
 # --- Data Slicing & Feature Logic ---
 positions: "all"

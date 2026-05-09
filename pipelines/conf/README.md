@@ -7,6 +7,15 @@ This directory contains Hydra config groups used by training and inference entry
 - `classifier_pipeline.yaml`: classifier training defaults and Hydra runtime settings.
 - `regressor_pipeline.yaml`: regressor training defaults and Hydra runtime settings.
 
+Both root pipeline configs expose `runtime.refit_final_model`.
+
+- `false` (default): validation-holdout runs stop after validation metrics and do not refit on
+  `train + validation` or score the held-out test universes. This is the preferred setting for
+  hyperparameter sweeps and most iterative tuning work.
+- `true`: after tuning on validation, refit a final model on `train + validation` and score the
+  held-out test universes. Use this for finalist or final-report runs once the configuration is
+  stable.
+
 ## Config Groups
 
 - `ablation/`: shared feature-ablation definitions and defaults.
@@ -48,11 +57,17 @@ while chronological split is still the preferred final backtest/reporting holdou
 It exposes an explicit validation universe set for model selection and keeps test universes
 untouched until final reporting.
 
+In practice, that means:
+
+- default tuning runs should use `runtime.refit_final_model=false`
+- final-report runs can use `runtime.refit_final_model=true`
+
 Example overrides:
 
 ```bash
 uv run python pipelines/train_classifier.py split=random
 uv run python pipelines/train_regressor.py data.league_names=[DRAFT003,DRAFT004,DRAFT005]
+uv run python pipelines/train_classifier.py runtime.refit_final_model=true
 ```
 
 ## Shared Ablation Source Of Truth
