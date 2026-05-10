@@ -195,10 +195,10 @@ def run_complete_model_evaluation(
 
     mlflow.log_params(
         {
-            "classifier_run_id": inputs.classifier_run_id,
-            "regressor_run_id": inputs.regressor_run_id,
-            "complete_classifier_target_col": inputs.classifier_target_col,
-            "complete_regressor_target_col": inputs.regressor_target_col,
+            "complete_model.classifier_source_run_id": inputs.classifier_run_id,
+            "complete_model.regressor_source_run_id": inputs.regressor_run_id,
+            "complete_model.classifier_target_col": inputs.classifier_target_col,
+            "complete_model.regressor_target_col": inputs.regressor_target_col,
         }
     )
     mlflow.log_metrics(metrics)
