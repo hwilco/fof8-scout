@@ -33,6 +33,18 @@ from fof8_ml.orchestration.evaluator import compute_cross_outcome_metrics
 
 @dataclass
 class LoadedClassifierBundle:
+    """Bundle of classifier artifacts needed for complete-model inference.
+
+    Attributes:
+        role: Model role tag.
+        run_id: Source MLflow run id.
+        family: Model family identifier.
+        model: Loaded classifier model object.
+        schema: Feature schema used to transform input features.
+        threshold: Stored classifier threshold from training.
+        calibrator: Beta calibrator fit during classifier training.
+    """
+
     role: ModelRole
     run_id: str
     family: ModelFamily
@@ -44,6 +56,19 @@ class LoadedClassifierBundle:
 
 @dataclass
 class LoadedRegressorBundle:
+    """Bundle of regressor artifacts needed for complete-model inference.
+
+    Attributes:
+        role: Model role tag.
+        run_id: Source MLflow run id.
+        family: Model family identifier.
+        model: Loaded regressor model object.
+        schema: Feature schema used to transform input features.
+        target_space: Target space used during regressor training.
+        sklearn_scaler: Optional sklearn preprocessing scaler.
+        sklearn_expected_columns: Optional sklearn feature order.
+    """
+
     role: ModelRole
     run_id: str
     family: ModelFamily
@@ -56,11 +81,29 @@ class LoadedRegressorBundle:
 
 @dataclass
 class CompleteModelBundle:
+    """Container for classifier and regressor bundles used together.
+
+    Attributes:
+        classifier: Loaded classifier bundle.
+        regressor: Loaded regressor bundle.
+    """
+
     classifier: LoadedClassifierBundle
     regressor: LoadedRegressorBundle
 
 
 def _require_artifact(client: MlflowClient, run_id: str, artifact_path: str) -> str:
+    """Download a required run artifact and fail with a clear error if missing.
+
+    Args:
+        client: MLflow tracking client.
+        run_id: Source run id.
+        artifact_path: Path of artifact within the run.
+
+    Returns:
+        Local filesystem path to the downloaded artifact.
+    """
+
     try:
         return client.download_artifacts(run_id, artifact_path)
     except Exception as exc:
@@ -70,6 +113,17 @@ def _require_artifact(client: MlflowClient, run_id: str, artifact_path: str) -> 
 
 
 def _resolve_model_uri(client: MlflowClient, run_id: str, artifact_path: str) -> str:
+    """Resolve the best model URI for a run, preferring explicit run artifacts.
+
+    Args:
+        client: MLflow tracking client.
+        run_id: Source run id.
+        artifact_path: Expected model artifact directory name.
+
+    Returns:
+        A loadable MLflow model URI.
+    """
+
     runs_uri = f"runs:/{run_id}/{artifact_path}"
     try:
         artifacts = client.list_artifacts(run_id, artifact_path)
@@ -78,36 +132,47 @@ def _resolve_model_uri(client: MlflowClient, run_id: str, artifact_path: str) ->
     except Exception:
         pass
 
-    run = client.get_run(run_id)
-    experiment_id = run.info.experiment_id
     try:
-        logged_models = client.search_logged_models(
-            experiment_ids=[experiment_id],
-            filter_string=f"source_run_id = '{run_id}'",
+        versions = client.search_model_versions(
+            filter_string=f"run_id = '{run_id}'",
             max_results=100,
         )
     except Exception:
-        logged_models = client.search_logged_models(
-            experiment_ids=[experiment_id],
-            filter_string=f"name = '{artifact_path}'",
-            max_results=100,
-        )
+        return runs_uri
 
-    matches = [
-        model
-        for model in logged_models
-        if model.name == artifact_path and model.source_run_id == run_id
-    ]
+    matches = [version for version in versions if getattr(version, "run_id", None) == run_id]
     if not matches:
         return runs_uri
 
-    best_model = max(matches, key=lambda model: model.last_updated_timestamp or 0)
-    return f"models:/{best_model.model_id}"
+    def _version_sort_key(model_version: Any) -> tuple[int, int]:
+        timestamp = int(getattr(model_version, "last_updated_timestamp", 0) or 0)
+        try:
+            number = int(getattr(model_version, "version", 0) or 0)
+        except (TypeError, ValueError):
+            number = 0
+        return (timestamp, number)
+
+    best_version = max(matches, key=_version_sort_key)
+    model_name = str(getattr(best_version, "name", ""))
+    model_version = str(getattr(best_version, "version", ""))
+    if not model_name or not model_version:
+        return runs_uri
+    return f"models:/{model_name}/{model_version}"
 
 
 def _load_model_by_family(
     model_uri: str, family: ModelFamily
 ) -> SupportedClassifierModel | SupportedRegressorModel:
+    """Load a model from MLflow using the correct model-flavor loader.
+
+    Args:
+        model_uri: MLflow model URI.
+        family: Model family key.
+
+    Returns:
+        Loaded model object.
+    """
+
     if family == "catboost":
         model = mlflow.catboost.load_model(model_uri)
         assert model is not None
@@ -126,6 +191,16 @@ def _load_model_by_family(
 
 
 def load_feature_schema(client: MlflowClient, run_id: str) -> FeatureSchema:
+    """Load the feature schema artifact for a run.
+
+    Args:
+        client: MLflow tracking client.
+        run_id: Source run id.
+
+    Returns:
+        Parsed feature schema.
+    """
+
     schema_local_path = _require_artifact(client, run_id, FEATURE_SCHEMA_ARTIFACT_PATH)
     with open(schema_local_path, encoding="utf-8") as handle:
         payload = json.load(handle)
@@ -138,6 +213,18 @@ def _load_role_bundle(
     role: ModelRole,
     artifact_path: str,
 ) -> LoadedClassifierBundle | LoadedRegressorBundle:
+    """Load all model artifacts needed for a single role.
+
+    Args:
+        client: MLflow tracking client.
+        run_id: Source run id.
+        role: Expected role label.
+        artifact_path: Model artifact directory for this role.
+
+    Returns:
+        Loaded classifier or regressor bundle.
+    """
+
     run = client.get_run(run_id)
     actual_role = run.data.tags.get("model_role")
     if actual_role != role:
@@ -193,6 +280,17 @@ def load_complete_model(
     classifier_run_id: str,
     regressor_run_id: str,
 ) -> CompleteModelBundle:
+    """Load the classifier and regressor bundles for complete-model scoring.
+
+    Args:
+        client: MLflow tracking client.
+        classifier_run_id: Classifier run id.
+        regressor_run_id: Regressor run id.
+
+    Returns:
+        Combined complete-model bundle.
+    """
+
     return CompleteModelBundle(
         classifier=cast(
             LoadedClassifierBundle,
@@ -210,16 +308,47 @@ def load_catboost_complete_model(
     classifier_run_id: str,
     regressor_run_id: str,
 ) -> CompleteModelBundle:
+    """Backwards-compatible wrapper for complete-model loading.
+
+    Args:
+        client: MLflow tracking client.
+        classifier_run_id: Classifier run id.
+        regressor_run_id: Regressor run id.
+
+    Returns:
+        Combined complete-model bundle.
+    """
+
     return load_complete_model(client, classifier_run_id, regressor_run_id)
 
 
 def _predict_classifier(bundle: LoadedClassifierBundle, X_full: pl.DataFrame) -> np.ndarray:
+    """Predict calibrated classifier probabilities for full-feature rows.
+
+    Args:
+        bundle: Loaded classifier bundle.
+        X_full: Full input features.
+
+    Returns:
+        Calibrated positive-class probabilities.
+    """
+
     features = bundle.schema.apply(X_full)
-    raw_probs = bundle.model.predict_proba(features.to_pandas())[:, 1]
+    raw_probs = bundle.model.predict_proba(features.to_numpy())[:, 1]
     return bundle.calibrator.predict(raw_probs)
 
 
 def _predict_regressor(bundle: LoadedRegressorBundle, X_full: pl.DataFrame) -> np.ndarray:
+    """Predict non-negative regression values in raw output space.
+
+    Args:
+        bundle: Loaded regressor bundle.
+        X_full: Full input features.
+
+    Returns:
+        Regressor predictions converted into raw target space.
+    """
+
     features = bundle.schema.apply(X_full)
 
     if bundle.family == "sklearn":
@@ -232,9 +361,9 @@ def _predict_regressor(bundle: LoadedRegressorBundle, X_full: pl.DataFrame) -> n
         return np.maximum(raw_predictions.astype(float), 0.0)
 
     if bundle.family == "xgb":
-        raw_predictions = bundle.model.predict(features)
+        raw_predictions = bundle.model.predict(features.to_numpy())
     else:
-        raw_predictions = bundle.model.predict(features.to_pandas())
+        raw_predictions = bundle.model.predict(features.to_numpy())
 
     target_space = (bundle.target_space or "log").strip().lower()
     if target_space == "log":
@@ -249,6 +378,17 @@ def predict_complete_model(
     classifier_bundle: LoadedClassifierBundle,
     regressor_bundle: LoadedRegressorBundle,
 ) -> dict[str, np.ndarray]:
+    """Run classifier and regressor predictions and combine into complete score.
+
+    Args:
+        X_full: Full input features.
+        classifier_bundle: Loaded classifier bundle.
+        regressor_bundle: Loaded regressor bundle.
+
+    Returns:
+        Dictionary with classifier, regressor, and combined predictions.
+    """
+
     classifier_probability = _predict_classifier(classifier_bundle, X_full)
     regressor_prediction = _predict_regressor(regressor_bundle, X_full)
     complete_prediction = classifier_probability * np.maximum(regressor_prediction, 0.0)
@@ -265,6 +405,18 @@ def _mean_topk_actual_value_by_group(
     groups: np.ndarray,
     k: int,
 ) -> float:
+    """Compute mean top-k realized value across groups.
+
+    Args:
+        y_true: True values.
+        y_score: Ranking scores.
+        groups: Group labels for per-group ranking.
+        k: Top-k cutoff.
+
+    Returns:
+        Mean top-k summed true value across groups.
+    """
+
     values: list[float] = []
     for group in np.unique(groups):
         mask = groups == group
@@ -283,6 +435,18 @@ def _mean_topk_positive_precision_by_group(
     groups: np.ndarray,
     k: int,
 ) -> float:
+    """Compute mean top-k positive-rate precision across groups.
+
+    Args:
+        y_true: True values.
+        y_score: Ranking scores.
+        groups: Group labels for per-group ranking.
+        k: Top-k cutoff.
+
+    Returns:
+        Mean top-k positive precision across groups.
+    """
+
     values: list[float] = []
     positive = (y_true > 0).astype(float)
     for group in np.unique(groups):
@@ -297,6 +461,15 @@ def _mean_topk_positive_precision_by_group(
 
 
 def _rename_cross_outcome_metrics(metrics: dict[str, float]) -> dict[str, float]:
+    """Rename cross-outcome metrics into complete-model metric namespace.
+
+    Args:
+        metrics: Raw cross-outcome metrics.
+
+    Returns:
+        Metrics dictionary with complete-model key prefixes.
+    """
+
     renamed: dict[str, float] = {}
     for key, value in metrics.items():
         if key.startswith("cross_"):
@@ -316,6 +489,21 @@ def evaluate_complete_model(
     elite_cfg: dict[str, Any] | None = None,
     elite_thresholds: dict[str, float] | None = None,
 ) -> dict[str, float]:
+    """Compute complete-model evaluation metrics on a held-out split.
+
+    Args:
+        y_true: Ground-truth target values.
+        y_pred: Predicted complete-model values.
+        draft_year: Group key for within-group ranking metrics.
+        outcome_columns: Optional outcome columns used for cross-outcome metrics.
+        meta_columns: Optional metadata columns used for scoped metrics.
+        elite_cfg: Optional elite-metric config.
+        elite_thresholds: Optional pre-fit elite thresholds.
+
+    Returns:
+        Dictionary of aggregate complete-model metrics.
+    """
+
     y_true_arr = np.asarray(y_true, dtype=float)
     y_pred_arr = np.maximum(np.asarray(y_pred, dtype=float), 0.0)
     group_key = np.asarray(draft_year, dtype=object)

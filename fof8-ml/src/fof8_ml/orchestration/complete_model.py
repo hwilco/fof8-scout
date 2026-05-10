@@ -21,6 +21,15 @@ from fof8_ml.orchestration.pipeline_types import PreparedData
 
 @dataclass(frozen=True)
 class ResolvedCompleteModelInputs:
+    """Resolved MLflow inputs needed for complete-model evaluation.
+
+    Attributes:
+        classifier_run_id: Resolved classifier run id.
+        regressor_run_id: Resolved regressor run id.
+        classifier_target_col: Classifier target column name.
+        regressor_target_col: Regressor target column name.
+    """
+
     classifier_run_id: str
     regressor_run_id: str
     classifier_target_col: str
@@ -32,6 +41,17 @@ def resolve_run_target_param(
     run_id: str,
     param_name: str,
 ) -> str:
+    """Read and validate a required run parameter from MLflow.
+
+    Args:
+        client: MLflow tracking client.
+        run_id: Run id to inspect.
+        param_name: Required parameter name.
+
+    Returns:
+        Parameter value as a string.
+    """
+
     run = client.get_run(run_id)
     value = run.data.params.get(param_name)
     if value is None:
@@ -46,6 +66,18 @@ def resolve_run_id_from_input(
     role: str,
     exp_root: str,
 ) -> str:
+    """Resolve a run id from direct input or a manifest file.
+
+    Args:
+        run_id: Optional direct run id.
+        manifest_path: Optional path to a manifest containing run metadata.
+        role: Role label used in validation messages.
+        exp_root: Experiment root path for relative manifest resolution.
+
+    Returns:
+        Resolved run id.
+    """
+
     if run_id:
         return str(run_id)
     if not manifest_path:
@@ -67,6 +99,17 @@ def resolve_complete_model_inputs(
     exp_root: str,
     client: mlflow.tracking.MlflowClient,
 ) -> ResolvedCompleteModelInputs:
+    """Resolve run ids/targets and write targets back into runtime config.
+
+    Args:
+        cfg: Runtime Hydra config.
+        exp_root: Experiment root directory.
+        client: MLflow tracking client.
+
+    Returns:
+        Resolved complete-model input metadata.
+    """
+
     classifier_run_id = resolve_run_id_from_input(
         cfg.get("classifier_run_id"),
         cfg.get("classifier_run_manifest"),
@@ -101,6 +144,16 @@ def resolve_complete_model_inputs(
 
 
 def _scope_meta_from_features(X: pl.DataFrame, elite_cfg: DictConfig | None) -> pl.DataFrame | None:
+    """Extract optional scope metadata from feature columns for elite metrics.
+
+    Args:
+        X: Feature frame.
+        elite_cfg: Optional elite config.
+
+    Returns:
+        Single-column metadata frame when scope column exists, else None.
+    """
+
     scope_column = "Position_Group"
     if elite_cfg is not None:
         scope_column = str(elite_cfg.get("scope_column", scope_column))
@@ -113,16 +166,26 @@ def build_complete_model_board(
     data: PreparedData,
     prediction_dict: dict[str, Any],
 ) -> pl.DataFrame:
+    """Build the held-out evaluation board with predictions and ranks.
+
+    Args:
+        data: Prepared evaluation data.
+        prediction_dict: Complete-model prediction outputs.
+
+    Returns:
+        Ranked board dataframe grouped by universe/year.
+    """
+
     X_eval = data.X_test
+    position_group_col = (
+        X_eval.get_column("Position_Group").cast(pl.Utf8)
+        if "Position_Group" in X_eval.columns
+        else pl.repeat("unknown", len(X_eval), eager=True)
+    )
     return (
         data.meta_test.with_columns(
             [
-                pl.Series(
-                    "Position_Group",
-                    X_eval.get_column("Position_Group").cast(pl.Utf8).to_list()
-                    if "Position_Group" in X_eval.columns
-                    else ["unknown"] * len(X_eval),
-                ),
+                position_group_col.alias("Position_Group"),
                 pl.Series("classifier_probability", prediction_dict["classifier_probability"]),
                 pl.Series("regressor_prediction", prediction_dict["regressor_prediction"]),
                 pl.Series("complete_prediction", prediction_dict["complete_prediction"]),
@@ -147,6 +210,19 @@ def run_complete_model_evaluation(
     logger: ExperimentLogger,
     inputs: ResolvedCompleteModelInputs,
 ) -> dict[str, float]:
+    """Run end-to-end complete-model evaluation and artifact logging.
+
+    Args:
+        cfg: Runtime Hydra config.
+        data: Prepared train/test datasets.
+        exp_root: Experiment root directory.
+        logger: Experiment logger and MLflow helper.
+        inputs: Resolved classifier/regressor source inputs.
+
+    Returns:
+        Dictionary of logged complete-model metrics.
+    """
+
     if logger.client is None:
         raise RuntimeError("MLflow tracking client was not initialized.")
 

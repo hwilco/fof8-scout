@@ -23,6 +23,15 @@ logging.getLogger("matplotlib").setLevel(logging.ERROR)
 
 @hydra.main(version_base=None, config_path="conf", config_name="complete_model_pipeline")
 def main(cfg: DictConfig) -> float:
+    """Run complete-model evaluation pipeline and return optimization score.
+
+    Args:
+        cfg: Runtime Hydra configuration.
+
+    Returns:
+        Optimization metric value for sweep orchestration.
+    """
+
     exp_root = resolve_exp_root(__file__)
     absolute_raw_path = os.path.abspath(os.path.join(exp_root, cfg.data.raw_path))
 
