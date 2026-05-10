@@ -118,7 +118,7 @@ def test_run_regressor_uses_configured_target_space(monkeypatch):
         lambda **_kwargs: {
             "regressor_oof_rmse": 1.0,
             "regressor_oof_mae": 1.0,
-            "regressor_draft_value_score": 0.75,
+            "regressor_oof_draft_value_score": 0.75,
         },
     )
     monkeypatch.setattr(
@@ -168,7 +168,7 @@ def test_run_regressor_passes_one_group_per_universe_year(monkeypatch):
         return {
             "regressor_oof_rmse": 1.0,
             "regressor_oof_mae": 1.0,
-            "regressor_draft_value_score": 0.75,
+            "regressor_oof_draft_value_score": 0.75,
         }
 
     def fake_compute_cross_outcome_metrics(**kwargs):

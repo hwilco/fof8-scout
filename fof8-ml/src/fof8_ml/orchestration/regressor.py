@@ -69,9 +69,6 @@ def _rename_regressor_eval_metrics(
     metrics: dict[str, float], target_prefix: str
 ) -> dict[str, float]:
     renamed = rename_metric_prefix(metrics, "regressor_oof_", target_prefix)
-    if "regressor_draft_value_score" in metrics:
-        renamed[f"{target_prefix}draft_value_score"] = metrics["regressor_draft_value_score"]
-        renamed.pop("regressor_draft_value_score", None)
     return renamed
 
 
@@ -403,7 +400,7 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
         )
 
     draft_value_key = (
-        "regressor_val_draft_value_score" if has_validation else "regressor_draft_value_score"
+        "regressor_val_draft_value_score" if has_validation else "regressor_oof_draft_value_score"
     )
     rmse_key = "regressor_val_rmse" if has_validation else "regressor_oof_rmse"
     mae_key = "regressor_val_mae" if has_validation else "regressor_oof_mae"

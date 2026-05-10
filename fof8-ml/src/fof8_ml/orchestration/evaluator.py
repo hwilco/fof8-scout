@@ -271,20 +271,20 @@ def compute_regressor_oof_metrics(
 
     metrics.update(
         {
-            "regressor_mean_ndcg_at_32": mean_ndcg_by_group(y_real, y_pred, group_key, k=32),
-            "regressor_mean_ndcg_at_64": mean_ndcg_by_group(y_real, y_pred, group_key, k=64),
-            "regressor_mean_ndcg_at_128": mean_ndcg_by_group(y_real, y_pred, group_key, k=128),
-            "regressor_top64_weighted_mae": top64_weighted_mae,
-            "regressor_top64_weighted_mae_normalized": top64_weighted_mae_normalized,
-            "regressor_top64_bias": top64_bias,
-            "regressor_top64_calibration_slope": calibration_slope(y_real, y_pred),
-            "regressor_rmse_positive": rmse,
-            "regressor_mae_positive": mae,
+            "regressor_oof_mean_ndcg_at_32": mean_ndcg_by_group(y_real, y_pred, group_key, k=32),
+            "regressor_oof_mean_ndcg_at_64": mean_ndcg_by_group(y_real, y_pred, group_key, k=64),
+            "regressor_oof_mean_ndcg_at_128": mean_ndcg_by_group(y_real, y_pred, group_key, k=128),
+            "regressor_oof_top64_weighted_mae": top64_weighted_mae,
+            "regressor_oof_top64_weighted_mae_normalized": top64_weighted_mae_normalized,
+            "regressor_oof_top64_bias": top64_bias,
+            "regressor_oof_top64_calibration_slope": calibration_slope(y_real, y_pred),
+            "regressor_oof_rmse_positive": rmse,
+            "regressor_oof_mae_positive": mae,
         }
     )
-    metrics["regressor_draft_value_score"] = float(
-        metrics["regressor_mean_ndcg_at_64"]
-        - 0.25 * metrics["regressor_top64_weighted_mae_normalized"]
+    metrics["regressor_oof_draft_value_score"] = float(
+        metrics["regressor_oof_mean_ndcg_at_64"]
+        - 0.25 * metrics["regressor_oof_top64_weighted_mae_normalized"]
     )
     return metrics
 

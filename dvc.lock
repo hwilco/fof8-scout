@@ -5,7 +5,7 @@ stages:
     deps:
     - path: fof8-core/src/fof8_core/
       hash: md5
-      md5: 704e2ae258de53052bd80d25d43c3fe3.dir
+      md5: fb8a0fc947e43b989190f0c4688f5015.dir
       size: 164739
       nfiles: 43
     - path: fof8-gen/data/raw
@@ -15,7 +15,7 @@ stages:
       nfiles: 22818
     - path: fof8-ml/src/fof8_ml/data/
       hash: md5
-      md5: 90ce1f55f05eef40c71b5ad3a6e2f7c7.dir
+      md5: f23773c007d367ac12d68e09d6d52c15.dir
       size: 56689
       nfiles: 16
     - path: pipelines/conf/data/
@@ -81,28 +81,28 @@ stages:
       size: 42639707
     - path: fof8-ml/src/fof8_ml/data/
       hash: md5
-      md5: 90ce1f55f05eef40c71b5ad3a6e2f7c7.dir
+      md5: f23773c007d367ac12d68e09d6d52c15.dir
       size: 56689
       nfiles: 16
     - path: fof8-ml/src/fof8_ml/evaluation/
       hash: md5
-      md5: d4209689c265489d758efcb6eed679bf.dir
-      size: 36012
-      nfiles: 6
+      md5: 2bb3ba6bd17707cdf40bacedd9d8a0ef.dir
+      size: 65264
+      nfiles: 8
     - path: fof8-ml/src/fof8_ml/models/
       hash: md5
-      md5: 095bd2318187f3a1b15020fe8f504b02.dir
-      size: 70548
+      md5: c478ddbeec75ae3fc146b87997bf8ff2.dir
+      size: 78597
       nfiles: 16
     - path: fof8-ml/src/fof8_ml/orchestration/
       hash: md5
-      md5: b722e9aca5ae6dfd7095c0c36bac9d0e.dir
-      size: 307736
+      md5: 72d4ea25556ade534eb471d5b415ea17.dir
+      size: 308119
       nfiles: 26
     - path: pipelines/conf/
       hash: md5
-      md5: af1b8c84d717c5de27cefbfeb3368fc4.dir
-      size: 15494
+      md5: efd1b468193607abb000f2d79107690b.dir
+      size: 16237
       nfiles: 21
     - path: pipelines/conf/classifier_pipeline.yaml
       hash: md5
@@ -134,28 +134,28 @@ stages:
       size: 42639707
     - path: fof8-ml/src/fof8_ml/data/
       hash: md5
-      md5: 90ce1f55f05eef40c71b5ad3a6e2f7c7.dir
+      md5: f23773c007d367ac12d68e09d6d52c15.dir
       size: 56689
       nfiles: 16
     - path: fof8-ml/src/fof8_ml/evaluation/
       hash: md5
-      md5: d4209689c265489d758efcb6eed679bf.dir
-      size: 36012
-      nfiles: 6
+      md5: 2bb3ba6bd17707cdf40bacedd9d8a0ef.dir
+      size: 65264
+      nfiles: 8
     - path: fof8-ml/src/fof8_ml/models/
       hash: md5
-      md5: 095bd2318187f3a1b15020fe8f504b02.dir
-      size: 70548
+      md5: c478ddbeec75ae3fc146b87997bf8ff2.dir
+      size: 78597
       nfiles: 16
     - path: fof8-ml/src/fof8_ml/orchestration/
       hash: md5
-      md5: a81d3859134470d298f9ac888973b24d.dir
-      size: 307753
+      md5: 72d4ea25556ade534eb471d5b415ea17.dir
+      size: 308119
       nfiles: 26
     - path: pipelines/conf/
       hash: md5
-      md5: af1b8c84d717c5de27cefbfeb3368fc4.dir
-      size: 15494
+      md5: efd1b468193607abb000f2d79107690b.dir
+      size: 16237
       nfiles: 21
     - path: pipelines/conf/regressor_pipeline.yaml
       hash: md5
