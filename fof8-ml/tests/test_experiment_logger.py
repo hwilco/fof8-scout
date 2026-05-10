@@ -16,6 +16,9 @@ class _DummyModel:
     def log_model(self, name: str, X: pl.DataFrame | None = None) -> None:
         return None
 
+    def require_model(self):
+        return {"dummy": True}
+
     def get_feature_importance(self):
         return [], np.array([])
 

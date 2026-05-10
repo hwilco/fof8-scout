@@ -143,15 +143,17 @@ class CatBoostClassifierWrapper(CatBoostWrapper[cb.CatBoostClassifier]):
 
 class CatBoostRegressorWrapper(CatBoostWrapper[cb.CatBoostRegressor]):
     def _compose_loss_function(self, params: dict[str, Any]) -> None:
-        """Render tunable Tweedie variance power into CatBoost's loss syntax."""
-
-        variance_power = params.pop("variance_power", None)
-        if variance_power is None:
-            return
+        """Render tunable CatBoost loss parameters into the expected loss syntax."""
 
         loss_function = str(params.get("loss_function", "RMSE"))
-        if loss_function == "Tweedie":
+        variance_power = params.pop("variance_power", None)
+        if loss_function == "Tweedie" and variance_power is not None:
             params["loss_function"] = f"Tweedie:variance_power={variance_power}"
+            return
+
+        expectile_alpha = params.pop("expectile_alpha", params.pop("alpha", None))
+        if loss_function == "Expectile" and expectile_alpha is not None:
+            params["loss_function"] = f"Expectile:alpha={expectile_alpha}"
 
     def __init__(
         self,

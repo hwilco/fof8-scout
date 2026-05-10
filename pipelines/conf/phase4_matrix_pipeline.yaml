@@ -1,0 +1,12 @@
+defaults:
+  - _self_
+  - phase4: set_a_economic
+
+candidate_ids: []
+quiet_sweep: true
+
+hydra:
+  job:
+    chdir: True
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}

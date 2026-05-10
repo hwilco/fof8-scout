@@ -54,6 +54,20 @@ def test_regressor_composes_tweedie_variance_power(monkeypatch):
     assert "variance_power" not in captured["regressor"]
 
 
+def test_regressor_composes_expectile_alpha(monkeypatch):
+    captured = _patch_catboost_constructors(monkeypatch)
+
+    CatBoostRegressorWrapper(
+        random_seed=7,
+        use_gpu=False,
+        loss_function="Expectile",
+        expectile_alpha=0.7,
+    )
+
+    assert captured["regressor"]["loss_function"] == "Expectile:alpha=0.7"
+    assert "expectile_alpha" not in captured["regressor"]
+
+
 def test_regressor_preserves_configured_iterations(monkeypatch):
     captured = _patch_catboost_constructors(monkeypatch)
 

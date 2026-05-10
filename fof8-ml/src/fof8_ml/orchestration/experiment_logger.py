@@ -2,15 +2,18 @@ import contextlib
 import json
 import logging
 import os
+import shutil
 import subprocess
 from collections.abc import Iterator
 from typing import Any, Optional, cast
 
+import catboost as cb
 import dagshub
 import dvc.api
 import mlflow
 import numpy as np
 import polars as pl
+import xgboost as xgb
 from omegaconf import DictConfig, OmegaConf
 
 from fof8_ml.data.schema import FEATURE_SCHEMA_ARTIFACT_PATH, FeatureSchema
@@ -166,7 +169,10 @@ class ExperimentLogger:
         except Exception as e:
             logging.warning(f"Could not log Git commit / DVC version: {e}")
 
-        cfg_container = cast(dict[str, Any], OmegaConf.to_container(cfg, resolve=True))
+        cfg_for_logging = OmegaConf.create(
+            {key: value for key, value in cast(dict[str, Any], cfg.items()) if str(key) != "hydra"}
+        )
+        cfg_container = cast(dict[str, Any], OmegaConf.to_container(cfg_for_logging, resolve=True))
         log_params_safe(flatten_dict(cfg_container))
 
         if cfg.get("tags"):
@@ -214,6 +220,108 @@ class ExperimentLogger:
             college_bucketing_policy={"status": "already_applied_in_feature_pipeline"},
         )
         mlflow.log_dict(schema.to_dict(), FEATURE_SCHEMA_ARTIFACT_PATH)
+
+    def _local_model_bundle_dir(self, run_id: str, role_name: ModelRole) -> str:
+        return os.path.join(self.exp_root, "outputs", "local_model_bundles", run_id, role_name)
+
+    def _write_local_feature_schema(
+        self,
+        bundle_dir: str,
+        *,
+        X_train: pl.DataFrame,
+        metadata_columns: list[str],
+        target_columns: list[str],
+    ) -> None:
+        schema = FeatureSchema(
+            feature_columns=X_train.columns,
+            categorical_columns=FeatureSchema.infer_categorical_columns(X_train),
+            excluded_metadata_columns=metadata_columns,
+            excluded_target_columns=target_columns,
+            category_handling_policy="cast_to_string",
+            missing_column_policy="reject",
+            extra_column_policy="drop",
+            missing_defaults={},
+            college_bucketing_policy={"status": "already_applied_in_feature_pipeline"},
+        )
+        os.makedirs(bundle_dir, exist_ok=True)
+        with open(
+            os.path.join(bundle_dir, FEATURE_SCHEMA_ARTIFACT_PATH), "w", encoding="utf-8"
+        ) as f:
+            json.dump(schema.to_dict(), f, indent=2, sort_keys=True)
+
+    def _export_local_model_file(
+        self,
+        *,
+        model: ModelWrapper,
+        role_name: ModelRole,
+        bundle_dir: str,
+    ) -> dict[str, str]:
+        raw_model = model.require_model()
+        if isinstance(raw_model, cb.CatBoostClassifier | cb.CatBoostRegressor):
+            model_path = os.path.join(bundle_dir, "model.cbm")
+            raw_model.save_model(model_path)
+            return {"model_format": "catboost_native", "model_path": "model.cbm"}
+        if isinstance(raw_model, xgb.XGBClassifier | xgb.XGBRegressor):
+            model_path = os.path.join(bundle_dir, "model.json")
+            raw_model.save_model(model_path)
+            return {"model_format": "xgboost_native", "model_path": "model.json"}
+
+        model_path = os.path.join(bundle_dir, "model.joblib")
+        import joblib
+
+        joblib.dump(raw_model, model_path)
+        metadata = {"model_format": "joblib", "model_path": "model.joblib"}
+        if role_name == "regressor":
+            scaler_src = "regressor_model_scaler.joblib"
+            features_src = "regressor_model_features.txt"
+            if os.path.exists(scaler_src):
+                shutil.copy2(scaler_src, os.path.join(bundle_dir, scaler_src))
+                metadata["scaler_path"] = scaler_src
+            if os.path.exists(features_src):
+                shutil.copy2(features_src, os.path.join(bundle_dir, features_src))
+                metadata["features_path"] = features_src
+        return metadata
+
+    def export_local_model_bundle(
+        self,
+        *,
+        role_name: ModelRole,
+        model: ModelWrapper,
+        X_train: pl.DataFrame,
+        metadata_columns: list[str],
+        target_columns: list[str],
+        metadata: dict[str, Any],
+        extra_artifact_paths: list[str] | None = None,
+    ) -> str | None:
+        active_run = mlflow.active_run()
+        if active_run is None:
+            return None
+
+        bundle_dir = self._local_model_bundle_dir(active_run.info.run_id, role_name)
+        os.makedirs(bundle_dir, exist_ok=True)
+        self._write_local_feature_schema(
+            bundle_dir,
+            X_train=X_train,
+            metadata_columns=metadata_columns,
+            target_columns=target_columns,
+        )
+
+        file_metadata = self._export_local_model_file(
+            model=model,
+            role_name=role_name,
+            bundle_dir=bundle_dir,
+        )
+        copied_artifacts: dict[str, str] = {}
+        for artifact_path in extra_artifact_paths or []:
+            if os.path.exists(artifact_path):
+                dest_name = os.path.basename(artifact_path)
+                shutil.copy2(artifact_path, os.path.join(bundle_dir, dest_name))
+                copied_artifacts[dest_name] = dest_name
+
+        payload = {**metadata, **file_metadata, "copied_artifacts": copied_artifacts}
+        with open(os.path.join(bundle_dir, "bundle_metadata.json"), "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2, sort_keys=True)
+        return bundle_dir
 
     def log_classifier_results(
         self,
@@ -288,6 +396,18 @@ class ExperimentLogger:
                 )
 
         model.log_model("classifier_model", X=data.X_train)
+        self.export_local_model_bundle(
+            role_name="classifier",
+            model=model,
+            X_train=data.X_train,
+            metadata_columns=data.metadata_columns,
+            target_columns=data.target_columns,
+            metadata={
+                "role": "classifier",
+                "threshold": float(result.optimal_threshold),
+            },
+            extra_artifact_paths=["classifier_beta_calibrator.joblib"],
+        )
 
     def log_regressor_results(
         self,
@@ -305,6 +425,18 @@ class ExperimentLogger:
         if test_metrics is not None:
             mlflow.log_metrics(test_metrics)
         model.log_model("regressor_model", X=X_reg)
+        self.export_local_model_bundle(
+            role_name="regressor",
+            model=model,
+            X_train=X_reg,
+            metadata_columns=[],
+            target_columns=[],
+            metadata={
+                "role": "regressor",
+                "target_space": str(cfg.target.regressor_intensity.get("target_space", "log")),
+            },
+            extra_artifact_paths=["regressor_model_scaler.joblib", "regressor_model_features.txt"],
+        )
 
         if not quiet:
             if test_predictions is not None and test_meta is not None:

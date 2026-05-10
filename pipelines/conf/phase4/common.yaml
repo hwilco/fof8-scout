@@ -1,0 +1,21 @@
+matrix_name: "phase4_common"
+output_subdir: "phase4"
+shared:
+  classifier_source: "train_once_per_matrix"
+  fixed_classifier_run_id: null
+  classifier:
+    experiment_name: "Phase4_Classifier"
+    model: "catboost_classifier"
+    target_config: "economic"
+  regressor:
+    experiment_name: "Phase4_Regressor"
+    target_config: "economic"
+  complete_model:
+    experiment_name: "Phase4_Complete_Model"
+    target_config: "economic"
+  tags:
+    phase: "4"
+    matrix_stage: "first_pass"
+  runtime:
+    refit_final_model: false
+candidates: []

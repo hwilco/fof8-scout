@@ -115,6 +115,10 @@ register_model("classifier", "catboost_classifier", "catboost", CatBoostClassifi
 register_model("classifier", "xgb_classifier", "xgb", XGBoostClassifierWrapper)
 
 register_model("regressor", "catboost_tweedie_regressor", "catboost", CatBoostRegressorWrapper)
+register_model("regressor", "catboost_regressor_tweedie", "catboost", CatBoostRegressorWrapper)
+register_model("regressor", "catboost_regressor_rmse", "catboost", CatBoostRegressorWrapper)
+register_model("regressor", "catboost_regressor_mae", "catboost", CatBoostRegressorWrapper)
+register_model("regressor", "catboost_regressor_expectile", "catboost", CatBoostRegressorWrapper)
 register_model("regressor", "xgb_regressor", "xgb", XGBoostRegressorWrapper)
 register_model("regressor", "sklearn_tweedie_regressor", "sklearn", SklearnRegressorWrapper)
 register_model("regressor", "sklearn_gamma_regressor", "sklearn", SklearnRegressorWrapper)

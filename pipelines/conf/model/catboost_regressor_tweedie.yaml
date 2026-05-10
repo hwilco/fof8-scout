@@ -1,0 +1,14 @@
+name: "catboost_regressor_tweedie"
+params:
+  iterations: 1800
+  learning_rate: 0.043441567484723935
+  depth: 6
+  loss_function: "Tweedie"
+  variance_power: 1.2368528300251505
+  early_stopping_rounds: 100
+  l2_leaf_reg: 8.129041647799776
+  random_strength: 1.6803779695866257
+  colsample_bylevel: 0.682283168936632
+  one_hot_max_size: 16
+  min_data_in_leaf: 126
+  bagging_temperature: 3.623766367495922

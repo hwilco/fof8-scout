@@ -1,0 +1,40 @@
+defaults:
+  - common
+
+matrix_name: "phase4_set_a_economic"
+shared:
+  tags:
+    phase: "4"
+    matrix_stage: "first_pass"
+    experiment_set: "A"
+candidates:
+  - candidate_id: "A1"
+    label: "positive_merit_tweedie_raw"
+    regressor:
+      model: "catboost_regressor_tweedie"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "raw"
+  - candidate_id: "A2"
+    label: "positive_merit_rmse_log"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "log"
+  - candidate_id: "A3"
+    label: "positive_merit_mae_raw"
+    regressor:
+      model: "catboost_regressor_mae"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "raw"
+  - candidate_id: "A4"
+    label: "positive_merit_expectile_raw"
+    regressor:
+      model: "catboost_regressor_expectile"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "raw"
+  - candidate_id: "A5"
+    label: "positive_dpo_tweedie_raw"
+    regressor:
+      model: "catboost_regressor_tweedie"
+      target_col: "Positive_DPO"
+      target_space: "raw"

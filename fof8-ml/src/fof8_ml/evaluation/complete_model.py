@@ -5,10 +5,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+import catboost as cb
 import joblib
 import mlflow
 import numpy as np
 import polars as pl
+import xgboost as xgb
 from mlflow.entities.model_registry import ModelVersion
 from mlflow.tracking import MlflowClient
 
@@ -91,6 +93,10 @@ class CompleteModelBundle:
 
     classifier: LoadedClassifierBundle
     regressor: LoadedRegressorBundle
+
+
+def _local_bundle_dir(exp_root: str, run_id: str, role: ModelRole) -> Path:
+    return Path(exp_root) / "outputs" / "local_model_bundles" / run_id / role
 
 
 def _require_artifact(client: MlflowClient, run_id: str, artifact_path: str) -> str:
@@ -213,6 +219,7 @@ def _load_role_bundle(
     run_id: str,
     role: ModelRole,
     artifact_path: str,
+    exp_root: str | None = None,
 ) -> LoadedClassifierBundle | LoadedRegressorBundle:
     """Load all model artifacts needed for a single role.
 
@@ -239,15 +246,47 @@ def _load_role_bundle(
             "Update fof8_ml.models.registry before evaluating this run."
         )
 
-    model_uri = _resolve_model_uri(client, run_id, artifact_path)
-    model = _load_model_by_family(model_uri, family)
-    schema = load_feature_schema(client, run_id)
+    local_bundle = _local_bundle_dir(exp_root, run_id, role) if exp_root else None
+    metadata_path = local_bundle / "bundle_metadata.json" if local_bundle else None
+    use_local_bundle = bool(metadata_path and metadata_path.exists())
+
+    if use_local_bundle:
+        assert local_bundle is not None
+        with open(metadata_path, encoding="utf-8") as handle:
+            bundle_metadata = json.load(handle)
+        with open(local_bundle / FEATURE_SCHEMA_ARTIFACT_PATH, encoding="utf-8") as handle:
+            schema = FeatureSchema.from_dict(json.load(handle))
+        model_format = str(bundle_metadata.get("model_format", ""))
+        model_rel_path = str(bundle_metadata.get("model_path", ""))
+        model_path = local_bundle / model_rel_path
+        if family == "catboost":
+            if role == "classifier":
+                model = cb.CatBoostClassifier()
+            else:
+                model = cb.CatBoostRegressor()
+            model.load_model(str(model_path))
+        elif family == "xgb":
+            if role == "classifier":
+                model = xgb.XGBClassifier()
+            else:
+                model = xgb.XGBRegressor()
+            model.load_model(str(model_path))
+        elif model_format == "joblib":
+            model = joblib.load(model_path)
+        else:
+            raise ValueError(f"Unsupported local bundle model_format '{model_format}'.")
+    else:
+        model_uri = _resolve_model_uri(client, run_id, artifact_path)
+        model = _load_model_by_family(model_uri, family)
+        schema = load_feature_schema(client, run_id)
 
     if role == "classifier":
-        calibrator = cast(
-            BetaCalibrator,
-            joblib.load(_require_artifact(client, run_id, "classifier_beta_calibrator.joblib")),
+        calibrator_path = (
+            local_bundle / "classifier_beta_calibrator.joblib"
+            if use_local_bundle and local_bundle is not None
+            else Path(_require_artifact(client, run_id, "classifier_beta_calibrator.joblib"))
         )
+        calibrator = cast(BetaCalibrator, joblib.load(calibrator_path))
         return LoadedClassifierBundle(
             role=role,
             run_id=run_id,
@@ -260,8 +299,12 @@ def _load_role_bundle(
     sklearn_scaler: ScalerLike | None = None
     sklearn_expected_columns: list[str] | None = None
     if family == "sklearn":
-        scaler_path = _require_artifact(client, run_id, "regressor_model_scaler.joblib")
-        features_path = _require_artifact(client, run_id, "regressor_model_features.txt")
+        if use_local_bundle and local_bundle is not None:
+            scaler_path = str(local_bundle / "regressor_model_scaler.joblib")
+            features_path = str(local_bundle / "regressor_model_features.txt")
+        else:
+            scaler_path = _require_artifact(client, run_id, "regressor_model_scaler.joblib")
+            features_path = _require_artifact(client, run_id, "regressor_model_features.txt")
         sklearn_scaler = cast(ScalerLike, joblib.load(scaler_path))
         sklearn_expected_columns = Path(features_path).read_text(encoding="utf-8").splitlines()
     return LoadedRegressorBundle(
@@ -280,6 +323,7 @@ def load_complete_model(
     client: MlflowClient,
     classifier_run_id: str,
     regressor_run_id: str,
+    exp_root: str | None = None,
 ) -> CompleteModelBundle:
     """Load the classifier and regressor bundles for complete-model scoring.
 
@@ -295,11 +339,15 @@ def load_complete_model(
     return CompleteModelBundle(
         classifier=cast(
             LoadedClassifierBundle,
-            _load_role_bundle(client, classifier_run_id, "classifier", "classifier_model"),
+            _load_role_bundle(
+                client, classifier_run_id, "classifier", "classifier_model", exp_root=exp_root
+            ),
         ),
         regressor=cast(
             LoadedRegressorBundle,
-            _load_role_bundle(client, regressor_run_id, "regressor", "regressor_model"),
+            _load_role_bundle(
+                client, regressor_run_id, "regressor", "regressor_model", exp_root=exp_root
+            ),
         ),
     )
 
@@ -308,6 +356,7 @@ def load_catboost_complete_model(
     client: MlflowClient,
     classifier_run_id: str,
     regressor_run_id: str,
+    exp_root: str | None = None,
 ) -> CompleteModelBundle:
     """Backwards-compatible wrapper for complete-model loading.
 
@@ -320,7 +369,7 @@ def load_catboost_complete_model(
         Combined complete-model bundle.
     """
 
-    return load_complete_model(client, classifier_run_id, regressor_run_id)
+    return load_complete_model(client, classifier_run_id, regressor_run_id, exp_root=exp_root)
 
 
 def _predict_classifier(bundle: LoadedClassifierBundle, X_full: pl.DataFrame) -> np.ndarray:
@@ -545,3 +594,79 @@ def evaluate_complete_model(
     )
     metrics.update(_rename_cross_outcome_metrics(cross_outcome_metrics))
     return metrics
+
+
+def evaluate_complete_model_by_slice(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    draft_year: np.ndarray,
+    slice_values: np.ndarray,
+    *,
+    slice_column: str = "Position_Group",
+    outcome_columns: pl.DataFrame | None = None,
+    meta_columns: pl.DataFrame | None = None,
+    elite_cfg: dict[str, Any] | None = None,
+    elite_thresholds: dict[str, float] | None = None,
+) -> pl.DataFrame:
+    """Compute complete-model scorecards for each slice value.
+
+    Args:
+        y_true: Ground-truth target values.
+        y_pred: Predicted complete-model values.
+        draft_year: Group key for within-group ranking metrics.
+        slice_values: Slice label for each row, usually `Position_Group`.
+        slice_column: Name of the slice column for output labeling.
+        outcome_columns: Optional outcome columns used for cross-outcome metrics.
+        meta_columns: Optional metadata columns used for scoped elite metrics.
+        elite_cfg: Optional elite-metric config.
+        elite_thresholds: Optional pre-fit elite thresholds.
+
+    Returns:
+        A Polars dataframe containing one metric row per slice value.
+    """
+
+    rows: list[dict[str, Any]] = []
+    y_true_arr = np.asarray(y_true, dtype=float)
+    y_pred_arr = np.asarray(y_pred, dtype=float)
+    draft_group_arr = np.asarray(draft_year, dtype=object)
+    slice_arr = np.asarray(slice_values, dtype=object)
+
+    for raw_slice_value in np.unique(slice_arr):
+        mask = slice_arr == raw_slice_value
+        if not np.any(mask):
+            continue
+
+        slice_outcomes = (
+            outcome_columns.filter(pl.Series(mask)) if outcome_columns is not None else None
+        )
+        slice_meta = meta_columns.filter(pl.Series(mask)) if meta_columns is not None else None
+        metrics = evaluate_complete_model(
+            y_true=y_true_arr[mask],
+            y_pred=y_pred_arr[mask],
+            draft_year=draft_group_arr[mask],
+            outcome_columns=slice_outcomes,
+            meta_columns=slice_meta,
+            elite_cfg=elite_cfg,
+            elite_thresholds=elite_thresholds,
+        )
+        row: dict[str, Any] = {
+            "slice_column": slice_column,
+            "slice_value": str(raw_slice_value),
+            "n_players": int(np.sum(mask)),
+            "n_draft_classes": int(np.unique(draft_group_arr[mask]).size),
+        }
+        row.update(metrics)
+        rows.append(row)
+
+    return (
+        pl.DataFrame(rows)
+        if rows
+        else pl.DataFrame(
+            {
+                "slice_column": [],
+                "slice_value": [],
+                "n_players": [],
+                "n_draft_classes": [],
+            }
+        )
+    )

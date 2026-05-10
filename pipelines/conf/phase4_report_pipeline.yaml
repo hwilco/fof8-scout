@@ -1,0 +1,12 @@
+defaults:
+  - _self_
+  - phase4: set_a_economic
+
+manifest_path: null
+output_path: null
+
+hydra:
+  job:
+    chdir: True
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}

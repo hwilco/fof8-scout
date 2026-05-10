@@ -1,0 +1,305 @@
+from pathlib import Path
+from types import SimpleNamespace
+
+from fof8_ml.orchestration.experiment_logger import ExperimentLogger
+from fof8_ml.orchestration.phase4_matrix import (
+    Phase4RunResult,
+    resolve_phase4_candidates,
+    run_phase4_matrix,
+)
+from fof8_ml.reporting.phase4_report import export_phase4_report
+from omegaconf import OmegaConf
+
+
+class _FakeMlflowClient:
+    def __init__(self, metrics_by_run_id):
+        self._metrics_by_run_id = metrics_by_run_id
+
+    def get_run(self, run_id: str):
+        return SimpleNamespace(data=SimpleNamespace(metrics=self._metrics_by_run_id[run_id]))
+
+
+def test_resolve_phase4_candidates_filters_requested_ids():
+    cfg = OmegaConf.create(
+        {
+            "candidates": [
+                {
+                    "candidate_id": "A1",
+                    "label": "one",
+                    "regressor": {
+                        "model": "catboost_regressor_tweedie",
+                        "target_col": "Positive_Career_Merit_Cap_Share",
+                        "target_space": "raw",
+                    },
+                },
+                {
+                    "candidate_id": "A2",
+                    "label": "two",
+                    "regressor": {
+                        "model": "catboost_regressor_rmse",
+                        "target_col": "Positive_Career_Merit_Cap_Share",
+                        "target_space": "log",
+                    },
+                },
+            ]
+        }
+    )
+
+    candidates = resolve_phase4_candidates(cfg, ["A2"])
+
+    assert [candidate.candidate_id for candidate in candidates] == ["A2"]
+    assert candidates[0].regressor_target_space == "log"
+
+
+def test_phase4_matrix_and_report_smoke(monkeypatch, tmp_path):
+    cfg = OmegaConf.create(
+        {
+            "candidate_ids": [],
+            "phase4": {
+                "matrix_name": "phase4_set_a_economic",
+                "output_subdir": "phase4",
+                "shared": {
+                    "classifier_source": "train_once_per_matrix",
+                    "fixed_classifier_run_id": None,
+                    "classifier": {
+                        "experiment_name": "Phase4_Classifier",
+                        "model": "catboost_classifier",
+                        "target_config": "economic",
+                    },
+                    "regressor": {
+                        "experiment_name": "Phase4_Regressor",
+                        "target_config": "economic",
+                    },
+                    "complete_model": {
+                        "experiment_name": "Phase4_Complete_Model",
+                        "target_config": "economic",
+                    },
+                    "tags": {"phase": "4", "experiment_set": "A"},
+                    "runtime": {"refit_final_model": False},
+                },
+                "candidates": [
+                    {
+                        "candidate_id": "A1",
+                        "label": "positive_merit_tweedie_raw",
+                        "regressor": {
+                            "model": "catboost_regressor_tweedie",
+                            "target_col": "Positive_Career_Merit_Cap_Share",
+                            "target_space": "raw",
+                        },
+                    },
+                    {
+                        "candidate_id": "A2",
+                        "label": "positive_merit_rmse_log",
+                        "regressor": {
+                            "model": "catboost_regressor_rmse",
+                            "target_col": "Positive_Career_Merit_Cap_Share",
+                            "target_space": "log",
+                        },
+                    },
+                ],
+            },
+            "manifest_path": None,
+            "output_path": None,
+        }
+    )
+
+    target_cfg = OmegaConf.create(
+        {
+            "classifier_sieve": {"target_col": "Economic_Success"},
+            "regressor_intensity": {
+                "target_col": "Positive_Career_Merit_Cap_Share",
+                "target_space": "raw",
+            },
+            "outcome_scorecard": {
+                "elite": {
+                    "enabled": True,
+                    "source_column": "Career_Merit_Cap_Share",
+                    "quantile": 0.95,
+                    "scope": "position_group",
+                    "fallback_scope": "global",
+                }
+            },
+        }
+    )
+    complete_pipeline_cfg = OmegaConf.create(
+        {
+            "data": {"raw_path": "fof8-ml/data/processed/features.parquet"},
+            "target": target_cfg,
+        }
+    )
+
+    def fake_load_config(_exp_root, *parts):
+        if parts[-1] == "complete_model_pipeline.yaml":
+            return complete_pipeline_cfg.copy()
+        if parts[-2] == "target":
+            return target_cfg.copy()
+        raise AssertionError(f"Unexpected config request: {parts}")
+
+    def fake_prepare_pipeline_cfg(
+        _exp_root,
+        *,
+        pipeline_config_name,
+        experiment_name,
+        target_config_name,
+        model_config_name,
+        runtime_refit_final_model,
+        run_tags,
+        regressor_target_col=None,
+        regressor_target_space=None,
+    ):
+        _ = target_config_name, runtime_refit_final_model, run_tags
+        if pipeline_config_name == "classifier_pipeline.yaml":
+            return OmegaConf.create(
+                {
+                    "experiment_name": experiment_name,
+                    "optimization": {"metric": "classifier_val_pr_auc"},
+                    "model": {"name": model_config_name, "params": {"loss_function": "Logloss"}},
+                    "target": target_cfg.copy(),
+                    "ablation_signature": "default",
+                }
+            )
+        loss_by_model = {
+            "catboost_regressor_tweedie": "Tweedie",
+            "catboost_regressor_rmse": "RMSE",
+        }
+        return OmegaConf.create(
+            {
+                "experiment_name": experiment_name,
+                "optimization": {"metric": "regressor_val_draft_value_score"},
+                "model": {
+                    "name": model_config_name,
+                    "params": {"loss_function": loss_by_model[model_config_name]},
+                },
+                "target": {
+                    "classifier_sieve": {"target_col": "Economic_Success"},
+                    "regressor_intensity": {
+                        "target_col": regressor_target_col,
+                        "target_space": regressor_target_space,
+                    },
+                    "outcome_scorecard": target_cfg.outcome_scorecard,
+                },
+                "ablation_signature": "default",
+            }
+        )
+
+    classifier_calls = []
+    regressor_calls = []
+    complete_calls = []
+
+    def fake_train_classifier(_exp_root, _cfg):
+        classifier_calls.append(True)
+        return Phase4RunResult(
+            run_id="cls-shared",
+            experiment_name="Phase4_Classifier",
+            optimization_metric="classifier_val_pr_auc",
+            optimization_score=0.6,
+            metrics={"classifier_val_pr_auc": 0.6},
+        )
+
+    def fake_train_regressor(_exp_root, cfg_obj):
+        regressor_calls.append(cfg_obj.model.name)
+        run_id = f"reg-{len(regressor_calls)}"
+        return Phase4RunResult(
+            run_id=run_id,
+            experiment_name="Phase4_Regressor",
+            optimization_metric="regressor_val_draft_value_score",
+            optimization_score=0.4,
+            metrics={"regressor_val_draft_value_score": 0.4},
+        )
+
+    complete_metric_map = {
+        "reg-1": {
+            "complete_draft_value_score": 0.51,
+            "complete_mean_ndcg_at_64": 0.71,
+            "complete_top64_weighted_mae_normalized": 0.12,
+            "complete_top64_bias": 0.01,
+            "complete_top64_calibration_slope": 0.95,
+            "complete_top64_actual_value": 18.0,
+            "complete_bust_rate_at_32": 0.22,
+            "complete_elite_precision_at_32": 0.18,
+            "complete_elite_recall_at_64": 0.41,
+            "complete_econ_mean_ndcg_at_64": 0.74,
+            "complete_talent_mean_ndcg_at_64": 0.66,
+            "complete_longevity_mean_ndcg_at_64": 0.61,
+        },
+        "reg-2": {
+            "complete_draft_value_score": 0.49,
+            "complete_mean_ndcg_at_64": 0.69,
+            "complete_top64_weighted_mae_normalized": 0.11,
+            "complete_top64_bias": -0.02,
+            "complete_top64_calibration_slope": 1.01,
+            "complete_top64_actual_value": 17.5,
+            "complete_bust_rate_at_32": 0.24,
+            "complete_elite_precision_at_32": 0.17,
+            "complete_elite_recall_at_64": 0.39,
+            "complete_econ_mean_ndcg_at_64": 0.72,
+            "complete_talent_mean_ndcg_at_64": 0.68,
+            "complete_longevity_mean_ndcg_at_64": 0.6,
+        },
+    }
+
+    def fake_complete_eval(_exp_root, cfg_obj):
+        complete_calls.append(cfg_obj.regressor_run_id)
+        regressor_run_id = str(cfg_obj.regressor_run_id)
+        return Phase4RunResult(
+            run_id=f"complete-{regressor_run_id}",
+            experiment_name="Phase4_Complete_Model",
+            optimization_metric="complete_draft_value_score",
+            optimization_score=complete_metric_map[regressor_run_id]["complete_draft_value_score"],
+            metrics=complete_metric_map[regressor_run_id],
+        )
+
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.phase4_matrix._load_config",
+        fake_load_config,
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.phase4_matrix._prepare_pipeline_cfg",
+        fake_prepare_pipeline_cfg,
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.phase4_matrix._train_classifier_pipeline",
+        fake_train_classifier,
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.phase4_matrix._train_regressor_pipeline",
+        fake_train_regressor,
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.phase4_matrix._evaluate_complete_model_pipeline",
+        fake_complete_eval,
+    )
+
+    result = run_phase4_matrix(cfg, exp_root=str(tmp_path))
+
+    assert result["candidate_count"] == 2
+    assert classifier_calls == [True]
+    assert regressor_calls == ["catboost_regressor_tweedie", "catboost_regressor_rmse"]
+    assert complete_calls == ["reg-1", "reg-2"]
+
+    manifest_dir = Path(result["output_dir"])
+    assert (manifest_dir / "A1.json").exists()
+    assert (manifest_dir / "A2.json").exists()
+    assert (manifest_dir / "matrix_manifest.json").exists()
+
+    metrics_by_run_id = {
+        "complete-reg-1": complete_metric_map["reg-1"],
+        "complete-reg-2": complete_metric_map["reg-2"],
+    }
+
+    def fake_init_tracking(self):
+        self.client = _FakeMlflowClient(metrics_by_run_id)
+        self.experiment_id = "exp-1"
+
+    monkeypatch.setattr(ExperimentLogger, "init_tracking", fake_init_tracking)
+
+    report_result = export_phase4_report(cfg, exp_root=str(tmp_path))
+
+    assert report_result["row_count"] == 2
+    csv_path = Path(report_result["output_path"])
+    assert csv_path.exists()
+    csv_text = csv_path.read_text(encoding="utf-8")
+    assert "candidate_id" in csv_text
+    assert "complete_draft_value_score" in csv_text
+    assert "A1" in csv_text
+    assert "A2" in csv_text

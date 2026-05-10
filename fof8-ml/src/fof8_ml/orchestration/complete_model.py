@@ -6,11 +6,13 @@ from dataclasses import dataclass
 from typing import Any
 
 import mlflow
+import numpy as np
 import polars as pl
 from omegaconf import DictConfig, open_dict
 
 from fof8_ml.evaluation.complete_model import (
     evaluate_complete_model,
+    evaluate_complete_model_by_slice,
     load_complete_model,
     predict_complete_model,
 )
@@ -230,6 +232,7 @@ def run_complete_model_evaluation(
         logger.client,
         classifier_run_id=inputs.classifier_run_id,
         regressor_run_id=inputs.regressor_run_id,
+        exp_root=exp_root,
     )
 
     X_eval = data.X_test
@@ -264,10 +267,29 @@ def run_complete_model_evaluation(
         elite_cfg=elite_cfg,
         elite_thresholds=elite_thresholds,
     )
+    position_group_metrics = evaluate_complete_model_by_slice(
+        y_true=data.y_reg_test,
+        y_pred=prediction_dict["complete_prediction"],
+        draft_year=eval_group,
+        slice_values=(
+            X_eval.get_column("Position_Group").cast(pl.Utf8).to_numpy()
+            if "Position_Group" in X_eval.columns
+            else np.full(len(X_eval), "unknown", dtype=object)
+        ),
+        slice_column="Position_Group",
+        outcome_columns=data.outcomes_test,
+        meta_columns=_scope_meta_from_features(X_eval, elite_cfg),
+        elite_cfg=elite_cfg,
+        elite_thresholds=elite_thresholds,
+    )
 
     board_artifact_path = os.path.join(exp_root, "outputs", "complete_model_holdout_board.csv")
+    position_metrics_artifact_path = os.path.join(
+        exp_root, "outputs", "complete_model_position_group_metrics.csv"
+    )
     os.makedirs(os.path.dirname(board_artifact_path), exist_ok=True)
     build_complete_model_board(data, prediction_dict).write_csv(board_artifact_path)
+    position_group_metrics.write_csv(position_metrics_artifact_path)
 
     mlflow.log_params(
         {
@@ -279,6 +301,7 @@ def run_complete_model_evaluation(
     )
     mlflow.log_metrics(metrics)
     mlflow.log_artifact(board_artifact_path)
+    mlflow.log_artifact(position_metrics_artifact_path)
     if elite_cfg is not None:
         mlflow.log_dict(
             {
@@ -304,6 +327,8 @@ def run_complete_model_evaluation(
             "regressor_run_id": inputs.regressor_run_id,
             "optimization_metric": "complete_draft_value_score",
             "optimization_score": float(metrics["complete_draft_value_score"]),
+            "board_artifact_path": "complete_model_holdout_board.csv",
+            "position_group_metrics_artifact_path": "complete_model_position_group_metrics.csv",
         },
         "complete_model_run.json",
     )
