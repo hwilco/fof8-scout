@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import warnings
@@ -45,14 +46,43 @@ def _resolve_run_target_param(
     return str(value)
 
 
+def _resolve_run_id_from_input(
+    run_id: str | None,
+    manifest_path: str | None,
+    *,
+    role: str,
+    exp_root: str,
+) -> str:
+    if run_id:
+        return str(run_id)
+    if not manifest_path:
+        raise ValueError(f"Provide either {role}_run_id=<run_id> or {role}_run_manifest=<path>.")
+    resolved_manifest_path = (
+        manifest_path if os.path.isabs(manifest_path) else os.path.join(exp_root, manifest_path)
+    )
+    with open(resolved_manifest_path, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    resolved_run_id = payload.get("run_id")
+    if not resolved_run_id:
+        raise ValueError(f"Manifest '{resolved_manifest_path}' is missing required key 'run_id'.")
+    return str(resolved_run_id)
+
+
 @hydra.main(version_base=None, config_path="conf", config_name="regressor_pipeline")
 def main(cfg: DictConfig) -> float:
-    classifier_run_id = cfg.get("classifier_run_id")
-    regressor_run_id = cfg.get("regressor_run_id")
-    if not classifier_run_id or not regressor_run_id:
-        raise ValueError("Provide both classifier_run_id=<run_id> and regressor_run_id=<run_id>.")
-
     exp_root = resolve_exp_root(__file__)
+    classifier_run_id = _resolve_run_id_from_input(
+        cfg.get("classifier_run_id"),
+        cfg.get("classifier_run_manifest"),
+        role="classifier",
+        exp_root=exp_root,
+    )
+    regressor_run_id = _resolve_run_id_from_input(
+        cfg.get("regressor_run_id"),
+        cfg.get("regressor_run_manifest"),
+        role="regressor",
+        exp_root=exp_root,
+    )
     logger = ExperimentLogger(
         exp_root,
         str(cfg.get("complete_experiment_name", "Complete_Model_Evaluation")),
@@ -140,13 +170,14 @@ def main(cfg: DictConfig) -> float:
         .alias("rank_within_year")
     ).sort(["Universe", "Year", "rank_within_year"])
 
-    artifact_name = "complete_model_holdout_board.csv"
+    artifact_name = os.path.join(exp_root, "outputs", "complete_model_holdout_board.csv")
+    os.makedirs(os.path.dirname(artifact_name), exist_ok=True)
     board_df.write_csv(artifact_name)
 
     with logger.start_pipeline_run(
         f"CompleteModel_{classifier_run_id[:8]}_{regressor_run_id[:8]}",
         tags={"evaluation_type": "complete_model"},
-    ) as _run:
+    ) as run:
         logger.log_data_summary(
             data,
             cfg,
@@ -156,8 +187,8 @@ def main(cfg: DictConfig) -> float:
         )
         mlflow.log_params(
             {
-                "classifier_run_id": str(classifier_run_id),
-                "regressor_run_id": str(regressor_run_id),
+                "classifier_run_id": classifier_run_id,
+                "regressor_run_id": regressor_run_id,
                 "complete_classifier_target_col": classifier_target_col,
                 "complete_regressor_target_col": regressor_target_col,
             }
@@ -185,6 +216,17 @@ def main(cfg: DictConfig) -> float:
             "complete_draft_value_score",
             score,
             metrics_filename="complete_model_metrics.json",
+        )
+        logger.write_dvc_json(
+            {
+                "run_id": run.info.run_id,
+                "evaluation_type": "complete_model",
+                "classifier_run_id": classifier_run_id,
+                "regressor_run_id": regressor_run_id,
+                "optimization_metric": "complete_draft_value_score",
+                "optimization_score": score,
+            },
+            "complete_model_run.json",
         )
         return score
 

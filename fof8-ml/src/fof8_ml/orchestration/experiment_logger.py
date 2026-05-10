@@ -376,3 +376,21 @@ class ExperimentLogger:
             print(f"[DVC] Final {metric_name.upper()}: {export_score:.4f}")
         except Exception as e:
             print(f"\n[WARNING] Could not write DVC metrics.json: {e}")
+
+    def write_dvc_json(
+        self,
+        payload: dict[str, object],
+        filename: str,
+    ) -> None:
+        """Write an arbitrary JSON payload to the outputs/ directory for DVC."""
+        try:
+            out_dir = os.path.join(self.exp_root, "outputs")
+            os.makedirs(out_dir, exist_ok=True)
+            output_file = os.path.join(out_dir, filename)
+
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2, sort_keys=True)
+
+            print(f"\n[DVC] JSON successfully written to: {output_file}")
+        except Exception as e:
+            print(f"\n[WARNING] Could not write DVC JSON '{filename}': {e}")

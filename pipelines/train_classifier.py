@@ -48,6 +48,15 @@ def main(cfg: DictConfig) -> float:
         ctx.logger.log_feature_schema(ctx.data)
 
         available_metrics = run_classifier(ctx)
+        ctx.logger.write_dvc_json(
+            {
+                "run_id": pipeline_run.info.run_id,
+                "model_role": "classifier",
+                "optimization_metric": cfg.optimization.metric,
+                "optimization_score": float(available_metrics[cfg.optimization.metric]),
+            },
+            "classifier_run.json",
+        )
 
         if not ctx.sweep_context.quiet:
             print("\nClassifier Training Complete. Model saved to MLflow.")
