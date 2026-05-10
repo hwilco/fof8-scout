@@ -96,14 +96,14 @@ stages:
       nfiles: 16
     - path: fof8-ml/src/fof8_ml/orchestration/
       hash: md5
-      md5: 8be1828b03b8f8b737db8ba11743f9c8.dir
-      size: 317785
-      nfiles: 27
+      md5: f1c23665daa90192bbe7e32c37e06787.dir
+      size: 328097
+      nfiles: 28
     - path: pipelines/conf/
       hash: md5
-      md5: efd1b468193607abb000f2d79107690b.dir
-      size: 16237
-      nfiles: 21
+      md5: 2774f1fdf313d7e81c19b97dffd02b57.dir
+      size: 16982
+      nfiles: 22
     - path: pipelines/conf/classifier_pipeline.yaml
       hash: md5
       md5: 52b0fd474044eee5d343de592b544be1
@@ -119,7 +119,7 @@ stages:
       size: 45
     - path: outputs/classifier_run.json
       hash: md5
-      md5: 12656eae422ccef97f06387c55d707eb
+      md5: 7a18f1175870f8cf21bb3438623c0d7d
       size: 174
   train_regressor:
     cmd: uv run python pipelines/train_regressor.py
@@ -153,14 +153,14 @@ stages:
       nfiles: 16
     - path: fof8-ml/src/fof8_ml/orchestration/
       hash: md5
-      md5: 8d274d20bbbaf09eada0c7ba3d245e94.dir
-      size: 331213
+      md5: f1c23665daa90192bbe7e32c37e06787.dir
+      size: 328097
       nfiles: 28
     - path: pipelines/conf/
       hash: md5
-      md5: efd1b468193607abb000f2d79107690b.dir
-      size: 16237
-      nfiles: 21
+      md5: 2774f1fdf313d7e81c19b97dffd02b57.dir
+      size: 16982
+      nfiles: 22
     - path: pipelines/conf/regressor_pipeline.yaml
       hash: md5
       md5: 253050fb76fa9fa47d9c1182960be8e7
@@ -176,5 +176,76 @@ stages:
       size: 55
     - path: outputs/regressor_run.json
       hash: md5
-      md5: 45ba0a24c09ff003218dacd49c19965d
+      md5: 95b0711bc313f1bd11402d76adcd9f0e
       size: 183
+  evaluate_complete_model:
+    cmd: uv run python pipelines/evaluate_complete_model.py
+      classifier_run_manifest=outputs/classifier_run.json
+      regressor_run_manifest=outputs/regressor_run.json
+    deps:
+    - path: fof8-core/src/fof8_core/features/position_masks.py
+      hash: md5
+      md5: 23fdb25d458f93d8a8b2d33b9a05361c
+      size: 901
+    - path: fof8-core/src/fof8_core/loader.py
+      hash: md5
+      md5: 6b35a54d49f97e40ff389e3808da3403
+      size: 8457
+    - path: fof8-ml/data/processed/features.parquet
+      hash: md5
+      md5: 65fecb3fc0bc31fd38a84bdf14abb2ef
+      size: 42639707
+    - path: fof8-ml/src/fof8_ml/data/
+      hash: md5
+      md5: f23773c007d367ac12d68e09d6d52c15.dir
+      size: 56689
+      nfiles: 16
+    - path: fof8-ml/src/fof8_ml/evaluation/
+      hash: md5
+      md5: 2bb3ba6bd17707cdf40bacedd9d8a0ef.dir
+      size: 65264
+      nfiles: 8
+    - path: fof8-ml/src/fof8_ml/models/
+      hash: md5
+      md5: c478ddbeec75ae3fc146b87997bf8ff2.dir
+      size: 78597
+      nfiles: 16
+    - path: fof8-ml/src/fof8_ml/orchestration/
+      hash: md5
+      md5: f1c23665daa90192bbe7e32c37e06787.dir
+      size: 328097
+      nfiles: 28
+    - path: outputs/classifier_run.json
+      hash: md5
+      md5: 7a18f1175870f8cf21bb3438623c0d7d
+      size: 174
+    - path: outputs/regressor_run.json
+      hash: md5
+      md5: 95b0711bc313f1bd11402d76adcd9f0e
+      size: 183
+    - path: pipelines/conf/
+      hash: md5
+      md5: 2774f1fdf313d7e81c19b97dffd02b57.dir
+      size: 16982
+      nfiles: 22
+    - path: pipelines/conf/complete_model_pipeline.yaml
+      hash: md5
+      md5: ff71b8a8b391ecf6c459a0128359ab2d
+      size: 656
+    - path: pipelines/evaluate_complete_model.py
+      hash: md5
+      md5: db95b11be9d21b5890309995f20c5cf0
+      size: 2992
+    outs:
+    - path: outputs/complete_model_holdout_board.csv
+      hash: md5
+      md5: 711d9193a157e355c21102a2732dbbca
+      size: 8286133
+    - path: outputs/complete_model_metrics.json
+      hash: md5
+      md5: b9aa8b3fc4b1952d1dee57ce5205c20d
+      size: 50
+    - path: outputs/complete_model_run.json
+      hash: md5
+      md5: 3d3d2016081ac846bcf02c3fec0d795f
+      size: 305
