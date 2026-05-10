@@ -2,13 +2,13 @@
 
 from typing import Any
 
-from fof8_ml.models.base import ModelWrapper
+from fof8_ml.models.base import ModelRole, ModelWrapper
 from fof8_ml.models.registry import get_model_family, resolve_model
 
 
 def get_model_wrapper(
     model_name: str,
-    role: str,
+    role: ModelRole,
     random_seed: int,
     params: dict[str, Any],
     use_gpu: bool = False,

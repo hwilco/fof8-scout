@@ -19,20 +19,20 @@ from fof8_ml.evaluation.plotting import (
     log_confusion_matrix,
     log_feature_importance,
 )
-from fof8_ml.models.base import ModelWrapper
+from fof8_ml.models.base import ModelRole, ModelWrapper
 from fof8_ml.orchestration.pipeline_types import ClassifierResult, PreparedData
 
 # Global tracking flags
 _TRACKING_INITIALIZED = False
 _USING_REMOTE = None
 
-ROLE_RUN_NAMES = {
+ROLE_RUN_NAMES: dict[ModelRole, str] = {
     "classifier": "Classifier",
     "regressor": "Regressor",
 }
 
 
-def resolve_model_role_name(role_name: str) -> str:
+def resolve_model_role_name(role_name: ModelRole | str) -> str:
     """Return the canonical display name for a model role."""
     normalized_role = role_name.strip().lower()
     if normalized_role not in ROLE_RUN_NAMES:
@@ -40,7 +40,7 @@ def resolve_model_role_name(role_name: str) -> str:
             f"Unsupported model role '{role_name}'. "
             f"Expected one of: {sorted(ROLE_RUN_NAMES.keys())}"
         )
-    return ROLE_RUN_NAMES[normalized_role]
+    return ROLE_RUN_NAMES[cast(ModelRole, normalized_role)]
 
 
 def flatten_dict(d: dict, parent_key: str = "", sep: str = ".") -> dict[str, object]:
@@ -323,7 +323,7 @@ class ExperimentLogger:
     @contextlib.contextmanager
     def start_model_run(self, role_name: str, ctx: object) -> Iterator[mlflow.ActiveRun | None]:
         """Tag the active pipeline run for a model role without opening a nested run."""
-        normalized_role = role_name.strip().lower()
+        normalized_role = cast(ModelRole, role_name.strip().lower())
         resolve_model_role_name(normalized_role)
         active_run = mlflow.active_run()
         if active_run is None:
@@ -376,3 +376,21 @@ class ExperimentLogger:
             print(f"[DVC] Final {metric_name.upper()}: {export_score:.4f}")
         except Exception as e:
             print(f"\n[WARNING] Could not write DVC metrics.json: {e}")
+
+    def write_dvc_json(
+        self,
+        payload: dict[str, object],
+        filename: str,
+    ) -> None:
+        """Write an arbitrary JSON payload to the outputs/ directory for DVC."""
+        try:
+            out_dir = os.path.join(self.exp_root, "outputs")
+            os.makedirs(out_dir, exist_ok=True)
+            output_file = os.path.join(out_dir, filename)
+
+            with open(output_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2, sort_keys=True)
+
+            print(f"\n[DVC] JSON successfully written to: {output_file}")
+        except Exception as e:
+            print(f"\n[WARNING] Could not write DVC JSON '{filename}': {e}")

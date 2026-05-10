@@ -27,6 +27,7 @@ stages:
       - pipelines/conf/
     outs:
       - outputs/classifier_metrics.json
+      - outputs/classifier_run.json
 
   train_regressor:
     cmd: uv run python pipelines/train_regressor.py
@@ -43,3 +44,27 @@ stages:
       - pipelines/conf/
     outs:
       - outputs/regressor_metrics.json
+      - outputs/regressor_run.json
+
+  evaluate_complete_model:
+    cmd: >-
+      uv run python pipelines/evaluate_complete_model.py
+      classifier_run_manifest=outputs/classifier_run.json
+      regressor_run_manifest=outputs/regressor_run.json
+    deps:
+      - outputs/classifier_run.json
+      - outputs/regressor_run.json
+      - fof8-ml/data/processed/features.parquet
+      - fof8-core/src/fof8_core/loader.py
+      - fof8-core/src/fof8_core/features/position_masks.py
+      - fof8-ml/src/fof8_ml/orchestration/
+      - fof8-ml/src/fof8_ml/data/
+      - fof8-ml/src/fof8_ml/models/
+      - fof8-ml/src/fof8_ml/evaluation/
+      - pipelines/evaluate_complete_model.py
+      - pipelines/conf/complete_model_pipeline.yaml
+      - pipelines/conf/
+    outs:
+      - outputs/complete_model_metrics.json
+      - outputs/complete_model_run.json
+      - outputs/complete_model_holdout_board.csv

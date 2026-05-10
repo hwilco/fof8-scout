@@ -122,10 +122,10 @@ You have completed Phase 1 and are starting here. The most important Phase 2 des
 choice is that `NDCG@K` should be computed per draft class:
 
 ```text
-for each draft year:
-  rank that year's prospects by model score
-  compute NDCG@K within that year
-average NDCG@K across years
+for each draft class (Universe:Year):
+  rank that class's prospects by model score
+  compute NDCG@K within that class
+average NDCG@K across classes
 ```
 
 Do not use global historical NDCG as the primary metric. The real decision is made within
@@ -149,12 +149,13 @@ one live draft class, and global NDCG can be dominated by unusually strong or we
    - `calibration_slope`
    - optional `spearman_by_group`
 
-   `mean_ndcg_by_group` should take `group=draft_year` and apply the top-K cutoff inside
-   each group, not after globally ranking all players.
+   `mean_ndcg_by_group` should take draft-class grouping (default `Universe:Year`) and
+   apply the top-K cutoff inside each group, not after globally ranking all players.
 
-2. Pass draft year metadata into regressor metric calculation.
+2. Pass draft-class metadata into regressor metric calculation.
 
-   `PreparedData` already carries `meta_train`; use `Year` as the draft-class group.
+   `PreparedData` already carries `meta_train`; use a class key (default
+   `Universe + ":" + Year`) as the draft-class group.
 
    Likely files:
 
@@ -188,7 +189,7 @@ one live draft class, and global NDCG can be dominated by unusually strong or we
    ```text
    y_score = model predictions
    outcome_columns = independent outcome labels
-   group = draft year
+   group = draft class key (default Universe:Year)
    ```
 
    Evaluate the same ranked board against multiple outcome families:
@@ -271,6 +272,10 @@ one live draft class, and global NDCG can be dominated by unusually strong or we
    cross_bust_rate_at_32
    ```
 
+   Elite K values remain configurable via `top_k_precision` / `top_k_recall`, while metric
+   keys stay canonical (`cross_elite_precision_at_32`, `cross_elite_recall_at_64`) for
+   stable dashboards and experiment comparisons.
+
    If some outcome columns are not available yet, build the metric API so they can be added
    without changing model-training code.
 
@@ -308,7 +313,8 @@ one live draft class, and global NDCG can be dominated by unusually strong or we
 
 - Metrics are logged to MLflow.
 - DVC metric output can write the selected composite score.
-- NDCG@K metrics apply K within each draft year and then average across years.
+- NDCG@K metrics apply K within each draft class (`Universe:Year`) and then average
+  across classes.
 - Cross-outcome metrics can evaluate one model's board against economic, talent,
   longevity, and elite outcome labels when those labels are present.
 - Elite labels can also be derived from a configurable source outcome using thresholds fit on
@@ -355,7 +361,7 @@ Goal: evaluate the classifier + regressor as the draft board will actually use t
    - `load_feature_schema(client, run_id)`
    - `load_catboost_complete_model(classifier_run_id, regressor_run_id)`
    - `predict_complete_model(X_full, classifier_bundle, regressor_bundle)`
-   - `evaluate_complete_model(y_true, y_pred, draft_year)`
+   - `evaluate_complete_model(y_true, y_pred, draft_class_key)`
 
 3. Log complete-model metrics.
 
@@ -374,6 +380,10 @@ Goal: evaluate the classifier + regressor as the draft board will actually use t
    complete_elite_recall_at_64
    ```
 
+   Elite K values are configurable, but complete-model elite metric keys remain canonical
+   (`complete_elite_precision_at_32`, `complete_elite_recall_at_64`) to keep comparison
+   tables stable across runs.
+
    The complete-model evaluator should use the same elite definition contract as the
    regressor cross-outcome scorecard. If elite is derived from a configurable outcome
    threshold, the evaluator must load or compute thresholds from the training split only and
@@ -385,6 +395,7 @@ Goal: evaluate the classifier + regressor as the draft board will actually use t
 
    ```text
    Player_ID
+   Universe
    Year
    Position_Group
    classifier_probability

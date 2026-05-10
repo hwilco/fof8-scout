@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, TypeVar
 
 import catboost as cb
 import mlflow
@@ -9,8 +9,10 @@ from mlflow.models import infer_signature
 
 from .base import ModelWrapper
 
+TCatBoostModel = TypeVar("TCatBoostModel", cb.CatBoostClassifier, cb.CatBoostRegressor)
 
-class CatBoostWrapper(ModelWrapper):
+
+class CatBoostWrapper(ModelWrapper[TCatBoostModel]):
     """Shared logic for CatBoost wrapper."""
 
     def _prepare_data(self, X: pl.DataFrame) -> tuple[Any, list[str]]:
@@ -28,16 +30,14 @@ class CatBoostWrapper(ModelWrapper):
         return X_pd, cat_features
 
     def get_best_iteration(self) -> int:
-        assert self.model is not None
-        return self.model.get_best_iteration()
+        return self.require_model().get_best_iteration()
 
     def _signature_kwargs(self, X: pl.DataFrame | None) -> dict[str, Any]:
         if X is None:
             return {}
-        assert self.model is not None
         input_example, _ = self._prepare_data(X.head(5))
         try:
-            prediction = self.model.predict(input_example)
+            prediction = self.require_model().predict(input_example)
             return {
                 "input_example": input_example,
                 "signature": infer_signature(input_example, prediction),
@@ -46,16 +46,20 @@ class CatBoostWrapper(ModelWrapper):
             return {"input_example": input_example}
 
     def log_model(self, name: str, X: pl.DataFrame | None = None) -> None:
-        assert self.model is not None
-        mlflow.catboost.log_model(self.model, artifact_path=name, **self._signature_kwargs(X))
+        mlflow.catboost.log_model(
+            self.require_model(), artifact_path=name, **self._signature_kwargs(X)
+        )
 
     def get_feature_importance(self) -> tuple[list[str], np.ndarray]:
         """Returns feature names and importance values from CatBoost."""
-        assert self.model is not None
-        return self.model.feature_names_, self.model.get_feature_importance()
+        model = self.require_model()
+        feature_names = model.feature_names_
+        return list(feature_names if feature_names is not None else []), np.asarray(
+            model.get_feature_importance()
+        )
 
 
-class CatBoostClassifierWrapper(CatBoostWrapper):
+class CatBoostClassifierWrapper(CatBoostWrapper[cb.CatBoostClassifier]):
     def __init__(
         self,
         random_seed: int,
@@ -98,7 +102,7 @@ class CatBoostClassifierWrapper(CatBoostWrapper):
             X_val_pd, _ = self._prepare_data(X_val)
             eval_set = [(X_val_pd, y_val)]
 
-        self.model.fit(
+        self.require_model().fit(
             X_train_pd,
             y_train,
             eval_set=eval_set,
@@ -108,37 +112,36 @@ class CatBoostClassifierWrapper(CatBoostWrapper):
 
     def predict(self, X: pl.DataFrame) -> np.ndarray:
         X_pd, _ = self._prepare_data(X)
-        return self.model.predict(X_pd)
+        return np.asarray(self.require_model().predict(X_pd))
 
     def predict_proba(self, X: pl.DataFrame) -> np.ndarray:
         X_pd, _ = self._prepare_data(X)
-        return self.model.predict_proba(X_pd)[:, 1]
+        return np.asarray(self.require_model().predict_proba(X_pd)[:, 1])
 
     def log_model(self, name: str, X: pl.DataFrame | None = None) -> None:
-        assert self.model is not None
         if X is None:
-            mlflow.catboost.log_model(self.model, artifact_path=name)
+            mlflow.catboost.log_model(self.require_model(), artifact_path=name)
             return
 
         input_example, _ = self._prepare_data(X.head(5))
         try:
-            prediction = self.model.predict_proba(input_example)[:, 1]
+            prediction = self.require_model().predict_proba(input_example)[:, 1]
             signature = infer_signature(input_example, prediction)
             mlflow.catboost.log_model(
-                self.model,
+                self.require_model(),
                 artifact_path=name,
                 input_example=input_example,
                 signature=signature,
             )
         except Exception:
             mlflow.catboost.log_model(
-                self.model,
+                self.require_model(),
                 artifact_path=name,
                 input_example=input_example,
             )
 
 
-class CatBoostRegressorWrapper(CatBoostWrapper):
+class CatBoostRegressorWrapper(CatBoostWrapper[cb.CatBoostRegressor]):
     def _compose_loss_function(self, params: dict[str, Any]) -> None:
         """Render tunable Tweedie variance power into CatBoost's loss syntax."""
 
@@ -198,7 +201,7 @@ class CatBoostRegressorWrapper(CatBoostWrapper):
             X_val_pd, _ = self._prepare_data(X_val)
             eval_set = [(X_val_pd, y_val)]
 
-        self.model.fit(
+        self.require_model().fit(
             X_train_pd,
             y_train,
             eval_set=eval_set,
@@ -208,4 +211,4 @@ class CatBoostRegressorWrapper(CatBoostWrapper):
 
     def predict(self, X: pl.DataFrame) -> np.ndarray:
         X_pd, _ = self._prepare_data(X)
-        return self.model.predict(X_pd)
+        return np.asarray(self.require_model().predict(X_pd))

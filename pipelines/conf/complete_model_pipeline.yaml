@@ -1,0 +1,32 @@
+defaults:
+  - _self_
+  - ablation: default
+  - data: fof8_base
+  - target: economic
+  - split: grouped_universe
+
+# --- Experiment Metadata ---
+complete_experiment_name: "Complete_Model_Evaluation"
+
+# --- Complete Model Inputs ---
+classifier_run_manifest: null
+regressor_run_manifest: null
+classifier_run_id: null
+regressor_run_id: null
+
+# --- Execution Settings ---
+quiet_sweep: true
+seed: 42
+
+# --- Data Slicing & Feature Logic ---
+positions: "all"
+mask_positional_features: true
+
+hydra:
+  job:
+    chdir: True
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}

@@ -1,17 +1,35 @@
 from abc import ABC, abstractmethod
-from typing import Any, cast
+from typing import Any, Generic, Literal, TypeAlias, TypeVar, cast
 
+import catboost as cb
 import numpy as np
 import polars as pl
+import xgboost as xgb
+from sklearn.linear_model import GammaRegressor, TweedieRegressor
+
+ModelRole: TypeAlias = Literal["classifier", "regressor"]
+ModelFamily: TypeAlias = Literal["catboost", "xgb", "sklearn"]
+SupportedClassifierModel: TypeAlias = cb.CatBoostClassifier | xgb.XGBClassifier
+SupportedSklearnRegressorModel: TypeAlias = TweedieRegressor | GammaRegressor
+SupportedRegressorModel: TypeAlias = (
+    cb.CatBoostRegressor | xgb.XGBRegressor | SupportedSklearnRegressorModel
+)
+SupportedMLModel: TypeAlias = SupportedClassifierModel | SupportedRegressorModel
+TModel = TypeVar("TModel", bound=SupportedMLModel)
 
 
-class ModelWrapper(ABC):
+class ModelWrapper(Generic[TModel], ABC):
     """Base class for all machine learning models in the pipeline."""
 
     def __init__(self, use_gpu: bool = False, **params: object) -> None:
         self.params: dict[str, Any] = cast(dict[str, Any], params)
         self.use_gpu = use_gpu
-        self.model: Any = None
+        self.model: TModel | None = None
+
+    def require_model(self) -> TModel:
+        """Return the initialized model, raising if accessed before construction."""
+        assert self.model is not None
+        return self.model
 
     @abstractmethod
     def fit(

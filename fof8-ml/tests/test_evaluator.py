@@ -64,7 +64,7 @@ def test_compute_regressor_oof_metrics_uses_raw_space_directly():
 
     assert metrics["regressor_oof_rmse"] == pytest.approx(3.5355339)
     assert metrics["regressor_oof_mae"] == pytest.approx(3.5)
-    assert "regressor_mean_ndcg_at_128" in metrics
+    assert "regressor_oof_mean_ndcg_at_128" in metrics
 
 
 def test_compute_regressor_oof_metrics_clips_negative_targets_for_ranking_relevance():
@@ -76,9 +76,9 @@ def test_compute_regressor_oof_metrics_clips_negative_targets_for_ranking_releva
         target_space="raw",
         draft_group=np.array(["A:2020", "A:2020", "A:2021"], dtype=object),
     )
-    assert 0.0 <= metrics["regressor_mean_ndcg_at_32"] <= 1.0
-    assert 0.0 <= metrics["regressor_mean_ndcg_at_128"] <= 1.0
-    assert "regressor_draft_value_score" in metrics
+    assert 0.0 <= metrics["regressor_oof_mean_ndcg_at_32"] <= 1.0
+    assert 0.0 <= metrics["regressor_oof_mean_ndcg_at_128"] <= 1.0
+    assert "regressor_oof_draft_value_score" in metrics
 
 
 def test_compute_regressor_oof_metrics_separates_overlapping_years_by_universe():
@@ -98,11 +98,11 @@ def test_compute_regressor_oof_metrics_separates_overlapping_years_by_universe()
         draft_group=np.array(["A:2020", "A:2020", "B:2020", "B:2020"], dtype=object),
     )
 
-    assert metrics_by_draft_class["regressor_mean_ndcg_at_64"] == pytest.approx(0.8154648768)
-    assert metrics_year_only["regressor_mean_ndcg_at_64"] == pytest.approx(0.9197207891)
+    assert metrics_by_draft_class["regressor_oof_mean_ndcg_at_64"] == pytest.approx(0.8154648768)
+    assert metrics_year_only["regressor_oof_mean_ndcg_at_64"] == pytest.approx(0.9197207891)
     assert (
-        metrics_by_draft_class["regressor_mean_ndcg_at_64"]
-        < metrics_year_only["regressor_mean_ndcg_at_64"]
+        metrics_by_draft_class["regressor_oof_mean_ndcg_at_64"]
+        < metrics_year_only["regressor_oof_mean_ndcg_at_64"]
     )
 
 

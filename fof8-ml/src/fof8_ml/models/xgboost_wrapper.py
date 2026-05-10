@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, TypeVar
 
 import mlflow
 import numpy as np
@@ -9,19 +9,21 @@ from mlflow.models import infer_signature
 
 from .base import ModelWrapper
 
+TXGBoostModel = TypeVar("TXGBoostModel", xgb.XGBClassifier, xgb.XGBRegressor)
 
-class XGBoostWrapper(ModelWrapper):
+
+class XGBoostWrapper(ModelWrapper[TXGBoostModel]):
     """Shared logic for XGBoost wrapper."""
 
     def get_best_iteration(self) -> int:
-        return getattr(self.model, "best_iteration", 0)
+        return int(getattr(self.require_model(), "best_iteration", 0))
 
     def _signature_kwargs(self, X: pl.DataFrame | None) -> dict[str, Any]:
         if X is None:
             return {}
         input_example = X.head(5).to_pandas()
         try:
-            prediction = self.model.predict(input_example)
+            prediction = self.require_model().predict(input_example)
             return {
                 "input_example": input_example,
                 "signature": infer_signature(input_example, prediction),
@@ -30,14 +32,17 @@ class XGBoostWrapper(ModelWrapper):
             return {"input_example": input_example}
 
     def log_model(self, name: str, X: pl.DataFrame | None = None) -> None:
-        mlflow.xgboost.log_model(self.model, artifact_path=name, **self._signature_kwargs(X))
+        mlflow.xgboost.log_model(
+            self.require_model(), artifact_path=name, **self._signature_kwargs(X)
+        )
 
     def get_feature_importance(self) -> tuple[list[str], np.ndarray]:
         """Returns feature names and importance values from XGBoost."""
-        return self.model.feature_names_in_.tolist(), self.model.feature_importances_
+        model = self.require_model()
+        return model.feature_names_in_.tolist(), np.asarray(model.feature_importances_)
 
 
-class XGBoostClassifierWrapper(XGBoostWrapper):
+class XGBoostClassifierWrapper(ModelWrapper[xgb.XGBClassifier]):
     def __init__(self, random_seed: int, use_gpu: bool = False, **params: object) -> None:
         super().__init__(use_gpu=use_gpu, **params)
 
@@ -64,38 +69,45 @@ class XGBoostClassifierWrapper(XGBoostWrapper):
         if X_val is not None and y_val is not None:
             eval_set = [(X_val, y_val)]
 
-        self.model.fit(X_train, y_train, eval_set=eval_set, verbose=False)
+        self.require_model().fit(X_train, y_train, eval_set=eval_set, verbose=False)
 
     def predict(self, X: pl.DataFrame) -> np.ndarray:
-        return self.model.predict(X)
+        return np.asarray(self.require_model().predict(X))
 
     def predict_proba(self, X: pl.DataFrame) -> np.ndarray:
-        return self.model.predict_proba(X)[:, 1]
+        return np.asarray(self.require_model().predict_proba(X)[:, 1])
 
     def log_model(self, name: str, X: pl.DataFrame | None = None) -> None:
         if X is None:
-            mlflow.xgboost.log_model(self.model, artifact_path=name)
+            mlflow.xgboost.log_model(self.require_model(), artifact_path=name)
             return
 
         input_example = X.head(5).to_pandas()
         try:
-            prediction = self.model.predict_proba(input_example)[:, 1]
+            prediction = self.require_model().predict_proba(input_example)[:, 1]
             signature = infer_signature(input_example, prediction)
             mlflow.xgboost.log_model(
-                self.model,
+                self.require_model(),
                 artifact_path=name,
                 input_example=input_example,
                 signature=signature,
             )
         except Exception:
             mlflow.xgboost.log_model(
-                self.model,
+                self.require_model(),
                 artifact_path=name,
                 input_example=input_example,
             )
 
+    def get_best_iteration(self) -> int:
+        return int(getattr(self.require_model(), "best_iteration", 0))
 
-class XGBoostRegressorWrapper(XGBoostWrapper):
+    def get_feature_importance(self) -> tuple[list[str], np.ndarray]:
+        model = self.require_model()
+        return model.feature_names_in_.tolist(), np.asarray(model.feature_importances_)
+
+
+class XGBoostRegressorWrapper(ModelWrapper[xgb.XGBRegressor]):
     def __init__(self, random_seed: int, use_gpu: bool = False, **params: object) -> None:
         super().__init__(use_gpu=use_gpu, **params)
         clean_params = self.params.copy()
@@ -127,7 +139,32 @@ class XGBoostRegressorWrapper(XGBoostWrapper):
         if X_val is not None and y_val is not None:
             eval_set = [(X_val, y_val)]
 
-        self.model.fit(X_train, y_train, eval_set=eval_set, verbose=False)
+        self.require_model().fit(X_train, y_train, eval_set=eval_set, verbose=False)
 
     def predict(self, X: pl.DataFrame) -> np.ndarray:
-        return self.model.predict(X)
+        return np.asarray(self.require_model().predict(X))
+
+    def get_best_iteration(self) -> int:
+        return int(getattr(self.require_model(), "best_iteration", 0))
+
+    def log_model(self, name: str, X: pl.DataFrame | None = None) -> None:
+        mlflow.xgboost.log_model(
+            self.require_model(), artifact_path=name, **self._signature_kwargs(X)
+        )
+
+    def _signature_kwargs(self, X: pl.DataFrame | None) -> dict[str, Any]:
+        if X is None:
+            return {}
+        input_example = X.head(5).to_pandas()
+        try:
+            prediction = self.require_model().predict(input_example)
+            return {
+                "input_example": input_example,
+                "signature": infer_signature(input_example, prediction),
+            }
+        except Exception:
+            return {"input_example": input_example}
+
+    def get_feature_importance(self) -> tuple[list[str], np.ndarray]:
+        model = self.require_model()
+        return model.feature_names_in_.tolist(), np.asarray(model.feature_importances_)

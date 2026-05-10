@@ -282,7 +282,7 @@ def test_regressor_skips_final_refit_by_default_in_validation_holdout_mode(monke
         lambda **_kwargs: {
             "regressor_oof_rmse": 1.0,
             "regressor_oof_mae": 1.0,
-            "regressor_draft_value_score": 0.5,
+            "regressor_oof_draft_value_score": 0.5,
         },
     )
     monkeypatch.setattr(
@@ -377,7 +377,7 @@ def test_regressor_uses_runtime_progress_setting_for_opt_in_final_refit(monkeypa
         lambda **_kwargs: {
             "regressor_oof_rmse": 1.0,
             "regressor_oof_mae": 1.0,
-            "regressor_draft_value_score": 0.5,
+            "regressor_oof_draft_value_score": 0.5,
         },
     )
     monkeypatch.setattr(
