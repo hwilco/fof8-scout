@@ -62,7 +62,7 @@ stages:
       - fof8-ml/src/fof8_ml/models/
       - fof8-ml/src/fof8_ml/evaluation/
       - pipelines/evaluate_complete_model.py
-      - pipelines/conf/regressor_pipeline.yaml
+      - pipelines/conf/complete_model_pipeline.yaml
       - pipelines/conf/
     outs:
       - outputs/complete_model_metrics.json

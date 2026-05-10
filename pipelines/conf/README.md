@@ -6,6 +6,7 @@ This directory contains Hydra config groups used by training and inference entry
 
 - `classifier_pipeline.yaml`: classifier training defaults and Hydra runtime settings.
 - `regressor_pipeline.yaml`: regressor training defaults and Hydra runtime settings.
+- `complete_model_pipeline.yaml`: complete-model evaluation defaults and runtime inputs.
 
 Both root pipeline configs expose `runtime.refit_final_model`.
 
