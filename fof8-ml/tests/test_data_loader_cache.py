@@ -382,6 +382,7 @@ def test_loader_auto_includes_elite_source_column_in_scorecard(monkeypatch):
             "Economic_Success": [1, 1],
             "Cleared_Sieve": [1, 1],
             "Peak_Overall": [70.0, 65.0],
+            "Top3_Mean_Current_Overall": [72.0, 67.0],
             "Career_Games_Played": [16, 32],
         }
     )
@@ -400,7 +401,7 @@ def test_loader_auto_includes_elite_source_column_in_scorecard(monkeypatch):
 
 
 def test_loader_fails_for_missing_required_outcome_scorecard_column(monkeypatch):
-    cfg = _make_cfg()
+    cfg = _make_cfg(**{"target.outcome_scorecard.columns": ["Peak_Overall", "Award_Count"]})
     loader = DataLoader(exp_root=".", quiet=True)
 
     source_df = pl.DataFrame(
@@ -417,6 +418,8 @@ def test_loader_fails_for_missing_required_outcome_scorecard_column(monkeypatch)
             "Positive_DPO": [0.8],
             "Economic_Success": [1],
             "Cleared_Sieve": [1],
+            "Peak_Overall": [70.0],
+            "Top3_Mean_Current_Overall": [72.0],
             "Career_Games_Played": [16],
         }
     )

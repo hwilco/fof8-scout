@@ -55,8 +55,8 @@ Overall-based targets and economic targets answer different questions.
 
 Examples:
 
-- `Peak_Overall`
-- mean of top 3 `Current_Overall` observations
+- `Peak_Overall` = single highest `Current_Overall`
+- `Top3_Mean_Current_Overall` = mean of top 3 `Current_Overall` observations
 - years above a position-specific starter overall threshold
 
 Use these when the question is:
@@ -147,6 +147,12 @@ resulting draft board on multiple held-out definitions of success:
 
 A strong target should not only predict itself. It should create draft boards that look
 good under several reasonable definitions of "good player."
+
+When comparing overall-based targets against economic targets, the primary decision should be made
+from cross-outcome draft-board metrics rather than the stitched model's self-target score. In this
+repo, `complete_draft_value_score` is computed against the active regressor target, so it is
+appropriate for within-target comparisons but not as the main cross-target selector for experiments
+like Phase 4 Set B.
 
 ## Recommended Modeling Direction
 

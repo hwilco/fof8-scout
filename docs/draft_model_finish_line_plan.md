@@ -48,6 +48,7 @@ targets without rewriting pipeline code.
 Target-family convention:
 
 - `Peak_Overall` is a talent target.
+- `Top3_Mean_Current_Overall` is a smoothed talent target.
 - `Career_Merit_Cap_Share` is an economic target.
 - `DPO` is a composite target (talent x economic) and should stay a baseline/comparison target.
 
@@ -58,6 +59,7 @@ Target-family convention:
    Current processed data already contains:
 
    - `Peak_Overall`
+   - `Top3_Mean_Current_Overall`
    - `Career_Games_Played`
    - `Cleared_Sieve`
    - `DPO`
@@ -67,7 +69,6 @@ Target-family convention:
 
    - `Positive_Career_Merit_Cap_Share = max(Career_Merit_Cap_Share, 0)`
    - `Positive_DPO = max(DPO, 0)`
-   - `Top3_Mean_Current_Overall` if it differs from existing `Peak_Overall`
    - optional `Economic_Success = Career_Merit_Cap_Share > 0`
 
    Likely files:
@@ -200,9 +201,9 @@ one live draft class, and global NDCG can be dominated by unusually strong or we
      Career_Merit_Cap_Share
      Positive_DPO
 
-   Talent:
+  Talent:
      Peak_Overall
-     Top3_Mean_Current_Overall if available
+     Top3_Mean_Current_Overall
 
    Longevity:
      Career_Games_Played
@@ -469,6 +470,17 @@ The key question is not "does the overall-trained model predict overall?" It is 
 the overall-trained board holds up against economic and draft-utility outcomes better than
 the economic-trained board holds up against talent outcomes.
 
+Interpretation rule for Set B:
+
+- do not use `complete_draft_value_score` as the primary cross-family decision metric for Set B,
+  because it is computed against the active regressor target and therefore favors self-prediction
+- use cross-outcome metrics as the decision surface instead:
+  - `complete_econ_mean_ndcg_at_64`
+  - `complete_bust_rate_at_32`
+  - `complete_elite_precision_at_32`
+  - `complete_elite_recall_at_64`
+  - manual board inspection
+
 ### Experiment Set C: Feature/Ablation Sensitivity
 
 Run the leading target/loss under:
@@ -495,6 +507,46 @@ D4: top position-relative economic percentile
 ```
 
 Evaluate complete model quality, not just classifier PR-AUC.
+
+### Experiment Set E: Talent Plus Positional Value Adjustment
+
+Trigger:
+
+- run only if Set B shows that raw talent targets add useful information but do not beat the
+  economic champion directly
+
+Goal:
+
+- test whether a talent-centered board can recover cross-position draft utility by learning an
+  explicit position-aware adjustment layer instead of using the economic target directly as the
+  primary regressor target
+
+Suggested baseline:
+
+```text
+talent base model = B3
+economic champion comparator = C1_A2
+economic fallback comparator = C1_A1
+```
+
+Suggested variants:
+
+```text
+E1: predicted talent * learned position-group multiplier
+E2: position-group-specific monotonic talent-to-utility mapping
+E3: small second-stage utility model using predicted talent + Position_Group
+```
+
+Evaluation rule:
+
+- fit the adjustment layer on train only
+- freeze it on holdout
+- judge the branch primarily on cross-outcome draft-board metrics:
+  - `complete_econ_mean_ndcg_at_64`
+  - `complete_bust_rate_at_32`
+  - `complete_elite_precision_at_32`
+  - `complete_elite_recall_at_64`
+  - manual board inspection
 
 ### Acceptance Criteria
 
@@ -556,6 +608,18 @@ Prefer a candidate if:
 - it has useful magnitude calibration in top-k decision regions
 - it generalizes across held-out years and positions
 - it supports trade decisions with interpretable units
+
+### Conditional Exploration Branch
+
+If Set B fails as a direct target replacement but remains attractive on talent, elite, or
+bust-oriented behavior, keep the main champion process anchored to the economic family while
+running Set E as a separate branch.
+
+Set E should only displace the economic champion if:
+
+- it materially narrows the economic NDCG gap
+- it preserves the useful Set B risk/elite behavior
+- it produces a more defensible cross-position board in manual review
 
 ## Phase 6: Productionization
 
@@ -647,11 +711,11 @@ then each new target/loss/feature decision is evaluated against it.
 - Pass draft year from `meta_train`.
 - Log composite `regressor_draft_value_score`.
 - Set `pipelines/conf/regressor_pipeline.yaml` optimization metric to the composite.
-- Current cross-outcome coverage: economic, talent via `Peak_Overall`, and longevity via
-  `Career_Games_Played`.
-- Deferred optional labels: `Top3_Mean_Current_Overall`, `Award_Count`,
-  `Hall_of_Fame_Flag`, and `Hall_Of_Fame_Points` are wired into the scorecard contract and
-  evaluator when present, but remain optional dataset columns.
+- Current cross-outcome coverage: economic, talent via `Peak_Overall` and
+  `Top3_Mean_Current_Overall`, and longevity via `Career_Games_Played`.
+- Deferred optional labels: `Award_Count`, `Hall_of_Fame_Flag`, and `Hall_Of_Fame_Points`
+  are wired into the scorecard contract and evaluator when present, but remain optional dataset
+  columns.
 - Follow-up extension: add configurable derived elite labels with default
   `Career_Merit_Cap_Share` 95th percentile within `Position_Group`, using training-only
   threshold fitting and frozen holdout application.

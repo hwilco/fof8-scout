@@ -5,24 +5,25 @@ import os
 from typing import Any
 
 import polars as pl
+from mlflow.tracking import MlflowClient
 from omegaconf import DictConfig
 
 from fof8_ml.evaluation.complete_model import evaluate_complete_model_by_slice
 from fof8_ml.orchestration.experiment_logger import ExperimentLogger
 from fof8_ml.orchestration.pipeline_runner import resolve_exp_root
-from fof8_ml.reporting.phase4_report import (
+from fof8_ml.reporting.matrix_report import (
     load_candidate_manifests,
     load_matrix_manifest,
     resolve_matrix_manifest_path,
 )
 
 
-def _download_csv(client: Any, run_id: str, artifact_path: str) -> pl.DataFrame:
+def _download_csv(client: MlflowClient, run_id: str, artifact_path: str) -> pl.DataFrame:
     local_path = client.download_artifacts(run_id, artifact_path)
     return pl.read_csv(local_path)
 
 
-def _artifact_exists(client: Any, run_id: str, artifact_path: str) -> bool:
+def _artifact_exists(client: MlflowClient, run_id: str, artifact_path: str) -> bool:
     parent = os.path.dirname(artifact_path)
     target = artifact_path
     artifacts = client.list_artifacts(run_id, parent)
@@ -119,15 +120,15 @@ def _position_mix_rows(candidate: dict[str, Any], k: int) -> pl.DataFrame:
     )
 
 
-def export_phase4_diagnostics(cfg: DictConfig, *, exp_root: str | None = None) -> dict[str, Any]:
+def export_matrix_diagnostics(cfg: DictConfig, *, exp_root: str | None = None) -> dict[str, Any]:
     exp_root = exp_root or resolve_exp_root(
-        os.path.join(os.getcwd(), "pipelines", "export_phase4_diagnostics.py")
+        os.path.join(os.getcwd(), "pipelines", "export_matrix_diagnostics.py")
     )
     manifest_path = resolve_matrix_manifest_path(cfg, exp_root=exp_root)
     matrix_manifest = load_matrix_manifest(manifest_path)
     candidate_manifests = load_candidate_manifests(matrix_manifest)
 
-    logger = ExperimentLogger(exp_root, f"Phase4_Diagnostics_{cfg.phase4.matrix_name}")
+    logger = ExperimentLogger(exp_root, f"Matrix_Diagnostics_{cfg.matrix.matrix_name}")
     logger.init_tracking()
     if logger.client is None:
         raise RuntimeError("MLflow tracking client was not initialized.")
@@ -179,7 +180,7 @@ def export_phase4_diagnostics(cfg: DictConfig, *, exp_root: str | None = None) -
     position_summary = (
         pl.concat(position_rows, how="vertical_relaxed") if position_rows else pl.DataFrame()
     )
-    position_summary_path = os.path.join(resolved_output_dir, "phase4_position_group_summary.csv")
+    position_summary_path = os.path.join(resolved_output_dir, "position_group_summary.csv")
     position_summary.write_csv(position_summary_path)
 
     overlap_rows = []

@@ -6,6 +6,7 @@ from fof8_core.loader import FOF8Loader
 
 TALENT_TARGET_COLUMNS = [
     "Peak_Overall",
+    "Top3_Mean_Current_Overall",
 ]
 
 TALENT_OUTPUT_COLUMNS = [
@@ -14,20 +15,25 @@ TALENT_OUTPUT_COLUMNS = [
 ]
 
 
-def get_peak_overall(loader: FOF8Loader, k: int = 1, timeframe: int | None = None) -> pl.DataFrame:
+def _get_topk_mean_current_overall(
+    loader: FOF8Loader,
+    *,
+    k: int,
+    output_col: str,
+    timeframe: int | None = None,
+) -> pl.DataFrame:
     """
-    Calculates the mean of the top k Current_Overall values for each player,
-    using the league-scout post-exhibition ratings.
+    Calculates a top-k Current_Overall summary for each player using exhibition ratings.
 
     Args:
         loader: An instance of FOF8Loader to access the data.
-        k: The number of top ratings to consider for calculating the peak overall. Default is 1
-            (i.e., the single highest rating).
+        k: The number of top ratings to average.
+        output_col: Output column name for the aggregated talent target.
         timeframe: Optional number of career years (starting from each player's first
             observed exhibition rating year) to include. If None, considers all
             available seasons. Default is None.
     Returns:
-        A DataFrame with Player_ID and their corresponding Peak_Overall rating.
+        A DataFrame with Player_ID and the requested talent target column.
     """
     if k < 1:
         raise ValueError("k must be >= 1.")
@@ -51,6 +57,29 @@ def get_peak_overall(loader: FOF8Loader, k: int = 1, timeframe: int | None = Non
 
         return (
             lf_exhibition.group_by("Player_ID")
-            .agg(pl.col("Current_Overall").top_k(k).mean().alias("Peak_Overall"))
+            .agg(pl.col("Current_Overall").top_k(k).mean().alias(output_col))
             .collect()
         )
+
+
+def get_peak_overall(loader: FOF8Loader, timeframe: int | None = None) -> pl.DataFrame:
+    """Return each player's single highest exhibition Current_Overall rating."""
+    return _get_topk_mean_current_overall(
+        loader,
+        k=1,
+        output_col="Peak_Overall",
+        timeframe=timeframe,
+    )
+
+
+def get_top3_mean_current_overall(
+    loader: FOF8Loader,
+    timeframe: int | None = None,
+) -> pl.DataFrame:
+    """Return the mean of each player's top-3 exhibition Current_Overall ratings."""
+    return _get_topk_mean_current_overall(
+        loader,
+        k=3,
+        output_col="Top3_Mean_Current_Overall",
+        timeframe=timeframe,
+    )

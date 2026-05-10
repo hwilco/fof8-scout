@@ -1,7 +1,7 @@
 defaults:
   - common
 
-matrix_name: "phase4_set_a_economic"
+matrix_name: "economic_target_loss"
 shared:
   tags:
     phase: "4"

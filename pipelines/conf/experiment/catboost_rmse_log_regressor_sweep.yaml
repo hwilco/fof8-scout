@@ -1,0 +1,27 @@
+# @package _global_
+
+# A2 follow-up tuning run: Positive_Career_Merit_Cap_Share + CatBoost RMSE log1p.
+
+defaults:
+  - override /model: catboost_regressor_rmse
+  - override /hparams_search: catboost_rmse_log_regressor
+
+experiment_name: "Regressor_CatBoost_RMSE_Log_A2_Hyperopt_v1"
+quiet_sweep: true
+
+target:
+  regressor_intensity:
+    target_col: "Positive_Career_Merit_Cap_Share"
+    target_space: "log"
+    target_family: "economic"
+
+optimization:
+  metric: "regressor_val_draft_value_score"
+  direction: "maximize"
+
+hydra:
+  sweeper:
+    n_trials: 60
+    direction: ${optimization.direction}
+    study_name: catboost_rmse_log_positive_merit_a2_v1
+    storage: sqlite:///fof8-ml/optuna.db

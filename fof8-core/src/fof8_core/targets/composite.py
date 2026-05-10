@@ -39,7 +39,7 @@ def add_dpo_columns(df: pl.DataFrame) -> pl.DataFrame:
 
 def get_dpo_targets(loader: FOF8Loader) -> pl.DataFrame:
     """Build DPO composite targets by joining talent and merit sources."""
-    df_peak = get_peak_overall(loader, k=3)
+    df_peak = get_peak_overall(loader)
     df_merit = get_merit_cap_share(loader)
 
     all_ids = pl.concat(

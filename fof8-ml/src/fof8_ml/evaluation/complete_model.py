@@ -252,6 +252,7 @@ def _load_role_bundle(
 
     if use_local_bundle:
         assert local_bundle is not None
+        assert metadata_path is not None
         with open(metadata_path, encoding="utf-8") as handle:
             bundle_metadata = json.load(handle)
         with open(local_bundle / FEATURE_SCHEMA_ARTIFACT_PATH, encoding="utf-8") as handle:

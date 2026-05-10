@@ -19,6 +19,7 @@ def test_get_draft_outcome_targets_builds_bundle_in_stable_order(monkeypatch):
     )
     df_dpo = pl.DataFrame({"Player_ID": [1, 3], "DPO": [20.0, -2.0], "Positive_DPO": [20.0, 0.0]})
     df_peak = pl.DataFrame({"Player_ID": [1, 3], "Peak_Overall": [80.0, 10.0]})
+    df_top3 = pl.DataFrame({"Player_ID": [1, 2], "Top3_Mean_Current_Overall": [76.0, 40.0]})
     df_outcomes = pl.DataFrame({"Player_ID": [2, 3], "Career_Games_Played": [16, None]})
 
     monkeypatch.setattr(
@@ -28,6 +29,10 @@ def test_get_draft_outcome_targets_builds_bundle_in_stable_order(monkeypatch):
     monkeypatch.setattr("fof8_core.targets.draft_outcomes.get_dpo_targets", lambda _: df_dpo)
     monkeypatch.setattr(
         "fof8_core.targets.draft_outcomes.get_peak_overall", lambda _loader, **_kwargs: df_peak
+    )
+    monkeypatch.setattr(
+        "fof8_core.targets.draft_outcomes.get_top3_mean_current_overall",
+        lambda _loader, **_kwargs: df_top3,
     )
     monkeypatch.setattr(
         "fof8_core.targets.draft_outcomes.get_career_outcomes", lambda _: df_outcomes

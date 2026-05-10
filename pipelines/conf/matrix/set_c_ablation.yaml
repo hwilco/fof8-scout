@@ -1,0 +1,95 @@
+defaults:
+  - common
+
+matrix_name: "feature_ablation"
+shared:
+  classifier_source: "train_per_candidate"
+  tags:
+    phase: "4"
+    matrix_stage: "follow_up"
+    experiment_set: "C"
+candidates:
+  - candidate_id: "C1_A2"
+    label: "a2_default_ablation"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "log"
+  - candidate_id: "C2_A2"
+    label: "a2_keep_college"
+    ablation:
+      toggles:
+        no_college: false
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "log"
+  - candidate_id: "C3_A2"
+    label: "a2_keep_scout"
+    ablation:
+      toggles:
+        no_scout: false
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "log"
+  - candidate_id: "C4_A2"
+    label: "a2_keep_delta"
+    ablation:
+      toggles:
+        no_delta: false
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "log"
+  - candidate_id: "C5_A2"
+    label: "a2_position_group_only"
+    ablation:
+      toggles:
+        no_position: true
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "log"
+  - candidate_id: "C1_A1"
+    label: "a1_default_ablation"
+    regressor:
+      model: "catboost_regressor_tweedie"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "raw"
+  - candidate_id: "C2_A1"
+    label: "a1_keep_college"
+    ablation:
+      toggles:
+        no_college: false
+    regressor:
+      model: "catboost_regressor_tweedie"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "raw"
+  - candidate_id: "C3_A1"
+    label: "a1_keep_scout"
+    ablation:
+      toggles:
+        no_scout: false
+    regressor:
+      model: "catboost_regressor_tweedie"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "raw"
+  - candidate_id: "C4_A1"
+    label: "a1_keep_delta"
+    ablation:
+      toggles:
+        no_delta: false
+    regressor:
+      model: "catboost_regressor_tweedie"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "raw"
+  - candidate_id: "C5_A1"
+    label: "a1_position_group_only"
+    ablation:
+      toggles:
+        no_position: true
+    regressor:
+      model: "catboost_regressor_tweedie"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "raw"

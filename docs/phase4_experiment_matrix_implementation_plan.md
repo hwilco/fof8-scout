@@ -6,6 +6,14 @@ into a concrete repo implementation plan.
 It focuses on the missing functionality required to run target/loss experiments in a controlled,
 comparable, mostly automated way.
 
+Update after completed Sets A-C and first-pass Set B:
+
+- Sets A and C support the current economic-family champion (`C1_A2`)
+- Set B does not justify replacing that champion with a raw overall-target board
+- the main remaining research branch is a talent target plus explicit positional-value adjustment,
+  which should be treated as a follow-up branch rather than as evidence that raw overall targets
+  are sufficient
+
 ## Objective
 
 Phase 4 is not blocked on basic metrics anymore. The repo already has:
@@ -165,15 +173,16 @@ Represent each experiment candidate as declarative config rather than shell-comm
 
 Create a new config area:
 
-- `pipelines/conf/phase4/`
+- `pipelines/conf/matrix/`
 
 Suggested files:
 
-- `pipelines/conf/phase4/set_a_economic.yaml`
-- `pipelines/conf/phase4/set_b_overall.yaml`
-- `pipelines/conf/phase4/set_c_ablation.yaml`
-- `pipelines/conf/phase4/set_d_classifier_sieve.yaml`
-- `pipelines/conf/phase4/common.yaml`
+- `pipelines/conf/matrix/set_a_economic.yaml`
+- `pipelines/conf/matrix/set_b_overall.yaml`
+- `pipelines/conf/matrix/set_c_ablation.yaml`
+- `pipelines/conf/matrix/set_d_classifier_sieve.yaml`
+- `pipelines/conf/matrix/set_e_talent_position_adjusted.yaml`
+- `pipelines/conf/matrix/common.yaml`
 
 Suggested config contract:
 
@@ -215,6 +224,12 @@ Design rule:
 - avoid complex list/dict categorical values in sweep search spaces
 - keep candidate definitions directly serializable into MLflow params/tags
 
+Future branch note:
+
+- Set E should support post-regressor adjustment metadata or explicit candidate descriptors for the
+  positional-value layer so the comparison table can distinguish raw talent boards from
+  talent-plus-adjustment boards
+
 #### B. Add target-profile overlays
 
 Add or extend target config overlays to support Phase 4 Set D classifier definitions.
@@ -248,7 +263,7 @@ Run one Phase 4 candidate end to end with a single command.
 
 Create:
 
-- `pipelines/run_phase4_matrix.py`
+- `pipelines/run_experiment_matrix.py`
 
 Responsibilities:
 
@@ -266,13 +281,13 @@ The runner should not duplicate training logic. It should call the existing entr
 Preferred architecture:
 
 - thin Hydra pipeline script in `pipelines/`
-- orchestration logic in `fof8-ml/src/fof8_ml/orchestration/phase4_matrix.py`
+- orchestration logic in `fof8-ml/src/fof8_ml/orchestration/experiment_matrix.py`
 
 #### B. Add reusable candidate execution module
 
 Create:
 
-- `fof8-ml/src/fof8_ml/orchestration/phase4_matrix.py`
+- `fof8-ml/src/fof8_ml/orchestration/experiment_matrix.py`
 
 Suggested public API:
 
@@ -325,6 +340,14 @@ The runner should support:
 
 This distinction matters because Set A/B/C and Set D have different needs.
 
+After first-pass Set B, the next distinct need is:
+
+- `postprocess_per_candidate`: reuse a talent regressor run but apply a train-only learned
+  positional-value transformation before complete-model evaluation
+
+That future Set E branch should remain separate from the raw Set B interpretation because it tests
+a different hypothesis.
+
 ### Acceptance criteria
 
 - one command can execute a full matrix or a selected candidate subset
@@ -337,14 +360,20 @@ This distinction matters because Set A/B/C and Set D have different needs.
 
 Export a stable, comparable scorecard across candidates.
 
+Post-Set-B interpretation rule:
+
+- reports should expose both self-target stitched metrics and cross-outcome metrics
+- cross-family decisions involving Set B or Set E should be based primarily on the cross-outcome
+  table, not on the self-target stitched score alone
+
 ### Required additions
 
 #### A. Add matrix comparison exporter
 
 Create:
 
-- `pipelines/export_phase4_report.py`
-- `fof8-ml/src/fof8_ml/reporting/phase4_report.py`
+- `pipelines/export_matrix_report.py`
+- `fof8-ml/src/fof8_ml/reporting/matrix_report.py`
 
 Responsibilities:
 
@@ -687,8 +716,8 @@ Reason:
 
 Files:
 
-- `pipelines/run_phase4_matrix.py`
-- `fof8-ml/src/fof8_ml/orchestration/phase4_matrix.py`
+- `pipelines/run_experiment_matrix.py`
+- `fof8-ml/src/fof8_ml/orchestration/experiment_matrix.py`
 
 Reason:
 
@@ -709,8 +738,8 @@ Reason:
 
 Files:
 
-- `pipelines/export_phase4_report.py`
-- `fof8-ml/src/fof8_ml/reporting/phase4_report.py`
+- `pipelines/export_matrix_report.py`
+- `fof8-ml/src/fof8_ml/reporting/matrix_report.py`
 - `fof8-ml/src/fof8_ml/reporting/portfolio_score.py`
 
 Reason:
@@ -775,19 +804,19 @@ Examples only; exact CLI shape can change.
 Run one matrix:
 
 ```bash
-uv run python pipelines/run_phase4_matrix.py phase4=set_a_economic
+uv run python pipelines/run_experiment_matrix.py matrix=set_a_economic
 ```
 
 Run selected candidates only:
 
 ```bash
-uv run python pipelines/run_phase4_matrix.py phase4=set_a_economic phase4.candidate_ids=[A1,A2]
+uv run python pipelines/run_experiment_matrix.py matrix=set_a_economic candidate_ids=[A1,A2]
 ```
 
 Export comparison report:
 
 ```bash
-uv run python pipelines/export_phase4_report.py matrix_name=phase4_set_a_economic
+uv run python pipelines/export_matrix_report.py matrix_name=phase4_set_a_economic
 ```
 
 Export board diffs:

@@ -7,9 +7,9 @@ This directory contains Hydra config groups used by training and inference entry
 - `classifier_pipeline.yaml`: classifier training defaults and Hydra runtime settings.
 - `regressor_pipeline.yaml`: regressor training defaults and Hydra runtime settings.
 - `complete_model_pipeline.yaml`: complete-model evaluation defaults and runtime inputs.
-- `phase4_matrix_pipeline.yaml`: first-pass target/loss matrix runner defaults.
-- `phase4_report_pipeline.yaml`: Phase 4 comparison report export defaults.
-- `phase4_diagnostics_pipeline.yaml`: Phase 4 second-pass diagnostics export defaults.
+- `experiment_matrix_pipeline.yaml`: first-pass target/loss matrix runner defaults.
+- `matrix_report_pipeline.yaml`: Matrix comparison report export defaults.
+- `matrix_diagnostics_pipeline.yaml`: Matrix second-pass diagnostics export defaults.
 
 Both root pipeline configs expose `runtime.refit_final_model`.
 
@@ -30,7 +30,7 @@ Both root pipeline configs expose `runtime.refit_final_model`.
 - `model/`: model family + wrapper parameters.
 - `hparams_search/`: Optuna/Hydra search spaces.
 - `experiment/`: reusable sweep presets and run metadata.
-- `phase4/`: declarative candidate matrices for Phase 4 target/loss comparisons.
+- `matrix/`: declarative candidate matrices for Matrix target/loss comparisons.
 
 
 ## Data And Split Configuration

@@ -1,0 +1,28 @@
+defaults:
+  - common
+
+matrix_name: "overall_target"
+shared:
+  tags:
+    phase: "4"
+    matrix_stage: "first_pass"
+    experiment_set: "B"
+candidates:
+  - candidate_id: "B1"
+    label: "peak_overall_rmse_raw"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Peak_Overall"
+      target_space: "raw"
+  - candidate_id: "B2"
+    label: "peak_overall_mae_raw"
+    regressor:
+      model: "catboost_regressor_mae"
+      target_col: "Peak_Overall"
+      target_space: "raw"
+  - candidate_id: "B3"
+    label: "top3_mean_current_overall_rmse_raw"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Top3_Mean_Current_Overall"
+      target_space: "raw"

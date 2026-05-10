@@ -1,9 +1,9 @@
 defaults:
   - _self_
-  - phase4: set_a_economic
+  - matrix: set_a_economic
 
-candidate_ids: []
-quiet_sweep: true
+manifest_path: null
+output_dir: null
 
 hydra:
   job:

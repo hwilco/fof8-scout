@@ -5,10 +5,11 @@ import os
 from typing import Any, cast
 
 import polars as pl
+from mlflow.tracking import MlflowClient
 from omegaconf import DictConfig
 
 from fof8_ml.orchestration.experiment_logger import ExperimentLogger
-from fof8_ml.orchestration.phase4_matrix import _phase4_output_dir
+from fof8_ml.orchestration.experiment_matrix import _matrix_output_dir
 from fof8_ml.orchestration.pipeline_runner import resolve_exp_root
 
 CORE_METRIC_COLUMNS = [
@@ -47,20 +48,20 @@ def resolve_matrix_manifest_path(cfg: DictConfig, *, exp_root: str | None = None
     if cfg.get("manifest_path"):
         return os.path.abspath(str(cfg.manifest_path))
     exp_root = exp_root or resolve_exp_root(
-        os.path.join(os.getcwd(), "pipelines", "export_phase4_report.py")
+        os.path.join(os.getcwd(), "pipelines", "export_matrix_report.py")
     )
     return os.path.join(
-        _phase4_output_dir(
+        _matrix_output_dir(
             exp_root,
-            str(cfg.phase4.matrix_name),
-            str(cfg.phase4.get("output_subdir", "phase4")),
+            str(cfg.matrix.matrix_name),
+            str(cfg.matrix.get("output_subdir", "matrices")),
         ),
         "matrix_manifest.json",
     )
 
 
 def flatten_candidate_summary(
-    client: Any,
+    client: MlflowClient,
     candidate_manifest: dict[str, Any],
 ) -> dict[str, Any]:
     complete_run = client.get_run(candidate_manifest["complete_run_id"])
@@ -90,14 +91,14 @@ def flatten_candidate_summary(
     return row
 
 
-def export_phase4_report(cfg: DictConfig, *, exp_root: str | None = None) -> dict[str, Any]:
+def export_matrix_report(cfg: DictConfig, *, exp_root: str | None = None) -> dict[str, Any]:
     exp_root = exp_root or resolve_exp_root(
-        os.path.join(os.getcwd(), "pipelines", "export_phase4_report.py")
+        os.path.join(os.getcwd(), "pipelines", "export_matrix_report.py")
     )
     manifest_path = resolve_matrix_manifest_path(cfg, exp_root=exp_root)
     manifest = load_matrix_manifest(manifest_path)
 
-    logger = ExperimentLogger(exp_root, f"Phase4_Report_{cfg.phase4.matrix_name}")
+    logger = ExperimentLogger(exp_root, f"Matrix_Report_{cfg.matrix.matrix_name}")
     logger.init_tracking()
     if logger.client is None:
         raise RuntimeError("MLflow tracking client was not initialized.")
@@ -112,9 +113,7 @@ def export_phase4_report(cfg: DictConfig, *, exp_root: str | None = None) -> dic
     if output_path:
         resolved_output_path = os.path.abspath(str(output_path))
     else:
-        resolved_output_path = os.path.join(
-            os.path.dirname(manifest_path), "phase4_candidate_summary.csv"
-        )
+        resolved_output_path = os.path.join(os.path.dirname(manifest_path), "candidate_summary.csv")
     os.makedirs(os.path.dirname(resolved_output_path), exist_ok=True)
     table.write_csv(resolved_output_path)
     return {

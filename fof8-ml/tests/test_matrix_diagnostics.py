@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import polars as pl
 from fof8_ml.orchestration.experiment_logger import ExperimentLogger
-from fof8_ml.reporting.phase4_diagnostics import export_phase4_diagnostics
+from fof8_ml.reporting.matrix_diagnostics import export_matrix_diagnostics
 from omegaconf import OmegaConf
 
 
@@ -22,8 +22,8 @@ class _FakeMlflowClient:
         ]
 
 
-def test_export_phase4_diagnostics_writes_second_pass_artifacts(monkeypatch, tmp_path):
-    matrix_dir = tmp_path / "outputs" / "phase4" / "phase4_set_a_economic"
+def test_export_matrix_diagnostics_writes_second_pass_artifacts(monkeypatch, tmp_path):
+    matrix_dir = tmp_path / "outputs" / "matrices" / "economic_target_loss"
     matrix_dir.mkdir(parents=True)
 
     candidate_a_manifest = {
@@ -48,7 +48,7 @@ def test_export_phase4_diagnostics_writes_second_pass_artifacts(monkeypatch, tmp
     (matrix_dir / "matrix_manifest.json").write_text(
         __import__("json").dumps(
             {
-                "matrix_name": "phase4_set_a_economic",
+                "matrix_name": "economic_target_loss",
                 "candidates": [
                     {
                         "candidate_id": "A1",
@@ -135,18 +135,18 @@ def test_export_phase4_diagnostics_writes_second_pass_artifacts(monkeypatch, tmp
         {
             "manifest_path": None,
             "output_dir": None,
-            "phase4": {
-                "matrix_name": "phase4_set_a_economic",
-                "output_subdir": "phase4",
+            "matrix": {
+                "matrix_name": "economic_target_loss",
+                "output_subdir": "matrices",
             },
         }
     )
 
-    result = export_phase4_diagnostics(cfg, exp_root=str(tmp_path))
+    result = export_matrix_diagnostics(cfg, exp_root=str(tmp_path))
 
     assert result["candidate_count"] == 2
     for filename in [
-        "phase4_position_group_summary.csv",
+        "position_group_summary.csv",
         "board_overlap_summary.csv",
         "board_rank_deltas.csv",
         "board_position_mix.csv",
