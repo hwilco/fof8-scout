@@ -489,6 +489,7 @@ def test_fixed_classifier_complete_eval_keeps_classifier_feature_schema(monkeypa
         "fof8_ml.orchestration.experiment_matrix._prepare_pipeline_cfg",
         fake_prepare_pipeline_cfg,
     )
+
     def fake_train_regressor(_exp_root, cfg_obj):
         regressor_toggles.append(dict(cfg_obj.ablation.toggles))
         return MatrixRunResult(

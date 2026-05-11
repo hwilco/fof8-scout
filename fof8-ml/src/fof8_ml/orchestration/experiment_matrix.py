@@ -528,9 +528,7 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
                 ablation_toggles=candidate.classifier_ablation_toggles,
                 **prepare_kwargs,
             )
-            with timed_step(
-                f"matrix.{candidate.candidate_id}.train_classifier", enabled=timing_on
-            ):
+            with timed_step(f"matrix.{candidate.candidate_id}.train_classifier", enabled=timing_on):
                 classifier_result = _train_classifier_pipeline(exp_root, classifier_cfg)
             current_classifier_run_id = classifier_result.run_id
             current_classifier_target_col = str(classifier_cfg.target.classifier_sieve.target_col)

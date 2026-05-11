@@ -127,11 +127,7 @@ class SklearnMLPRegressorWrapper(ModelWrapper[MLPRegressor]):
     @staticmethod
     def _coerce_hidden_layer_sizes(value: object) -> object:
         if isinstance(value, str):
-            parts = [
-                part.strip()
-                for part in value.replace("x", ",").split(",")
-                if part.strip()
-            ]
+            parts = [part.strip() for part in value.replace("x", ",").split(",") if part.strip()]
             return tuple(int(part) for part in parts)
         if isinstance(value, list):
             return tuple(int(part) for part in value)
@@ -235,12 +231,8 @@ class SklearnMLPRegressorWrapper(ModelWrapper[MLPRegressor]):
             with timed_step("sklearn_mlp.signature_transform", enabled=self.timing_diagnostics):
                 input_example = self.transform(X.head(5)).to_pandas()
             try:
-                with timed_step(
-                    "sklearn_mlp.signature_predict", enabled=self.timing_diagnostics
-                ):
-                    prediction = np.asarray(
-                        self.require_model().predict(input_example.to_numpy())
-                    )
+                with timed_step("sklearn_mlp.signature_predict", enabled=self.timing_diagnostics):
+                    prediction = np.asarray(self.require_model().predict(input_example.to_numpy()))
                 signature_kwargs = {
                     "input_example": input_example,
                     "signature": infer_signature(input_example, prediction),

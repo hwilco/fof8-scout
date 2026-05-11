@@ -4,7 +4,6 @@ from unittest.mock import MagicMock
 
 import polars as pl
 import pytest
-
 from fof8_core.targets.draft_utility import (
     DRAFT_UTILITY_OUTPUT_COLUMNS,
     get_draft_utility_targets,

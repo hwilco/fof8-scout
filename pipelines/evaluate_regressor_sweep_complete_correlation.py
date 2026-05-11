@@ -295,9 +295,7 @@ def main() -> int:
         rows.append(row)
 
     best_by_proxy = rows[0]
-    best_by_downstream = max(
-        rows, key=lambda row: float(str(row[args.downstream_metric]))
-    )
+    best_by_downstream = max(rows, key=lambda row: float(str(row[args.downstream_metric])))
     summary: dict[str, object] = {
         "source_experiment_name": args.source_experiment_name,
         "complete_experiment_name": args.complete_experiment_name,

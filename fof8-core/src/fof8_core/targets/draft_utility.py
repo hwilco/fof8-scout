@@ -54,10 +54,7 @@ def _validate_control_discounts(
     discounts = {int(year): float(value) for year, value in control_discounts.items()}
     missing_years = [year for year in control_years if year not in discounts]
     if missing_years:
-        raise ValueError(
-            "control_discounts is missing values for control years "
-            f"{missing_years}."
-        )
+        raise ValueError(f"control_discounts is missing values for control years {missing_years}.")
     return discounts
 
 
