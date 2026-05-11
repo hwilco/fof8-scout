@@ -68,6 +68,11 @@ Control_Window_Mean_Current_Overall
 Control_Window_Discounted_Mean_Current_Overall
 ```
 
+Use `Control_Window_Mean_Current_Overall` as the first supervised control-window
+target. Keep `Control_Window_Discounted_Mean_Current_Overall` as a companion
+target for downstream board formulas, preference-weighting, and sensitivity
+checks.
+
 Existing target columns to keep using:
 
 ```text
@@ -109,6 +114,10 @@ Annual_Cap_Share ~ f(Current_Overall, Position, Experience)
 
 Use veteran seasons, not rookie-contract seasons, to reduce wage-scale distortion.
 
+Phase B1 confirmed that a first-pass veteran-market curve is stable enough to
+use as a downstream utility conversion layer. It should remain separate from
+the first supervised modeling target.
+
 Outputs:
 
 ```text
@@ -148,7 +157,9 @@ Y3: 0.85
 Y4: 0.75
 ```
 
-Keep them configurable.
+Keep them configurable. These discounts are best treated as board-utility
+preferences for derived columns rather than as the preferred first supervised
+target definition.
 
 ## Hand-Set Parameters
 Some parameters are preferences, not discoverable truths:
@@ -182,6 +193,9 @@ First models:
 Top3_Mean_Current_Overall regressor
 Control_Window_Mean_Current_Overall regressor
 ```
+
+`Control_Window_Discounted_Mean_Current_Overall` should be materialized in the
+same target family, but it does not need to be the first baseline regressor.
 
 Follow-up models:
 
@@ -336,28 +350,42 @@ Add ML tests for:
 - draft-board export includes raw prediction and derived utility columns.
 
 ## Implementation Phases
-### Phase 1: Exploration
+### Phase B1: Exploration
 - Finish the two draft-utility notebooks.
 - Validate target distributions.
 - Estimate first empirical rating value curve.
 - Decide whether initial control target is mean or discounted mean.
 
-### Phase 2: Target Builders
+Phase B1 update:
+
+- completed notebooks:
+  `notebooks/draft_utility_data_audit.ipynb`,
+  `notebooks/draft_utility_empirical_value_model.ipynb`;
+- target distributions validated: `Top3_Mean_Current_Overall` is not
+  meaningfully zero-inflated and instead shows a heavy low-end mass with a
+  sparse elite tail;
+- first empirical veteran-market rating curve estimated and accepted as a
+  downstream utility-conversion baseline;
+- initial control target decision: use
+  `Control_Window_Mean_Current_Overall` first and keep
+  `Control_Window_Discounted_Mean_Current_Overall` as a companion target.
+
+### Phase B2: Target Builders
 - Add `draft_utility.py` target builder in `fof8-core`.
 - Add control-window target columns to processed outcomes.
 - Add tests.
 
-### Phase 3: Baseline Talent Models
+### Phase B3: Baseline Talent Models
 - Train CatBoost on `Top3_Mean_Current_Overall`.
 - Train CatBoost on `Control_Window_Mean_Current_Overall`.
 - Evaluate with rank/top-k/tail metrics.
 
-### Phase 4: Board Utility Metrics
+### Phase B4: Board Utility Metrics
 - Add top-k utility capture metrics.
 - Evaluate draft-board quality using predicted talent columns.
 - Compare against existing economic complete-model outputs without replacing them.
 
-### Phase 5: Draft Board Export
+### Phase B5: Draft Board Export
 - Export raw predicted talent columns.
 - Export configurable utility-derived columns.
 - Document how to sort/use them during drafting.
@@ -368,3 +396,10 @@ Add ML tests for:
 - Should `LS`, `K`, and `P` be modeled in the same flow or separated?
 - Should position multipliers be empirical-only, hand-set-only, or empirical with overrides?
 - Should elite probability be trained as separate classifiers or derived from regressor prediction distributions?
+
+Resolved in Phase B1:
+
+- initial control-window summary target: use
+  `Control_Window_Mean_Current_Overall`, not the discounted mean;
+- empirical market-derived position/value curves are viable as the default
+  downstream utility baseline, with config overrides still allowed later.
