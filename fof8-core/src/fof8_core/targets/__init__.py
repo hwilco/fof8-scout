@@ -5,6 +5,7 @@ from fof8_core.targets.awards import get_awards
 from fof8_core.targets.career import get_career_outcomes
 from fof8_core.targets.composite import get_dpo_targets
 from fof8_core.targets.draft_outcomes import get_draft_outcome_targets
+from fof8_core.targets.draft_utility import get_draft_utility_targets
 from fof8_core.targets.economic import get_economic_targets
 from fof8_core.targets.financial import get_annual_financials, get_merit_cap_share
 from fof8_core.targets.registry import TARGET_REGISTRY, get_target, register_target
@@ -18,6 +19,7 @@ __all__ = [
     "get_economic_targets",
     "get_dpo_targets",
     "get_draft_outcome_targets",
+    "get_draft_utility_targets",
     "get_annual_financials",
     "get_peak_overall",
     "get_merit_cap_share",

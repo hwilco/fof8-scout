@@ -21,6 +21,17 @@ def test_get_draft_outcome_targets_builds_bundle_in_stable_order(monkeypatch):
     df_peak = pl.DataFrame({"Player_ID": [1, 3], "Peak_Overall": [80.0, 10.0]})
     df_top3 = pl.DataFrame({"Player_ID": [1, 2], "Top3_Mean_Current_Overall": [76.0, 40.0]})
     df_outcomes = pl.DataFrame({"Player_ID": [2, 3], "Career_Games_Played": [16, None]})
+    df_draft_utility = pl.DataFrame(
+        {
+            "Player_ID": [1, 3],
+            "Control_Y1_Current_Overall": [50.0, 12.0],
+            "Control_Y2_Current_Overall": [60.0, None],
+            "Control_Y3_Current_Overall": [70.0, None],
+            "Control_Y4_Current_Overall": [80.0, None],
+            "Control_Window_Mean_Current_Overall": [65.0, None],
+            "Control_Window_Discounted_Mean_Current_Overall": [63.0, None],
+        }
+    )
 
     monkeypatch.setattr(
         "fof8_core.targets.draft_outcomes.get_economic_targets",
@@ -37,9 +48,15 @@ def test_get_draft_outcome_targets_builds_bundle_in_stable_order(monkeypatch):
     monkeypatch.setattr(
         "fof8_core.targets.draft_outcomes.get_career_outcomes", lambda _: df_outcomes
     )
+    monkeypatch.setattr(
+        "fof8_core.targets.draft_outcomes.get_draft_utility_targets",
+        lambda _: df_draft_utility,
+    )
 
     out = get_draft_outcome_targets(mock_loader).sort("Player_ID")
     assert out.columns == DRAFT_OUTCOME_OUTPUT_COLUMNS
     assert out["Player_ID"].to_list() == [1, 2, 3]
     assert out.filter(pl.col("Player_ID") == 2)["DPO"][0] == 0.0
     assert out.filter(pl.col("Player_ID") == 3)["Career_Games_Played"][0] == 0
+    assert out.filter(pl.col("Player_ID") == 1)["Control_Window_Mean_Current_Overall"][0] == 65.0
+    assert out.filter(pl.col("Player_ID") == 3)["Control_Window_Mean_Current_Overall"][0] is None

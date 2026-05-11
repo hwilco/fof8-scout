@@ -41,6 +41,7 @@ def test_registry_contains_builtin_targets():
         "economic_targets",
         "dpo_targets",
         "draft_outcome_targets",
+        "draft_utility_targets",
         "career_value_metrics",
         "awards",
     }

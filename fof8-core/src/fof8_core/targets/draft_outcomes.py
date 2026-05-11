@@ -5,6 +5,7 @@ import polars as pl
 from fof8_core.loader import FOF8Loader
 from fof8_core.targets.career import get_career_outcomes
 from fof8_core.targets.composite import COMPOSITE_TARGET_COLUMNS, get_dpo_targets
+from fof8_core.targets.draft_utility import DRAFT_UTILITY_TARGET_COLUMNS, get_draft_utility_targets
 from fof8_core.targets.economic import ECONOMIC_TARGET_COLUMNS, get_economic_targets
 from fof8_core.targets.talent import (
     TALENT_TARGET_COLUMNS,
@@ -20,6 +21,7 @@ DRAFT_OUTCOME_TARGET_COLUMNS = [
 DRAFT_OUTCOME_CONTEXT_COLUMNS = [
     *TALENT_TARGET_COLUMNS,
     "Career_Games_Played",
+    *DRAFT_UTILITY_TARGET_COLUMNS,
 ]
 
 # Canonical processed outcome columns. These are always excluded from training
@@ -46,6 +48,7 @@ def get_draft_outcome_targets(
     df_peak = get_peak_overall(loader)
     df_top3 = get_top3_mean_current_overall(loader)
     df_outcomes = get_career_outcomes(loader).select(["Player_ID", "Career_Games_Played"])
+    df_draft_utility = get_draft_utility_targets(loader)
 
     all_ids = pl.concat(
         [
@@ -54,6 +57,7 @@ def get_draft_outcome_targets(
             df_peak.select("Player_ID"),
             df_top3.select("Player_ID"),
             df_outcomes.select("Player_ID"),
+            df_draft_utility.select("Player_ID"),
         ]
     ).unique()
 
@@ -67,8 +71,16 @@ def get_draft_outcome_targets(
             how="left",
         )
         .join(df_outcomes, on="Player_ID", how="left")
+        .join(df_draft_utility, on="Player_ID", how="left")
     )
 
     return out.with_columns(
-        [pl.col(col).fill_null(0) for col in DRAFT_OUTCOME_LEAKAGE_COLUMNS]
+        [
+            pl.col(col).fill_null(0)
+            for col in [
+                *DRAFT_OUTCOME_TARGET_COLUMNS,
+                *TALENT_TARGET_COLUMNS,
+                "Career_Games_Played",
+            ]
+        ]
     ).select(DRAFT_OUTCOME_OUTPUT_COLUMNS)

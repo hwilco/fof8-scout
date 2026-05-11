@@ -29,6 +29,7 @@ def _register_builtin_targets() -> None:
     from fof8_core.targets.career import get_career_outcomes
     from fof8_core.targets.composite import get_dpo_targets
     from fof8_core.targets.draft_outcomes import get_draft_outcome_targets
+    from fof8_core.targets.draft_utility import get_draft_utility_targets
     from fof8_core.targets.economic import get_economic_targets
     from fof8_core.targets.financial import get_annual_financials, get_merit_cap_share
     from fof8_core.targets.talent import get_peak_overall
@@ -40,6 +41,7 @@ def _register_builtin_targets() -> None:
     TARGET_REGISTRY["economic_targets"] = get_economic_targets
     TARGET_REGISTRY["dpo_targets"] = get_dpo_targets
     TARGET_REGISTRY["draft_outcome_targets"] = get_draft_outcome_targets
+    TARGET_REGISTRY["draft_utility_targets"] = get_draft_utility_targets
     TARGET_REGISTRY["career_value_metrics"] = get_career_value_metrics
     TARGET_REGISTRY["awards"] = get_awards
     _BUILTINS_REGISTERED = True

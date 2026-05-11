@@ -219,6 +219,12 @@ def test_feature_ablation_does_not_poison_cached_base_data(monkeypatch):
             "Peak_Overall": [1.0, 1.0],
             "Career_Games_Played": [16, 16],
             "Top3_Mean_Current_Overall": [1.0, 1.0],
+            "Control_Y1_Current_Overall": [1.0, 1.0],
+            "Control_Y2_Current_Overall": [1.0, 1.0],
+            "Control_Y3_Current_Overall": [1.0, 1.0],
+            "Control_Y4_Current_Overall": [1.0, 1.0],
+            "Control_Window_Mean_Current_Overall": [1.0, 1.0],
+            "Control_Window_Discounted_Mean_Current_Overall": [1.0, 1.0],
             "Award_Count": [0, 1],
         }
     )
@@ -290,6 +296,12 @@ def test_loader_dedupes_target_columns_when_targets_overlap_leakage(monkeypatch)
             "Peak_Overall": [1.0, 1.0],
             "Career_Games_Played": [16, 16],
             "Top3_Mean_Current_Overall": [1.0, 1.0],
+            "Control_Y1_Current_Overall": [1.0, 1.0],
+            "Control_Y2_Current_Overall": [1.0, 1.0],
+            "Control_Y3_Current_Overall": [1.0, 1.0],
+            "Control_Y4_Current_Overall": [1.0, 1.0],
+            "Control_Window_Mean_Current_Overall": [1.0, 1.0],
+            "Control_Window_Discounted_Mean_Current_Overall": [1.0, 1.0],
             "Award_Count": [0, 1],
         }
     )
@@ -327,6 +339,12 @@ def test_loader_populates_outcomes_train_with_full_available_scorecard(monkeypat
             "Peak_Overall": [70.0, 65.0],
             "Career_Games_Played": [16, 32],
             "Top3_Mean_Current_Overall": [72.0, 67.0],
+            "Control_Y1_Current_Overall": [68.0, 63.0],
+            "Control_Y2_Current_Overall": [70.0, 64.0],
+            "Control_Y3_Current_Overall": [72.0, 66.0],
+            "Control_Y4_Current_Overall": [74.0, 68.0],
+            "Control_Window_Mean_Current_Overall": [71.0, 65.25],
+            "Control_Window_Discounted_Mean_Current_Overall": [70.6, 64.9],
             "Award_Count": [0, 1],
         }
     )
@@ -351,6 +369,7 @@ def test_loader_populates_outcomes_train_with_full_available_scorecard(monkeypat
         "Award_Count",
     }
     assert "Top3_Mean_Current_Overall" not in data.X_train.columns
+    assert "Control_Window_Mean_Current_Overall" not in data.X_train.columns
     assert "Award_Count" not in data.X_train.columns
 
 
@@ -384,6 +403,12 @@ def test_loader_auto_includes_elite_source_column_in_scorecard(monkeypatch):
             "Peak_Overall": [70.0, 65.0],
             "Top3_Mean_Current_Overall": [72.0, 67.0],
             "Career_Games_Played": [16, 32],
+            "Control_Y1_Current_Overall": [68.0, 63.0],
+            "Control_Y2_Current_Overall": [70.0, 64.0],
+            "Control_Y3_Current_Overall": [72.0, 66.0],
+            "Control_Y4_Current_Overall": [74.0, 68.0],
+            "Control_Window_Mean_Current_Overall": [71.0, 65.25],
+            "Control_Window_Discounted_Mean_Current_Overall": [70.6, 64.9],
         }
     )
 
@@ -421,6 +446,12 @@ def test_loader_fails_for_missing_required_outcome_scorecard_column(monkeypatch)
             "Peak_Overall": [70.0],
             "Top3_Mean_Current_Overall": [72.0],
             "Career_Games_Played": [16],
+            "Control_Y1_Current_Overall": [68.0],
+            "Control_Y2_Current_Overall": [70.0],
+            "Control_Y3_Current_Overall": [72.0],
+            "Control_Y4_Current_Overall": [74.0],
+            "Control_Window_Mean_Current_Overall": [71.0],
+            "Control_Window_Discounted_Mean_Current_Overall": [70.6],
         }
     )
 
@@ -467,6 +498,12 @@ def _pooled_source_df(universes: list[str] | None = None) -> pl.DataFrame:
                     "Peak_Overall": 70.0,
                     "Career_Games_Played": 16,
                     "Top3_Mean_Current_Overall": 72.0,
+                    "Control_Y1_Current_Overall": 68.0,
+                    "Control_Y2_Current_Overall": 70.0,
+                    "Control_Y3_Current_Overall": 72.0,
+                    "Control_Y4_Current_Overall": 74.0,
+                    "Control_Window_Mean_Current_Overall": 71.0,
+                    "Control_Window_Discounted_Mean_Current_Overall": 70.6,
                     "Award_Count": 0,
                 }
             )
