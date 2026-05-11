@@ -101,6 +101,83 @@ def _validate_active_target_columns(cfg: DictConfig, available_columns: list[str
         )
 
 
+def _build_derived_classifier_targets(df: pl.DataFrame, cfg: DictConfig) -> pl.DataFrame:
+    """Materialize optional classifier derived binary targets onto the feature frame."""
+    derived_specs = cfg.target.get("classifier_sieve", {}).get("derived_targets", [])
+    if not derived_specs:
+        return df
+
+    out = df
+    for raw_spec in list(derived_specs):
+        spec = cast(dict[str, Any], raw_spec)
+        target_col = str(spec["target_col"])
+        kind = str(spec.get("kind", "threshold"))
+        source_col = str(spec["source_col"])
+        if source_col not in out.columns:
+            raise ValueError(
+                f"Derived target '{target_col}' source column '{source_col}' is missing."
+            )
+
+        if kind == "threshold":
+            op = str(spec.get("operator", ">="))
+            threshold = float(spec["threshold"])
+            if op == ">=":
+                expr = pl.col(source_col) >= threshold
+            elif op == ">":
+                expr = pl.col(source_col) > threshold
+            elif op == "<=":
+                expr = pl.col(source_col) <= threshold
+            elif op == "<":
+                expr = pl.col(source_col) < threshold
+            else:
+                raise ValueError(
+                    f"Unsupported derived target operator '{op}' for '{target_col}'."
+                )
+            out = out.with_columns(expr.cast(pl.Int8).alias(target_col))
+            continue
+
+        if kind == "position_group_percentile":
+            if "Position_Group" not in out.columns:
+                raise ValueError(
+                    f"Derived target '{target_col}' requires Position_Group column."
+                )
+            percentile = float(spec.get("percentile", 0.9))
+            if not 0 < percentile < 1:
+                raise ValueError(
+                    f"Derived target '{target_col}' percentile must be in (0, 1), got {percentile}."
+                )
+            min_group_size = int(spec.get("min_group_size", 1))
+            group_threshold_col = f"__{target_col}_group_q"
+            group_count_col = f"__{target_col}_group_n"
+            global_threshold = out.get_column(source_col).quantile(percentile, interpolation="linear")
+            global_threshold = 0.0 if global_threshold is None else float(global_threshold)
+            out = (
+                out.with_columns(
+                    pl.col(source_col)
+                    .quantile(percentile, interpolation="linear")
+                    .over("Position_Group")
+                    .alias(group_threshold_col),
+                    pl.len().over("Position_Group").alias(group_count_col),
+                )
+                .with_columns(
+                    (
+                        pl.col(source_col)
+                        >= pl.when(pl.col(group_count_col) >= min_group_size)
+                        .then(pl.col(group_threshold_col))
+                        .otherwise(pl.lit(global_threshold))
+                    )
+                    .cast(pl.Int8)
+                    .alias(target_col)
+                )
+                .drop([group_threshold_col, group_count_col])
+            )
+            continue
+
+        raise ValueError(f"Unsupported derived target kind '{kind}' for '{target_col}'.")
+
+    return out
+
+
 def resolve_feature_ablation_config(cfg: DictConfig) -> dict[str, Any]:
     """Resolve include/exclude feature lists from base lists + optional ablation toggles."""
     include_features = _coerce_str_list(cfg.get("include_features"))
@@ -631,6 +708,8 @@ class DataLoader:
                 else "default"
             )
             df = df.with_columns(pl.lit(fallback_universe).alias("Universe"))
+
+        df = _build_derived_classifier_targets(df, cfg)
 
         available_columns = list(df.columns)
 

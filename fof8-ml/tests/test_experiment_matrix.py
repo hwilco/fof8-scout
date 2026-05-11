@@ -40,6 +40,7 @@ def test_resolve_matrix_candidates_filters_requested_ids():
                         "target_col": "Positive_Career_Merit_Cap_Share",
                         "target_space": "log",
                     },
+                    "adjustment": {"method": "position_group_multiplier_proxy"},
                     "ablation": {"toggles": {"no_college": False}},
                 },
             ]
@@ -51,6 +52,7 @@ def test_resolve_matrix_candidates_filters_requested_ids():
     assert [candidate.candidate_id for candidate in candidates] == ["A2"]
     assert candidates[0].regressor_target_space == "log"
     assert candidates[0].ablation_toggles == {"no_college": False}
+    assert candidates[0].adjustment_method == "position_group_multiplier_proxy"
 
 
 def test_experiment_matrix_and_report_smoke(monkeypatch, tmp_path):
@@ -93,6 +95,7 @@ def test_experiment_matrix_and_report_smoke(monkeypatch, tmp_path):
                     {
                         "candidate_id": "A2",
                         "label": "positive_merit_rmse_log",
+                        "adjustment": {"method": "second_stage_utility_proxy"},
                         "regressor": {
                             "model": "catboost_regressor_rmse",
                             "target_col": "Positive_Career_Merit_Cap_Share",
@@ -362,5 +365,6 @@ def test_experiment_matrix_and_report_smoke(monkeypatch, tmp_path):
     csv_text = csv_path.read_text(encoding="utf-8")
     assert "candidate_id" in csv_text
     assert "complete_draft_value_score" in csv_text
+    assert "adjustment_method" in csv_text
     assert "A1" in csv_text
     assert "A2" in csv_text

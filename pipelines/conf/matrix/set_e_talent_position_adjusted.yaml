@@ -1,0 +1,38 @@
+defaults:
+  - common
+
+matrix_name: "talent_position_adjusted"
+shared:
+  classifier_source: "train_per_candidate"
+  tags:
+    phase: "4"
+    matrix_stage: "follow_up"
+    experiment_set: "E"
+candidates:
+  - candidate_id: "E1"
+    label: "talent_top3_rmse_raw_pos_multiplier_proxy"
+    adjustment:
+      method: "position_group_multiplier_proxy"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Top3_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "E2"
+    label: "talent_top3_rmse_raw_pos_monotonic_proxy"
+    adjustment:
+      method: "position_group_monotonic_proxy"
+    ablation:
+      toggles:
+        no_position: true
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Top3_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "E3"
+    label: "talent_top3_rmse_raw_stage2_utility_proxy"
+    adjustment:
+      method: "second_stage_utility_proxy"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Top3_Mean_Current_Overall"
+      target_space: "log"

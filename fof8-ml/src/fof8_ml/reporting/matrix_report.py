@@ -80,6 +80,7 @@ def flatten_candidate_summary(
         "regressor_target_space": candidate_manifest["regressor_target_space"],
         "regressor_model": candidate_manifest["regressor_model"],
         "regressor_loss_function": candidate_manifest["regressor_loss_function"],
+        "adjustment_method": candidate_manifest.get("adjustment_method"),
         "ablation_signature": candidate_manifest.get("ablation_signature", ""),
         "elite_source_column": elite_cfg.get("source_column"),
         "elite_quantile": elite_cfg.get("quantile"),

@@ -1,0 +1,43 @@
+defaults:
+  - common
+
+matrix_name: "classifier_sieve_definition"
+shared:
+  classifier_source: "train_per_candidate"
+  tags:
+    phase: "4"
+    matrix_stage: "follow_up"
+    experiment_set: "D"
+candidates:
+  - candidate_id: "D1"
+    label: "economic_success_gt_zero"
+    classifier:
+      target_config: "economic"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "log"
+  - candidate_id: "D2"
+    label: "career_games_played_ge_16"
+    classifier:
+      target_config: "economic_games16"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "log"
+  - candidate_id: "D3"
+    label: "career_games_played_ge_48"
+    classifier:
+      target_config: "economic_games48"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "log"
+  - candidate_id: "D4"
+    label: "top_position_group_economic_percentile"
+    classifier:
+      target_config: "economic_top_pos_percentile"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Positive_Career_Merit_Cap_Share"
+      target_space: "log"

@@ -1,0 +1,37 @@
+target_name: "draft_outcome_targets"
+classifier_sieve:
+  target_col: "Career_Games_Played_GE_48"
+  merit_threshold: 0
+  min_positive_recall: 0.95
+  derived_targets:
+    - target_col: "Career_Games_Played_GE_48"
+      kind: "threshold"
+      source_col: "Career_Games_Played"
+      operator: ">="
+      threshold: 48
+regressor_intensity:
+  target_col: "Positive_Career_Merit_Cap_Share"
+  target_space: "log"
+  target_family: "economic"
+outcome_scorecard:
+  columns:
+    - "Positive_Career_Merit_Cap_Share"
+    - "Career_Merit_Cap_Share"
+    - "Positive_DPO"
+    - "Peak_Overall"
+    - "Career_Games_Played"
+  optional_columns:
+    - "Top3_Mean_Current_Overall"
+    - "Award_Count"
+    - "Hall_of_Fame_Flag"
+    - "Hall_Of_Fame_Points"
+  elite:
+    enabled: true
+    source_column: "Career_Merit_Cap_Share"
+    quantile: 0.95
+    scope: "position_group"
+    scope_column: "Position_Group"
+    fallback_scope: "global"
+    min_group_size: 100
+    top_k_precision: 32
+    top_k_recall: 64

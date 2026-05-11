@@ -27,10 +27,12 @@ from fof8_ml.orchestration.sweep_manager import SweepManager
 class MatrixCandidate:
     candidate_id: str
     label: str
+    classifier_target_config: str | None
     regressor_model: str
     regressor_target_col: str
     regressor_target_space: str
     ablation_toggles: dict[str, bool]
+    adjustment_method: str | None
 
 
 @dataclass(frozen=True)
@@ -58,6 +60,7 @@ class MatrixCandidateResult:
     regressor_target_space: str
     regressor_model: str
     regressor_loss_function: str
+    adjustment_method: str | None
     ablation_signature: str
     board_artifact_path: str
     position_group_metrics_artifact_path: str
@@ -85,6 +88,10 @@ def resolve_matrix_candidates(
             MatrixCandidate(
                 candidate_id=candidate_id,
                 label=str(candidate["label"]),
+                classifier_target_config=cast(
+                    str | None,
+                    candidate.get("classifier", {}).get("target_config"),
+                ),
                 regressor_model=str(regressor["model"]),
                 regressor_target_col=str(regressor["target_col"]),
                 regressor_target_space=str(regressor["target_space"]),
@@ -95,6 +102,10 @@ def resolve_matrix_candidates(
                         candidate.get("ablation", {}).get("toggles", {}),
                     ).items()
                 },
+                adjustment_method=cast(
+                    str | None,
+                    candidate.get("adjustment", {}).get("method"),
+                ),
             )
         )
     if requested and not candidates:
@@ -404,6 +415,7 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
 
     classifier_run_id = None
     classifier_experiment_name = str(matrix_cfg.shared.classifier.experiment_name)
+    shared_classifier_target_config = str(matrix_cfg.shared.classifier.target_config)
     classifier_target_col = None
 
     if classifier_source == "fixed_run":
@@ -420,7 +432,7 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
                 "pipelines",
                 "conf",
                 "target",
-                f"{matrix_cfg.shared.classifier.target_config}.yaml",
+                f"{shared_classifier_target_config}.yaml",
             ).classifier_sieve.target_col
         )
     elif classifier_source == "train_once_per_matrix":
@@ -428,7 +440,7 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
             exp_root,
             pipeline_config_name="classifier_pipeline.yaml",
             experiment_name=classifier_experiment_name,
-            target_config_name=str(matrix_cfg.shared.classifier.target_config),
+            target_config_name=shared_classifier_target_config,
             model_config_name=str(matrix_cfg.shared.classifier.model),
             runtime_refit_final_model=runtime_refit_final_model,
             run_tags={
@@ -459,14 +471,19 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
             "candidate_id": candidate.candidate_id,
             "candidate_label": candidate.label,
         }
+        if candidate.adjustment_method:
+            candidate_tags["adjustment_method"] = candidate.adjustment_method
         current_classifier_run_id = classifier_run_id
         current_classifier_target_col = classifier_target_col
+        current_classifier_target_config = (
+            candidate.classifier_target_config or shared_classifier_target_config
+        )
         if classifier_source == "train_per_candidate":
             classifier_cfg = _prepare_pipeline_cfg(
                 exp_root,
                 pipeline_config_name="classifier_pipeline.yaml",
                 experiment_name=classifier_experiment_name,
-                target_config_name=str(matrix_cfg.shared.classifier.target_config),
+                target_config_name=current_classifier_target_config,
                 model_config_name=str(matrix_cfg.shared.classifier.model),
                 runtime_refit_final_model=runtime_refit_final_model,
                 run_tags=candidate_tags,
@@ -498,12 +515,13 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
             complete_cfg.complete_experiment_name = str(
                 matrix_cfg.shared.complete_model.experiment_name
             )
+            complete_target_config = current_classifier_target_config
             complete_cfg.target = _load_config(
                 exp_root,
                 "pipelines",
                 "conf",
                 "target",
-                f"{matrix_cfg.shared.complete_model.target_config}.yaml",
+                f"{complete_target_config}.yaml",
             )
             complete_cfg.classifier_run_id = current_classifier_run_id
             complete_cfg.regressor_run_id = regressor_result.run_id
@@ -538,6 +556,7 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
             regressor_target_space=candidate.regressor_target_space,
             regressor_model=candidate.regressor_model,
             regressor_loss_function=regressor_loss_function,
+            adjustment_method=candidate.adjustment_method,
             ablation_signature=str(regressor_cfg.get("ablation_signature", "")),
             board_artifact_path="complete_model_holdout_board.csv",
             position_group_metrics_artifact_path="complete_model_position_group_metrics.csv",
