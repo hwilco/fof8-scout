@@ -44,6 +44,17 @@ def test_sklearn_mlp_preprocesses_mixed_features_with_missing_indicators():
     assert transformed.null_count().sum_horizontal().item() == 0
 
 
+def test_sklearn_mlp_accepts_hidden_layer_size_aliases():
+    wrapper = SklearnMLPRegressorWrapper(
+        hidden_layer_sizes="8x4",
+        max_iter=50,
+        random_state=42,
+        early_stopping=False,
+    )
+
+    assert wrapper.require_model().hidden_layer_sizes == (8, 4)
+
+
 def test_sklearn_mlp_aligns_unseen_categories_and_predicts_raw_scale():
     wrapper = SklearnMLPRegressorWrapper(
         hidden_layer_sizes=(4,),

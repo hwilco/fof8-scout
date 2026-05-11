@@ -10,6 +10,7 @@ from typing import Any, Optional, cast
 import catboost as cb
 import dagshub
 import dvc.api
+import joblib
 import mlflow
 import numpy as np
 import polars as pl
@@ -33,6 +34,12 @@ ROLE_RUN_NAMES: dict[ModelRole, str] = {
     "classifier": "Classifier",
     "regressor": "Regressor",
 }
+
+
+def _emit_tracking_fallback(message: str) -> None:
+    """Emit a fallback message to both logger and stdout for visibility."""
+    logging.warning(message)
+    print(message)
 
 
 def resolve_model_role_name(role_name: ModelRole | str) -> str:
@@ -93,6 +100,12 @@ class ExperimentLogger:
             if not os.environ.get("MLFLOW_TRACKING_URI"):
                 dagshub.init(repo_owner="hwilco", repo_name="fof8-scout", mlflow=True)
                 _USING_REMOTE = True
+            else:
+                _USING_REMOTE = False
+                _emit_tracking_fallback(
+                    f">>> MLflow tracking initialized with local/custom URI: "
+                    f"{os.environ.get('MLFLOW_TRACKING_URI')}"
+                )
             mlflow.autolog(log_models=False)
             _TRACKING_INITIALIZED = True
 
@@ -116,12 +129,13 @@ class ExperimentLogger:
             return mlflow.start_run(run_name=run_name, tags=tags)
         except Exception as e:
             if _USING_REMOTE:
-                logging.warning(
-                    f">>> Remote MLflow rejected run creation ({e}). "
-                    "Falling back to local SQLite storage for this trial."
-                )
                 db_path = os.path.abspath(os.path.join(self.exp_root, "fof8-ml", "mlflow.db"))
-                mlflow.set_tracking_uri(f"sqlite:///{db_path}")
+                local_uri = f"sqlite:///{db_path}"
+                _emit_tracking_fallback(
+                    f">>> Remote MLflow rejected run creation ({e}). "
+                    f"Falling back to local SQLite storage for this trial: {local_uri}"
+                )
+                mlflow.set_tracking_uri(local_uri)
                 _USING_REMOTE = False
 
                 local_client = mlflow.tracking.MlflowClient()
@@ -267,24 +281,53 @@ class ExperimentLogger:
             return {"model_format": "xgboost_native", "model_path": "model.json"}
 
         model_path = os.path.join(bundle_dir, "model.joblib")
-        import joblib
-
         joblib.dump(raw_model, model_path)
         metadata = {"model_format": "joblib", "model_path": "model.joblib"}
         if role_name == "regressor":
+            scaler = getattr(model, "scaler", None)
+            columns = getattr(model, "columns", None)
+            categorical_columns = getattr(model, "categorical_columns", None)
+            numeric_columns = getattr(model, "numeric_columns", None)
+            missing_indicator_columns = getattr(model, "missing_indicator_columns", None)
+            numeric_medians = getattr(model, "numeric_medians", None)
             scaler_src = "regressor_model_scaler.joblib"
             preprocessor_src = "regressor_model_preprocessor.joblib"
             features_src = "regressor_model_features.txt"
-            if os.path.exists(scaler_src):
+            if scaler is not None and columns is not None and categorical_columns is not None:
+                joblib.dump(
+                    {
+                        "scaler": scaler,
+                        "columns": columns,
+                        "categorical_columns": categorical_columns,
+                        "numeric_columns": numeric_columns or [],
+                        "missing_indicator_columns": missing_indicator_columns or [],
+                        "numeric_medians": numeric_medians or {},
+                    },
+                    os.path.join(bundle_dir, preprocessor_src),
+                )
+                metadata["preprocessor_path"] = preprocessor_src
+            elif scaler is not None and columns is not None:
+                joblib.dump(scaler, os.path.join(bundle_dir, scaler_src))
+                metadata["scaler_path"] = scaler_src
+            if columns is not None:
+                with open(os.path.join(bundle_dir, features_src), "w", encoding="utf-8") as f:
+                    f.write("\n".join(str(column) for column in columns))
+                metadata["features_path"] = features_src
+            if "scaler_path" not in metadata and os.path.exists(scaler_src):
                 shutil.copy2(scaler_src, os.path.join(bundle_dir, scaler_src))
                 metadata["scaler_path"] = scaler_src
-            if os.path.exists(preprocessor_src):
+            if "preprocessor_path" not in metadata and os.path.exists(preprocessor_src):
                 shutil.copy2(preprocessor_src, os.path.join(bundle_dir, preprocessor_src))
                 metadata["preprocessor_path"] = preprocessor_src
-            if os.path.exists(features_src):
+            if "features_path" not in metadata and os.path.exists(features_src):
                 shutil.copy2(features_src, os.path.join(bundle_dir, features_src))
                 metadata["features_path"] = features_src
         return metadata
+
+    @staticmethod
+    def _skip_mlflow_model_logging(cfg: DictConfig) -> bool:
+        diagnostics = cfg.get("diagnostics", {})
+        return bool(diagnostics.get("skip_mlflow_model_logging", False))
 
     def export_local_model_bundle(
         self,
@@ -399,7 +442,8 @@ class ExperimentLogger:
                     log_shap=cfg.diagnostics.log_shap,
                 )
 
-        model.log_model("classifier_model", X=data.X_train)
+        if not self._skip_mlflow_model_logging(cfg):
+            model.log_model("classifier_model", X=data.X_train)
         self.export_local_model_bundle(
             role_name="classifier",
             model=model,
@@ -428,7 +472,8 @@ class ExperimentLogger:
         mlflow.log_metrics(metrics)
         if test_metrics is not None:
             mlflow.log_metrics(test_metrics)
-        model.log_model("regressor_model", X=X_reg)
+        if not self._skip_mlflow_model_logging(cfg):
+            model.log_model("regressor_model", X=X_reg)
         self.export_local_model_bundle(
             role_name="regressor",
             model=model,

@@ -21,6 +21,7 @@ from fof8_ml.orchestration.pipeline_runner import (
 )
 from fof8_ml.orchestration.regressor import run_regressor
 from fof8_ml.orchestration.sweep_manager import SweepManager
+from fof8_ml.timing import timed_step, timing_enabled
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,8 @@ class MatrixCandidate:
     regressor_target_col: str
     regressor_target_space: str
     ablation_toggles: dict[str, bool]
+    classifier_ablation_toggles: dict[str, bool]
+    regressor_ablation_toggles: dict[str, bool]
     adjustment_method: str | None
 
 
@@ -84,24 +87,27 @@ def resolve_matrix_candidates(
         if requested and candidate_id not in requested:
             continue
         regressor = cast(dict[str, Any], candidate["regressor"])
+        legacy_ablation = _resolve_ablation_toggles(candidate.get("ablation", {}))
+        classifier_cfg = cast(dict[str, Any], candidate.get("classifier", {}))
+        classifier_ablation = _resolve_ablation_toggles(
+            classifier_cfg.get("ablation", {}),
+            fallback=legacy_ablation,
+        )
+        regressor_ablation = _resolve_ablation_toggles(
+            regressor.get("ablation", {}),
+            fallback=legacy_ablation,
+        )
         candidates.append(
             MatrixCandidate(
                 candidate_id=candidate_id,
                 label=str(candidate["label"]),
-                classifier_target_config=cast(
-                    str | None,
-                    candidate.get("classifier", {}).get("target_config"),
-                ),
+                classifier_target_config=cast(str | None, classifier_cfg.get("target_config")),
                 regressor_model=str(regressor["model"]),
                 regressor_target_col=str(regressor["target_col"]),
                 regressor_target_space=str(regressor["target_space"]),
-                ablation_toggles={
-                    str(key): bool(value)
-                    for key, value in cast(
-                        dict[str, Any],
-                        candidate.get("ablation", {}).get("toggles", {}),
-                    ).items()
-                },
+                ablation_toggles=legacy_ablation,
+                classifier_ablation_toggles=classifier_ablation,
+                regressor_ablation_toggles=regressor_ablation,
                 adjustment_method=cast(
                     str | None,
                     candidate.get("adjustment", {}).get("method"),
@@ -114,6 +120,19 @@ def resolve_matrix_candidates(
             f"Available: {[c.candidate_id for c in resolve_matrix_candidates(matrix_cfg)]}"
         )
     return candidates
+
+
+def _resolve_ablation_toggles(
+    ablation_cfg: object,
+    *,
+    fallback: dict[str, bool] | None = None,
+) -> dict[str, bool]:
+    if not isinstance(ablation_cfg, dict):
+        return dict(fallback or {})
+    toggles = ablation_cfg.get("toggles")
+    if not isinstance(toggles, dict):
+        return dict(fallback or {})
+    return {str(key): bool(value) for key, value in cast(dict[str, Any], toggles).items()}
 
 
 def _merge_tags(existing: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
@@ -229,6 +248,7 @@ def _prepare_pipeline_cfg(
     regressor_target_col: str | None = None,
     regressor_target_space: str | None = None,
     ablation_toggles: dict[str, bool] | None = None,
+    diagnostics_cfg: dict[str, Any] | None = None,
 ) -> DictConfig:
     cfg = _load_pipeline_cfg(exp_root, pipeline_config_name)
     target_cfg = _load_config(exp_root, "pipelines", "conf", "target", f"{target_config_name}.yaml")
@@ -250,6 +270,11 @@ def _prepare_pipeline_cfg(
             cfg.target.regressor_intensity.target_col = regressor_target_col
         if regressor_target_space is not None:
             cfg.target.regressor_intensity.target_space = regressor_target_space
+        if diagnostics_cfg is not None:
+            cfg.diagnostics = OmegaConf.merge(
+                cfg.get("diagnostics", OmegaConf.create({})),
+                OmegaConf.create(diagnostics_cfg),
+            )
     _apply_ablation_toggles(cfg, ablation_toggles)
     _seed_hydra_runtime_defaults(cfg)
     return cfg
@@ -391,6 +416,13 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
         os.path.join(os.getcwd(), "pipelines", "run_experiment_matrix.py")
     )
     matrix_cfg = cfg.matrix
+    timing_on = timing_enabled(matrix_cfg.shared)
+    raw_diagnostics_cfg = matrix_cfg.shared.get("diagnostics", OmegaConf.create({}))
+    diagnostics_cfg = (
+        cast(dict[str, Any], OmegaConf.to_container(raw_diagnostics_cfg, resolve=True))
+        if OmegaConf.is_config(raw_diagnostics_cfg)
+        else cast(dict[str, Any], raw_diagnostics_cfg)
+    )
     output_dir = _matrix_output_dir(
         exp_root,
         str(matrix_cfg.matrix_name),
@@ -434,6 +466,9 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
             ).classifier_sieve.target_col
         )
     elif classifier_source == "train_once_per_matrix":
+        prepare_kwargs: dict[str, Any] = {}
+        if diagnostics_cfg:
+            prepare_kwargs["diagnostics_cfg"] = diagnostics_cfg
         classifier_cfg = _prepare_pipeline_cfg(
             exp_root,
             pipeline_config_name="classifier_pipeline.yaml",
@@ -446,8 +481,10 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
                 "candidate_id": "classifier_shared",
                 "candidate_label": "classifier_shared",
             },
+            **prepare_kwargs,
         )
-        classifier_result = _train_classifier_pipeline(exp_root, classifier_cfg)
+        with timed_step("matrix.train_shared_classifier", enabled=timing_on):
+            classifier_result = _train_classifier_pipeline(exp_root, classifier_cfg)
         classifier_run_id = classifier_result.run_id
         classifier_target_col = str(classifier_cfg.target.classifier_sieve.target_col)
     elif classifier_source == "train_per_candidate":
@@ -477,6 +514,9 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
             candidate.classifier_target_config or shared_classifier_target_config
         )
         if classifier_source == "train_per_candidate":
+            prepare_kwargs = {}
+            if diagnostics_cfg:
+                prepare_kwargs["diagnostics_cfg"] = diagnostics_cfg
             classifier_cfg = _prepare_pipeline_cfg(
                 exp_root,
                 pipeline_config_name="classifier_pipeline.yaml",
@@ -485,15 +525,22 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
                 model_config_name=str(matrix_cfg.shared.classifier.model),
                 runtime_refit_final_model=runtime_refit_final_model,
                 run_tags=candidate_tags,
-                ablation_toggles=candidate.ablation_toggles,
+                ablation_toggles=candidate.classifier_ablation_toggles,
+                **prepare_kwargs,
             )
-            classifier_result = _train_classifier_pipeline(exp_root, classifier_cfg)
+            with timed_step(
+                f"matrix.{candidate.candidate_id}.train_classifier", enabled=timing_on
+            ):
+                classifier_result = _train_classifier_pipeline(exp_root, classifier_cfg)
             current_classifier_run_id = classifier_result.run_id
             current_classifier_target_col = str(classifier_cfg.target.classifier_sieve.target_col)
 
         assert current_classifier_run_id is not None
         assert current_classifier_target_col is not None
 
+        prepare_kwargs = {}
+        if diagnostics_cfg:
+            prepare_kwargs["diagnostics_cfg"] = diagnostics_cfg
         regressor_cfg = _prepare_pipeline_cfg(
             exp_root,
             pipeline_config_name="regressor_pipeline.yaml",
@@ -504,9 +551,11 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
             run_tags=candidate_tags,
             regressor_target_col=candidate.regressor_target_col,
             regressor_target_space=candidate.regressor_target_space,
-            ablation_toggles=candidate.ablation_toggles,
+            ablation_toggles=candidate.regressor_ablation_toggles,
+            **prepare_kwargs,
         )
-        regressor_result = _train_regressor_pipeline(exp_root, regressor_cfg)
+        with timed_step(f"matrix.{candidate.candidate_id}.train_regressor", enabled=timing_on):
+            regressor_result = _train_regressor_pipeline(exp_root, regressor_cfg)
 
         complete_cfg = _load_pipeline_cfg(exp_root, "complete_model_pipeline.yaml")
         with open_dict(complete_cfg):
@@ -524,8 +573,16 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
             complete_cfg.classifier_run_id = current_classifier_run_id
             complete_cfg.regressor_run_id = regressor_result.run_id
             complete_cfg.tags = OmegaConf.create(candidate_tags)
-        _apply_ablation_toggles(complete_cfg, candidate.ablation_toggles)
-        complete_result = _evaluate_complete_model_pipeline(exp_root, complete_cfg)
+            complete_cfg.diagnostics = OmegaConf.merge(
+                complete_cfg.get("diagnostics", OmegaConf.create({})),
+                OmegaConf.create(diagnostics_cfg),
+            )
+        if classifier_source == "train_per_candidate":
+            _apply_ablation_toggles(complete_cfg, candidate.classifier_ablation_toggles)
+        with timed_step(
+            f"matrix.{candidate.candidate_id}.evaluate_complete_model", enabled=timing_on
+        ):
+            complete_result = _evaluate_complete_model_pipeline(exp_root, complete_cfg)
 
         elite_cfg = cast(
             dict[str, Any],
@@ -561,7 +618,8 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
             elite_config=elite_cfg,
             metrics=complete_result.metrics,
         )
-        manifest_path = write_candidate_manifest(output_dir, candidate_result)
+        with timed_step(f"matrix.{candidate.candidate_id}.write_manifest", enabled=timing_on):
+            manifest_path = write_candidate_manifest(output_dir, candidate_result)
         manifests.append(
             {
                 "candidate_id": candidate.candidate_id,
@@ -570,7 +628,10 @@ def run_experiment_matrix(cfg: DictConfig, *, exp_root: str | None = None) -> di
             }
         )
 
-    matrix_manifest_path = write_matrix_manifest(output_dir, str(matrix_cfg.matrix_name), manifests)
+    with timed_step("matrix.write_matrix_manifest", enabled=timing_on):
+        matrix_manifest_path = write_matrix_manifest(
+            output_dir, str(matrix_cfg.matrix_name), manifests
+        )
     return {
         "matrix_name": str(matrix_cfg.matrix_name),
         "output_dir": output_dir,

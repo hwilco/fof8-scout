@@ -3,6 +3,9 @@ defaults:
 
 matrix_name: "mlp_talent_regressor"
 shared:
+  diagnostics:
+    timing:
+      enabled: true
   tags:
     phase: "5"
     matrix_stage: "architecture_feasibility"
@@ -17,6 +20,15 @@ candidates:
   - candidate_id: "F2"
     label: "top3_mean_current_overall_sklearn_mlp_raw"
     regressor:
+      model: "sklearn_mlp_regressor"
+      target_col: "Top3_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "F3"
+    label: "top3_mean_current_overall_sklearn_mlp_raw_no_position"
+    regressor:
+      ablation:
+        toggles:
+          no_position: true
       model: "sklearn_mlp_regressor"
       target_col: "Top3_Mean_Current_Overall"
       target_space: "raw"

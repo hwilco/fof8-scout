@@ -233,6 +233,7 @@ def run_complete_model_evaluation(
         classifier_run_id=inputs.classifier_run_id,
         regressor_run_id=inputs.regressor_run_id,
         exp_root=exp_root,
+        require_local_bundles=bool(cfg.get("diagnostics", {}).get("skip_mlflow_model_logging")),
     )
 
     X_eval = data.X_test

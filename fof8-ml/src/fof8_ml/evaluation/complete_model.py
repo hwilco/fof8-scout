@@ -222,6 +222,7 @@ def _load_role_bundle(
     role: ModelRole,
     artifact_path: str,
     exp_root: str | None = None,
+    require_local_bundle: bool = False,
 ) -> LoadedClassifierBundle | LoadedRegressorBundle:
     """Load all model artifacts needed for a single role.
 
@@ -251,6 +252,14 @@ def _load_role_bundle(
     local_bundle = _local_bundle_dir(exp_root, run_id, role) if exp_root else None
     metadata_path = local_bundle / "bundle_metadata.json" if local_bundle else None
     use_local_bundle = bool(metadata_path and metadata_path.exists())
+    if require_local_bundle and not use_local_bundle:
+        expected = str(metadata_path) if metadata_path is not None else "<no exp_root provided>"
+        raise FileNotFoundError(
+            f"Local model bundle is required for {role} run '{run_id}', but "
+            f"bundle_metadata.json was not found at {expected}. "
+            "Rerun the source model with local bundle export enabled or disable "
+            "diagnostics.skip_mlflow_model_logging for this matrix."
+        )
 
     if use_local_bundle:
         assert local_bundle is not None
@@ -345,6 +354,7 @@ def load_complete_model(
     classifier_run_id: str,
     regressor_run_id: str,
     exp_root: str | None = None,
+    require_local_bundles: bool = False,
 ) -> CompleteModelBundle:
     """Load the classifier and regressor bundles for complete-model scoring.
 
@@ -361,13 +371,23 @@ def load_complete_model(
         classifier=cast(
             LoadedClassifierBundle,
             _load_role_bundle(
-                client, classifier_run_id, "classifier", "classifier_model", exp_root=exp_root
+                client,
+                classifier_run_id,
+                "classifier",
+                "classifier_model",
+                exp_root=exp_root,
+                require_local_bundle=require_local_bundles,
             ),
         ),
         regressor=cast(
             LoadedRegressorBundle,
             _load_role_bundle(
-                client, regressor_run_id, "regressor", "regressor_model", exp_root=exp_root
+                client,
+                regressor_run_id,
+                "regressor",
+                "regressor_model",
+                exp_root=exp_root,
+                require_local_bundle=require_local_bundles,
             ),
         ),
     )

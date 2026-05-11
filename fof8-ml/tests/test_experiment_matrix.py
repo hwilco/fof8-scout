@@ -52,6 +52,8 @@ def test_resolve_matrix_candidates_filters_requested_ids():
     assert [candidate.candidate_id for candidate in candidates] == ["A2"]
     assert candidates[0].regressor_target_space == "log"
     assert candidates[0].ablation_toggles == {"no_college": False}
+    assert candidates[0].classifier_ablation_toggles == {"no_college": False}
+    assert candidates[0].regressor_ablation_toggles == {"no_college": False}
     assert candidates[0].adjustment_method == "position_group_multiplier_proxy"
 
 
@@ -67,15 +69,19 @@ def test_set_f_mlp_talent_matrix_resolves_top3_raw_candidates():
 
     candidates = resolve_matrix_candidates(cfg)
 
-    assert [candidate.candidate_id for candidate in candidates] == ["F1", "F2"]
+    assert [candidate.candidate_id for candidate in candidates] == ["F1", "F2", "F3"]
     assert [candidate.regressor_model for candidate in candidates] == [
         "catboost_regressor_rmse",
+        "sklearn_mlp_regressor",
         "sklearn_mlp_regressor",
     ]
     assert {candidate.regressor_target_col for candidate in candidates} == {
         "Top3_Mean_Current_Overall"
     }
     assert {candidate.regressor_target_space for candidate in candidates} == {"raw"}
+    assert candidates[2].ablation_toggles == {}
+    assert candidates[2].classifier_ablation_toggles == {}
+    assert candidates[2].regressor_ablation_toggles == {"no_position": True}
 
 
 def test_experiment_matrix_and_report_smoke(monkeypatch, tmp_path):
@@ -391,3 +397,142 @@ def test_experiment_matrix_and_report_smoke(monkeypatch, tmp_path):
     assert "adjustment_method" in csv_text
     assert "A1" in csv_text
     assert "A2" in csv_text
+
+
+def test_fixed_classifier_complete_eval_keeps_classifier_feature_schema(monkeypatch, tmp_path):
+    cfg = OmegaConf.create(
+        {
+            "candidate_ids": [],
+            "matrix": {
+                "matrix_name": "fixed_classifier_regressor_ablation",
+                "output_subdir": "matrices",
+                "shared": {
+                    "classifier_source": "fixed_run",
+                    "fixed_classifier_run_id": "fixed-cls",
+                    "classifier": {
+                        "experiment_name": "Matrix_Classifier",
+                        "model": "catboost_classifier",
+                        "target_config": "economic",
+                    },
+                    "regressor": {
+                        "experiment_name": "Matrix_Regressor",
+                        "target_config": "economic",
+                    },
+                    "complete_model": {
+                        "experiment_name": "Matrix_Complete_Model",
+                        "target_config": "economic",
+                    },
+                    "tags": {},
+                    "runtime": {"refit_final_model": False},
+                },
+                "candidates": [
+                    {
+                        "candidate_id": "F3",
+                        "label": "mlp_no_position",
+                        "ablation": {"toggles": {"no_position": True}},
+                        "regressor": {
+                            "model": "sklearn_mlp_regressor",
+                            "target_col": "Top3_Mean_Current_Overall",
+                            "target_space": "raw",
+                        },
+                    }
+                ],
+            },
+        }
+    )
+    target_cfg = OmegaConf.create(
+        {
+            "classifier_sieve": {"target_col": "Economic_Success"},
+            "regressor_intensity": {"target_col": "Top3_Mean_Current_Overall"},
+            "outcome_scorecard": {"elite": {"enabled": False}},
+        }
+    )
+    complete_pipeline_cfg = OmegaConf.create(
+        {
+            "target": target_cfg.copy(),
+            "ablation": {
+                "toggles": {"no_position": False},
+                "toggle_to_group": {"no_position": "no_position"},
+                "groups": {"no_position": ["Position"]},
+                "invalid_combinations": [],
+            },
+        }
+    )
+
+    def fake_load_config(_exp_root, *parts):
+        if parts[-1] == "complete_model_pipeline.yaml":
+            return complete_pipeline_cfg.copy()
+        if parts[-2] == "target":
+            return target_cfg.copy()
+        raise AssertionError(f"Unexpected config request: {parts}")
+
+    def fake_prepare_pipeline_cfg(_exp_root, **kwargs):
+        ablation = complete_pipeline_cfg.ablation.copy()
+        if kwargs.get("ablation_toggles"):
+            ablation.toggles.update(kwargs["ablation_toggles"])
+        return OmegaConf.create(
+            {
+                "experiment_name": kwargs["experiment_name"],
+                "optimization": {"metric": "regressor_val_draft_value_score"},
+                "model": {"name": kwargs["model_config_name"], "params": {}},
+                "target": target_cfg.copy(),
+                "ablation": ablation,
+                "ablation_signature": "regressor-no-position",
+            }
+        )
+
+    regressor_toggles = []
+    complete_toggles = []
+
+    monkeypatch.setattr("fof8_ml.orchestration.experiment_matrix._load_config", fake_load_config)
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.experiment_matrix._prepare_pipeline_cfg",
+        fake_prepare_pipeline_cfg,
+    )
+    def fake_train_regressor(_exp_root, cfg_obj):
+        regressor_toggles.append(dict(cfg_obj.ablation.toggles))
+        return MatrixRunResult(
+            run_id="reg-f3",
+            experiment_name="Matrix_Regressor",
+            optimization_metric="regressor_val_draft_value_score",
+            optimization_score=0.1,
+            metrics={"regressor_val_draft_value_score": 0.1},
+        )
+
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.experiment_matrix._train_regressor_pipeline",
+        fake_train_regressor,
+    )
+
+    def fake_complete_eval(_exp_root, cfg_obj):
+        complete_toggles.append(dict(cfg_obj.ablation.toggles))
+        return MatrixRunResult(
+            run_id="complete-f3",
+            experiment_name="Matrix_Complete_Model",
+            optimization_metric="complete_draft_value_score",
+            optimization_score=0.2,
+            metrics={
+                "complete_draft_value_score": 0.2,
+                "complete_mean_ndcg_at_64": 0.2,
+                "complete_top64_weighted_mae_normalized": 0.2,
+                "complete_top64_bias": 0.0,
+                "complete_top64_calibration_slope": 1.0,
+                "complete_top64_actual_value": 1.0,
+                "complete_bust_rate_at_32": 0.0,
+                "complete_elite_precision_at_32": 0.0,
+                "complete_elite_recall_at_64": 0.0,
+                "complete_econ_mean_ndcg_at_64": 0.2,
+                "complete_talent_mean_ndcg_at_64": 0.2,
+                "complete_longevity_mean_ndcg_at_64": 0.2,
+            },
+        )
+
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.experiment_matrix._evaluate_complete_model_pipeline",
+        fake_complete_eval,
+    )
+
+    run_experiment_matrix(cfg, exp_root=str(tmp_path))
+
+    assert regressor_toggles == [{"no_position": True}]
+    assert complete_toggles == [{"no_position": False}]

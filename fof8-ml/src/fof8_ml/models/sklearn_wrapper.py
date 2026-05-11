@@ -11,6 +11,7 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
 
 from fof8_ml.data.preprocessing import preprocess_for_sklearn
+from fof8_ml.timing import timed_step
 
 from .base import ModelWrapper, SupportedSklearnRegressorModel
 
@@ -104,6 +105,7 @@ class SklearnMLPRegressorWrapper(ModelWrapper[MLPRegressor]):
 
     def __init__(self, model_name: str = "sklearn_mlp_regressor", **params: object) -> None:
         use_gpu = bool(params.pop("use_gpu", False))
+        self.timing_diagnostics = bool(params.pop("timing_diagnostics", False))
         random_seed = params.pop("random_seed", None)
         super().__init__(use_gpu=use_gpu, **params)
         self.scaler: StandardScaler | None = None
@@ -114,9 +116,26 @@ class SklearnMLPRegressorWrapper(ModelWrapper[MLPRegressor]):
         self.numeric_medians: dict[str, float] = {}
 
         typed_params: dict[str, Any] = {k: v for k, v in self.params.items() if v is not None}
+        if "hidden_layer_sizes" in typed_params:
+            typed_params["hidden_layer_sizes"] = self._coerce_hidden_layer_sizes(
+                typed_params["hidden_layer_sizes"]
+            )
         if random_seed is not None and "random_state" not in typed_params:
             typed_params["random_state"] = int(str(random_seed))
         self.model = MLPRegressor(**typed_params)
+
+    @staticmethod
+    def _coerce_hidden_layer_sizes(value: object) -> object:
+        if isinstance(value, str):
+            parts = [
+                part.strip()
+                for part in value.replace("x", ",").split(",")
+                if part.strip()
+            ]
+            return tuple(int(part) for part in parts)
+        if isinstance(value, list):
+            return tuple(int(part) for part in value)
+        return value
 
     @staticmethod
     def _categorical_columns(X: pl.DataFrame) -> list[str]:
@@ -195,12 +214,16 @@ class SklearnMLPRegressorWrapper(ModelWrapper[MLPRegressor]):
         y_val: np.ndarray | None = None,
     ) -> None:
         _ = X_val, y_val
-        X_np = self._fit_preprocess(X_train)
-        self.require_model().fit(X_np, y_train)
+        with timed_step("sklearn_mlp.fit_preprocess", enabled=self.timing_diagnostics):
+            X_np = self._fit_preprocess(X_train)
+        with timed_step("sklearn_mlp.fit_model", enabled=self.timing_diagnostics):
+            self.require_model().fit(X_np, y_train)
 
     def predict(self, X: pl.DataFrame) -> np.ndarray:
-        X_np = self._transform_preprocess(X)
-        return np.asarray(self.require_model().predict(X_np))
+        with timed_step("sklearn_mlp.predict_preprocess", enabled=self.timing_diagnostics):
+            X_np = self._transform_preprocess(X)
+        with timed_step("sklearn_mlp.predict_model", enabled=self.timing_diagnostics):
+            return np.asarray(self.require_model().predict(X_np))
 
     def get_best_iteration(self) -> int:
         model = self.require_model()
@@ -209,9 +232,15 @@ class SklearnMLPRegressorWrapper(ModelWrapper[MLPRegressor]):
     def _signature_kwargs(self, X: pl.DataFrame | None) -> dict[str, Any]:
         signature_kwargs: dict[str, Any] = {}
         if X is not None:
-            input_example = self.transform(X.head(5)).to_pandas()
+            with timed_step("sklearn_mlp.signature_transform", enabled=self.timing_diagnostics):
+                input_example = self.transform(X.head(5)).to_pandas()
             try:
-                prediction = np.asarray(self.require_model().predict(input_example.to_numpy()))
+                with timed_step(
+                    "sklearn_mlp.signature_predict", enabled=self.timing_diagnostics
+                ):
+                    prediction = np.asarray(
+                        self.require_model().predict(input_example.to_numpy())
+                    )
                 signature_kwargs = {
                     "input_example": input_example,
                     "signature": infer_signature(input_example, prediction),
@@ -222,28 +251,35 @@ class SklearnMLPRegressorWrapper(ModelWrapper[MLPRegressor]):
 
     def log_model(self, name: str, X: pl.DataFrame | None = None) -> None:
         assert self.columns is not None
-        mlflow.sklearn.log_model(
-            self.require_model(), artifact_path=name, **self._signature_kwargs(X)
-        )
-        joblib.dump(
-            {
-                "scaler": self.scaler,
-                "columns": self.columns,
-                "categorical_columns": self.categorical_columns,
-                "numeric_columns": self.numeric_columns,
-                "missing_indicator_columns": self.missing_indicator_columns,
-                "numeric_medians": self.numeric_medians,
-            },
-            f"{name}_preprocessor.joblib",
-        )
-        mlflow.log_artifact(f"{name}_preprocessor.joblib")
+        with timed_step("sklearn_mlp.log_model.signature_kwargs", enabled=self.timing_diagnostics):
+            signature_kwargs = self._signature_kwargs(X)
+        with timed_step(
+            "sklearn_mlp.log_model.mlflow_sklearn_log_model",
+            enabled=self.timing_diagnostics,
+        ):
+            mlflow.sklearn.log_model(self.require_model(), artifact_path=name, **signature_kwargs)
+        with timed_step("sklearn_mlp.log_model.preprocessor", enabled=self.timing_diagnostics):
+            joblib.dump(
+                {
+                    "scaler": self.scaler,
+                    "columns": self.columns,
+                    "categorical_columns": self.categorical_columns,
+                    "numeric_columns": self.numeric_columns,
+                    "missing_indicator_columns": self.missing_indicator_columns,
+                    "numeric_medians": self.numeric_medians,
+                },
+                f"{name}_preprocessor.joblib",
+            )
+            mlflow.log_artifact(f"{name}_preprocessor.joblib")
 
-        with open(f"{name}_features.txt", "w") as f:
-            f.write("\n".join(self.columns))
-        mlflow.log_artifact(f"{name}_features.txt")
+        with timed_step("sklearn_mlp.log_model.features", enabled=self.timing_diagnostics):
+            with open(f"{name}_features.txt", "w") as f:
+                f.write("\n".join(self.columns))
+            mlflow.log_artifact(f"{name}_features.txt")
 
     def transform(self, X: pl.DataFrame) -> pl.DataFrame:
-        X_np = self._transform_preprocess(X)
+        with timed_step("sklearn_mlp.transform_preprocess", enabled=self.timing_diagnostics):
+            X_np = self._transform_preprocess(X)
         assert self.columns is not None
         return pl.DataFrame(X_np, schema=self.columns)
 

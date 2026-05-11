@@ -1,0 +1,40 @@
+# @package hydra.sweeper
+search_space:
+  # Keep architecture choices compact for a first MLP sweep. The wrapper
+  # accepts x-delimited aliases and converts them to sklearn tuples.
+  model.params.hidden_layer_sizes:
+    type: categorical
+    choices: ["64", "128x64", "256x128", "128x64x32"]
+
+  model.params.alpha:
+    type: float
+    low: 0.000001
+    high: 0.01
+    log: true
+
+  model.params.learning_rate_init:
+    type: float
+    low: 0.0001
+    high: 0.005
+    log: true
+
+  model.params.batch_size:
+    type: categorical
+    choices: [64, 128, 256]
+
+  model.params.validation_fraction:
+    type: float
+    low: 0.1
+    high: 0.25
+
+  model.params.n_iter_no_change:
+    type: int
+    low: 15
+    high: 40
+    step: 5
+
+  # Small ablation: test whether removing raw Position helps the dense MLP
+  # generalize while retaining Position_Group archetype context.
+  ablation.toggles.no_position:
+    type: categorical
+    choices: [false, true]

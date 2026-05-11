@@ -10,6 +10,7 @@ from fof8_ml.orchestration.data_loader import DataLoader, resolve_feature_ablati
 from fof8_ml.orchestration.experiment_logger import ExperimentLogger
 from fof8_ml.orchestration.pipeline_types import PreparedData
 from fof8_ml.orchestration.sweep_manager import SweepContext, SweepManager
+from fof8_ml.timing import timed_step, timing_enabled
 
 
 @dataclass
@@ -29,30 +30,39 @@ def resolve_exp_root(entrypoint_file: str) -> str:
 
 
 def build_pipeline_context(cfg: DictConfig, entrypoint_file: str) -> PipelineContext:
+    timing_on = timing_enabled(cfg)
     exp_root = resolve_exp_root(entrypoint_file)
     absolute_raw_path = os.path.abspath(os.path.join(exp_root, cfg.data.raw_path))
 
-    logger = ExperimentLogger(exp_root, cfg.experiment_name)
-    logger.init_tracking()
+    with timed_step("pipeline_context.init_tracking", enabled=timing_on):
+        logger = ExperimentLogger(exp_root, cfg.experiment_name)
+        logger.init_tracking()
     if logger.client is None or logger.experiment_id is None:
         raise RuntimeError("MLflow tracking client/experiment were not initialized")
 
-    sweep_mgr = SweepManager(logger.client, logger.experiment_id, exp_root)
-    sweep_context = sweep_mgr.detect_sweep(cfg)
+    with timed_step("pipeline_context.detect_sweep", enabled=timing_on):
+        sweep_mgr = SweepManager(logger.client, logger.experiment_id, exp_root)
+        sweep_context = sweep_mgr.detect_sweep(cfg)
 
-    ablation = resolve_feature_ablation_config(cfg)
-    with open_dict(cfg):
-        OmegaConf.update(cfg, "include_features", ablation["include_features"], merge=False)
-        OmegaConf.update(cfg, "exclude_features", ablation["exclude_features"], merge=False)
-        OmegaConf.update(cfg, "ablation_signature", ablation["signature"], merge=False)
-        OmegaConf.update(cfg, "ablation_enabled_toggles", ablation["enabled_toggles"], merge=False)
+    with timed_step("pipeline_context.resolve_feature_ablation", enabled=timing_on):
+        ablation = resolve_feature_ablation_config(cfg)
+        with open_dict(cfg):
+            OmegaConf.update(cfg, "include_features", ablation["include_features"], merge=False)
+            OmegaConf.update(cfg, "exclude_features", ablation["exclude_features"], merge=False)
+            OmegaConf.update(cfg, "ablation_signature", ablation["signature"], merge=False)
+            OmegaConf.update(
+                cfg, "ablation_enabled_toggles", ablation["enabled_toggles"], merge=False
+            )
 
     loader = DataLoader(exp_root, quiet=sweep_context.quiet)
-    data = loader.load(cfg)
-    loader.print_summary(data, cfg)
-    data = loader.apply_feature_ablation(
-        data, cfg.get("include_features"), cfg.get("exclude_features")
-    )
+    with timed_step("pipeline_context.load_data", enabled=timing_on):
+        data = loader.load(cfg)
+    with timed_step("pipeline_context.print_data_summary", enabled=timing_on):
+        loader.print_summary(data, cfg)
+    with timed_step("pipeline_context.apply_feature_ablation", enabled=timing_on):
+        data = loader.apply_feature_ablation(
+            data, cfg.get("include_features"), cfg.get("exclude_features")
+        )
 
     return PipelineContext(
         cfg=cfg,

@@ -1,0 +1,34 @@
+# @package _global_
+
+# Standalone MLP regressor tuning run for Top3 talent. This is intentionally
+# not a matrix run and does not evaluate a stitched complete model.
+
+defaults:
+  - override /model: sklearn_mlp_regressor
+  - override /hparams_search: sklearn_mlp_regressor
+
+experiment_name: "Regressor_Sklearn_MLP_Top3_Hyperopt_v1"
+quiet_sweep: true
+use_gpu: false
+
+target:
+  regressor_intensity:
+    target_col: "Top3_Mean_Current_Overall"
+    target_space: "raw"
+    target_family: "talent"
+
+optimization:
+  metric: "regressor_val_draft_value_score"
+  direction: "maximize"
+
+diagnostics:
+  log_importance: false
+  log_shap: false
+  skip_mlflow_model_logging: true
+
+hydra:
+  sweeper:
+    n_trials: 40
+    direction: ${optimization.direction}
+    study_name: sklearn_mlp_top3_talent_v1
+    storage: sqlite:///fof8-ml/optuna.db

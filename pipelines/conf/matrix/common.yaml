@@ -1,6 +1,8 @@
 matrix_name: "matrix_common"
 output_subdir: "matrices"
 shared:
+  diagnostics:
+    skip_mlflow_model_logging: true
   classifier_source: "train_once_per_matrix"
   fixed_classifier_run_id: null
   classifier:

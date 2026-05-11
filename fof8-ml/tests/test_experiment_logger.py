@@ -13,7 +13,11 @@ from omegaconf import OmegaConf
 
 
 class _DummyModel:
+    def __init__(self):
+        self.logged = False
+
     def log_model(self, name: str, X: pl.DataFrame | None = None) -> None:
+        self.logged = True
         return None
 
     def require_model(self):
@@ -146,3 +150,28 @@ def test_log_classifier_results_keeps_oof_artifact_names(monkeypatch, tmp_path):
     )
 
     assert "classifier_oof_results.csv" in artifacts
+
+
+def test_log_regressor_results_can_skip_remote_mlflow_model_logging(monkeypatch, tmp_path):
+    logger = ExperimentLogger(exp_root=str(tmp_path), experiment_name="test")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.experiment_logger.mlflow.log_metrics", lambda *_a, **_k: None
+    )
+    model = _DummyModel()
+    cfg = OmegaConf.create(
+        {
+            "diagnostics": {"skip_mlflow_model_logging": True},
+            "target": {"regressor_intensity": {"target_space": "raw"}},
+        }
+    )
+
+    logger.log_regressor_results(
+        {"regressor_val_draft_value_score": 1.0},
+        model,
+        pl.DataFrame({"feature": [1.0, 2.0]}),
+        cfg,
+        quiet=True,
+    )
+
+    assert model.logged is False
