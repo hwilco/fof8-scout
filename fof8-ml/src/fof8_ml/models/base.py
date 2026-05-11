@@ -6,11 +6,12 @@ import numpy as np
 import polars as pl
 import xgboost as xgb
 from sklearn.linear_model import GammaRegressor, TweedieRegressor
+from sklearn.neural_network import MLPRegressor
 
 ModelRole: TypeAlias = Literal["classifier", "regressor"]
 ModelFamily: TypeAlias = Literal["catboost", "xgb", "sklearn"]
 SupportedClassifierModel: TypeAlias = cb.CatBoostClassifier | xgb.XGBClassifier
-SupportedSklearnRegressorModel: TypeAlias = TweedieRegressor | GammaRegressor
+SupportedSklearnRegressorModel: TypeAlias = TweedieRegressor | GammaRegressor | MLPRegressor
 SupportedRegressorModel: TypeAlias = (
     cb.CatBoostRegressor | xgb.XGBRegressor | SupportedSklearnRegressorModel
 )

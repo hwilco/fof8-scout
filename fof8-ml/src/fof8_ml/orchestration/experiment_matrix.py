@@ -126,9 +126,7 @@ def _merge_tags(existing: dict[str, Any], extra: dict[str, Any]) -> dict[str, An
 def _load_config(exp_root: str, *parts: str) -> DictConfig:
     loaded = OmegaConf.load(os.path.join(exp_root, *parts))
     if not isinstance(loaded, DictConfig):
-        raise TypeError(
-            f"Expected DictConfig at {'/'.join(parts)}, got {type(loaded).__name__}."
-        )
+        raise TypeError(f"Expected DictConfig at {'/'.join(parts)}, got {type(loaded).__name__}.")
     return loaded
 
 

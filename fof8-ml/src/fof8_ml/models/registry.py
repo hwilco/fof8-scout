@@ -14,7 +14,7 @@ from typing import cast
 
 from fof8_ml.models.base import ModelFamily, ModelRole, ModelWrapper
 from fof8_ml.models.catboost_wrapper import CatBoostClassifierWrapper, CatBoostRegressorWrapper
-from fof8_ml.models.sklearn_wrapper import SklearnRegressorWrapper
+from fof8_ml.models.sklearn_wrapper import SklearnMLPRegressorWrapper, SklearnRegressorWrapper
 from fof8_ml.models.xgboost_wrapper import XGBoostClassifierWrapper, XGBoostRegressorWrapper
 
 ModelKey = str
@@ -122,3 +122,4 @@ register_model("regressor", "catboost_regressor_expectile", "catboost", CatBoost
 register_model("regressor", "xgb_regressor", "xgb", XGBoostRegressorWrapper)
 register_model("regressor", "sklearn_tweedie_regressor", "sklearn", SklearnRegressorWrapper)
 register_model("regressor", "sklearn_gamma_regressor", "sklearn", SklearnRegressorWrapper)
+register_model("regressor", "sklearn_mlp_regressor", "sklearn", SklearnMLPRegressorWrapper)

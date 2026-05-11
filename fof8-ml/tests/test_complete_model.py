@@ -6,10 +6,14 @@ from fof8_ml.evaluation.complete_model import (
     LoadedClassifierBundle,
     LoadedRegressorBundle,
     _load_role_bundle,
+    _predict_regressor,
     evaluate_complete_model,
     evaluate_complete_model_by_slice,
     predict_complete_model,
 )
+from joblib import dump
+from sklearn.dummy import DummyRegressor
+from sklearn.preprocessing import StandardScaler
 
 
 class _FakeClassifierModel:
@@ -234,3 +238,98 @@ def test_load_role_bundle_prefers_local_bundle_for_regressor(monkeypatch, tmp_pa
     assert isinstance(bundle, LoadedRegressorBundle)
     assert bundle.run_id == run_id
     assert bundle.target_space == "raw"
+
+
+def test_load_role_bundle_uses_local_mlp_preprocessor_for_sklearn_regressor(tmp_path):
+    run_id = "mlp-reg-local"
+    bundle_dir = tmp_path / "outputs" / "local_model_bundles" / run_id / "regressor"
+    bundle_dir.mkdir(parents=True)
+
+    model = DummyRegressor(strategy="constant", constant=7.0)
+    model.fit(np.zeros((2, 4)), np.array([7.0, 7.0]))
+    dump(model, bundle_dir / "model.joblib")
+
+    scaler = StandardScaler().fit(
+        np.array(
+            [
+                [80.0, 0.0, 1.0, 0.0],
+                [70.0, 1.0, 0.0, 1.0],
+            ]
+        )
+    )
+    dump(
+        {
+            "scaler": scaler,
+            "columns": [
+                "Mean_Accuracy",
+                "Mean_Accuracy__missing",
+                "Position_Group_QB",
+                "Position_Group_DE",
+            ],
+            "categorical_columns": ["Position_Group"],
+            "numeric_columns": ["Mean_Accuracy"],
+            "missing_indicator_columns": ["Mean_Accuracy__missing"],
+            "numeric_medians": {"Mean_Accuracy": 75.0},
+        },
+        bundle_dir / "regressor_model_preprocessor.joblib",
+    )
+    (bundle_dir / "bundle_metadata.json").write_text(
+        (
+            '{"model_format":"joblib","model_path":"model.joblib",'
+            '"preprocessor_path":"regressor_model_preprocessor.joblib"}'
+        ),
+        encoding="utf-8",
+    )
+    (bundle_dir / "feature_schema.json").write_text(
+        (
+            '{"feature_columns":["Mean_Accuracy","Position_Group"],'
+            '"categorical_columns":["Position_Group"],'
+            '"excluded_metadata_columns":[],"excluded_target_columns":[]}'
+        ),
+        encoding="utf-8",
+    )
+
+    client = type(
+        "Client",
+        (),
+        {
+            "get_run": lambda self, _run_id: type(
+                "Run",
+                (),
+                {
+                    "data": type(
+                        "Data",
+                        (),
+                        {
+                            "tags": {"model_role": "regressor"},
+                            "params": {
+                                "model.name": "sklearn_mlp_regressor",
+                                "target.regressor.target_space": "raw",
+                            },
+                        },
+                    )()
+                },
+            )()
+        },
+    )()
+
+    bundle = _load_role_bundle(
+        client,
+        run_id,
+        "regressor",
+        "regressor_model",
+        exp_root=str(tmp_path),
+    )
+    preds = _predict_regressor(
+        bundle,
+        pl.DataFrame(
+            {
+                "Mean_Accuracy": [None, 72.0],
+                "Position_Group": ["QB", "WR"],
+            }
+        ),
+    )
+
+    assert isinstance(bundle, LoadedRegressorBundle)
+    assert bundle.sklearn_preprocessor is not None
+    assert np.allclose(preds, [7.0, 7.0])

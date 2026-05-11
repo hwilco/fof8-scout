@@ -1,0 +1,22 @@
+defaults:
+  - common
+
+matrix_name: "mlp_talent_regressor"
+shared:
+  tags:
+    phase: "5"
+    matrix_stage: "architecture_feasibility"
+    experiment_set: "F"
+candidates:
+  - candidate_id: "F1"
+    label: "top3_mean_current_overall_catboost_rmse_raw"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_col: "Top3_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "F2"
+    label: "top3_mean_current_overall_sklearn_mlp_raw"
+    regressor:
+      model: "sklearn_mlp_regressor"
+      target_col: "Top3_Mean_Current_Overall"
+      target_space: "raw"

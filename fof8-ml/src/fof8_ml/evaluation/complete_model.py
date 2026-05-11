@@ -68,8 +68,9 @@ class LoadedRegressorBundle:
         model: Loaded regressor model object.
         schema: Feature schema used to transform input features.
         target_space: Target space used during regressor training.
-        sklearn_scaler: Optional sklearn preprocessing scaler.
-        sklearn_expected_columns: Optional sklearn feature order.
+    sklearn_scaler: Optional sklearn preprocessing scaler.
+    sklearn_expected_columns: Optional sklearn feature order.
+    sklearn_preprocessor: Optional sklearn MLP preprocessing bundle.
     """
 
     role: ModelRole
@@ -80,6 +81,7 @@ class LoadedRegressorBundle:
     target_space: str
     sklearn_scaler: ScalerLike | None = None
     sklearn_expected_columns: list[str] | None = None
+    sklearn_preprocessor: dict[str, Any] | None = None
 
 
 @dataclass
@@ -299,15 +301,32 @@ def _load_role_bundle(
         )
     sklearn_scaler: ScalerLike | None = None
     sklearn_expected_columns: list[str] | None = None
+    sklearn_preprocessor: dict[str, Any] | None = None
     if family == "sklearn":
         if use_local_bundle and local_bundle is not None:
-            scaler_path = str(local_bundle / "regressor_model_scaler.joblib")
-            features_path = str(local_bundle / "regressor_model_features.txt")
+            preprocessor_path = local_bundle / "regressor_model_preprocessor.joblib"
+            if preprocessor_path.exists():
+                sklearn_preprocessor = cast(dict[str, Any], joblib.load(preprocessor_path))
+            else:
+                scaler_path = str(local_bundle / "regressor_model_scaler.joblib")
+                features_path = str(local_bundle / "regressor_model_features.txt")
+                sklearn_scaler = cast(ScalerLike, joblib.load(scaler_path))
+                sklearn_expected_columns = (
+                    Path(features_path).read_text(encoding="utf-8").splitlines()
+                )
         else:
-            scaler_path = _require_artifact(client, run_id, "regressor_model_scaler.joblib")
-            features_path = _require_artifact(client, run_id, "regressor_model_features.txt")
-        sklearn_scaler = cast(ScalerLike, joblib.load(scaler_path))
-        sklearn_expected_columns = Path(features_path).read_text(encoding="utf-8").splitlines()
+            try:
+                preprocessor_path = _require_artifact(
+                    client, run_id, "regressor_model_preprocessor.joblib"
+                )
+                sklearn_preprocessor = cast(dict[str, Any], joblib.load(preprocessor_path))
+            except FileNotFoundError:
+                scaler_path = _require_artifact(client, run_id, "regressor_model_scaler.joblib")
+                features_path = _require_artifact(client, run_id, "regressor_model_features.txt")
+                sklearn_scaler = cast(ScalerLike, joblib.load(scaler_path))
+                sklearn_expected_columns = (
+                    Path(features_path).read_text(encoding="utf-8").splitlines()
+                )
     return LoadedRegressorBundle(
         role=role,
         run_id=run_id,
@@ -317,6 +336,7 @@ def _load_role_bundle(
         target_space=str(run.data.params.get("target.regressor.target_space", "log")),
         sklearn_scaler=sklearn_scaler,
         sklearn_expected_columns=sklearn_expected_columns,
+        sklearn_preprocessor=sklearn_preprocessor,
     )
 
 
@@ -389,6 +409,49 @@ def _predict_classifier(bundle: LoadedClassifierBundle, X_full: pl.DataFrame) ->
     return bundle.calibrator.predict(raw_probs)
 
 
+def _preprocess_for_sklearn_mlp(
+    X: pl.DataFrame,
+    preprocessor: dict[str, Any],
+) -> pl.DataFrame:
+    """Apply the dense sklearn MLP preprocessor saved by SklearnMLPRegressorWrapper."""
+
+    columns = cast(list[str], preprocessor["columns"])
+    categorical_columns = cast(list[str], preprocessor.get("categorical_columns", []))
+    numeric_columns = cast(list[str], preprocessor.get("numeric_columns", []))
+    missing_indicator_columns = set(
+        cast(list[str], preprocessor.get("missing_indicator_columns", []))
+    )
+    numeric_medians = cast(dict[str, float], preprocessor.get("numeric_medians", {}))
+    scaler = cast(ScalerLike, preprocessor["scaler"])
+
+    numeric_exprs = [
+        pl.col(col).cast(pl.Float64).fill_null(float(numeric_medians.get(col, 0.0))).alias(col)
+        for col in numeric_columns
+        if col in X.columns
+    ]
+    indicator_exprs = [
+        pl.col(col).is_null().cast(pl.Int8).alias(f"{col}__missing")
+        for col in numeric_columns
+        if f"{col}__missing" in missing_indicator_columns and col in X.columns
+    ]
+
+    frames: list[pl.DataFrame] = []
+    if numeric_exprs:
+        frames.append(X.select(numeric_exprs))
+    if indicator_exprs:
+        frames.append(X.select(indicator_exprs))
+    existing_categoricals = [col for col in categorical_columns if col in X.columns]
+    if existing_categoricals:
+        frames.append(X.select(existing_categoricals).to_dummies(drop_first=False))
+
+    X_prepared = pl.concat(frames, how="horizontal") if frames else pl.DataFrame()
+    missing_cols = [col for col in columns if col not in X_prepared.columns]
+    if missing_cols:
+        X_prepared = X_prepared.with_columns([pl.lit(0).alias(col) for col in missing_cols])
+    X_prepared = X_prepared.select(columns)
+    return pl.DataFrame(np.asarray(scaler.transform(X_prepared.to_numpy())), schema=columns)
+
+
 def _predict_regressor(bundle: LoadedRegressorBundle, X_full: pl.DataFrame) -> np.ndarray:
     """Predict non-negative regression values in raw output space.
 
@@ -403,13 +466,16 @@ def _predict_regressor(bundle: LoadedRegressorBundle, X_full: pl.DataFrame) -> n
     features = bundle.schema.apply(X_full)
 
     if bundle.family == "sklearn":
-        transformed, _, _ = preprocess_for_sklearn(
-            features,
-            scaler=bundle.sklearn_scaler,
-            expected_columns=bundle.sklearn_expected_columns,
-        )
+        if bundle.sklearn_preprocessor is not None:
+            transformed = _preprocess_for_sklearn_mlp(features, bundle.sklearn_preprocessor)
+        else:
+            transformed, _, _ = preprocess_for_sklearn(
+                features,
+                scaler=bundle.sklearn_scaler,
+                expected_columns=bundle.sklearn_expected_columns,
+            )
         raw_predictions = bundle.model.predict(transformed.to_numpy())
-        return np.maximum(raw_predictions.astype(float), 0.0)
+        return np.maximum(np.asarray(raw_predictions, dtype=float), 0.0)
 
     if bundle.family == "xgb":
         raw_predictions = bundle.model.predict(features.to_numpy())

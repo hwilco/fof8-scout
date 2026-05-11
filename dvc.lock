@@ -15,7 +15,7 @@ stages:
       nfiles: 22818
     - path: fof8-ml/src/fof8_ml/data/
       hash: md5
-      md5: f23773c007d367ac12d68e09d6d52c15.dir
+      md5: 9b203d4361dff17e2946185f14908cf3.dir
       size: 56689
       nfiles: 16
     - path: pipelines/conf/data/

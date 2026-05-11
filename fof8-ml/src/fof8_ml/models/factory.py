@@ -43,7 +43,12 @@ def get_model_wrapper(
     if registration.family == "xgb":
         return registration.builder(random_seed=random_seed, use_gpu=use_gpu, **params)
     if registration.family == "sklearn":
-        return registration.builder(model_name=model_name.lower(), use_gpu=use_gpu, **params)
+        return registration.builder(
+            model_name=model_name.lower(),
+            use_gpu=use_gpu,
+            random_seed=random_seed,
+            **params,
+        )
 
     raise ValueError(
         "Unsupported model family "
@@ -52,13 +57,14 @@ def get_model_wrapper(
 
 
 def apply_quiet_params(model_name: str, params: dict[str, Any]) -> dict[str, Any]:
-    """Return params with quiet flags applied for CatBoost/XGBoost models.
+    """Return params with quiet flags applied for verbose-capable models.
 
     The model family is resolved from the explicit registry across known
-    roles. Non-CatBoost/XGBoost models are returned unchanged.
+    roles. Models without a known verbosity flag are returned unchanged.
     """
 
     quiet_params = params.copy()
+    normalized_model_name = model_name.strip().lower()
 
     for role in ("classifier", "regressor"):
         family = get_model_family(role=role, model_name=model_name)
@@ -67,6 +73,9 @@ def apply_quiet_params(model_name: str, params: dict[str, Any]) -> dict[str, Any
             return quiet_params
         if family == "xgb":
             quiet_params["verbosity"] = 0
+            return quiet_params
+        if family == "sklearn" and normalized_model_name == "sklearn_mlp_regressor":
+            quiet_params["verbose"] = False
             return quiet_params
 
     return quiet_params
@@ -82,10 +91,12 @@ def apply_interactive_progress_params(
 
     This preserves any explicit verbosity/logging config already supplied by the
     model config. For CatBoost, default to periodic iteration updates so single
-    runs show meaningful progress during early stopping and final refits.
+    runs show meaningful progress during early stopping and final refits. For
+    sklearn MLP, enable sklearn's native per-iteration loss output.
     """
 
     interactive_params = params.copy()
+    normalized_model_name = model_name.strip().lower()
 
     for role in ("classifier", "regressor"):
         family = get_model_family(role=role, model_name=model_name)
@@ -99,6 +110,10 @@ def apply_interactive_progress_params(
         if family == "xgb":
             if "verbosity" not in interactive_params:
                 interactive_params["verbosity"] = 1
+            return interactive_params
+        if family == "sklearn" and normalized_model_name == "sklearn_mlp_regressor":
+            if "verbose" not in interactive_params:
+                interactive_params["verbose"] = True
             return interactive_params
 
     return interactive_params

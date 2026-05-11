@@ -4,6 +4,7 @@ import pytest
 from fof8_ml.models import (
     CatBoostClassifierWrapper,
     CatBoostRegressorWrapper,
+    SklearnMLPRegressorWrapper,
     SklearnRegressorWrapper,
     XGBoostClassifierWrapper,
     XGBoostRegressorWrapper,
@@ -32,6 +33,7 @@ MODEL_CFG_DIR = Path(__file__).resolve().parents[2] / "pipelines" / "conf" / "mo
         ("xgb_regressor", "regressor", XGBoostRegressorWrapper),
         ("sklearn_tweedie_regressor", "regressor", SklearnRegressorWrapper),
         ("sklearn_gamma_regressor", "regressor", SklearnRegressorWrapper),
+        ("sklearn_mlp_regressor", "regressor", SklearnMLPRegressorWrapper),
     ],
 )
 def test_get_model_wrapper_aliases(model_name, role, expected_cls):
@@ -55,6 +57,7 @@ def test_get_model_wrapper_aliases(model_name, role, expected_cls):
         ("catboost_regressor_expectile.yaml", "regressor", CatBoostRegressorWrapper),
         ("sklearn_tweedie_regressor.yaml", "regressor", SklearnRegressorWrapper),
         ("sklearn_gamma_regressor.yaml", "regressor", SklearnRegressorWrapper),
+        ("sklearn_mlp_regressor.yaml", "regressor", SklearnMLPRegressorWrapper),
     ],
 )
 def test_all_model_configs_resolve_to_expected_wrapper_family(cfg_file, role, expected_cls):
@@ -129,10 +132,16 @@ def test_quiet_params_for_registry_models():
     sklearn_quiet = apply_quiet_params("sklearn_tweedie_regressor", {"alpha": 1.0})
     assert sklearn_quiet == {"alpha": 1.0}
 
+    mlp_quiet = apply_quiet_params("sklearn_mlp_regressor", {"max_iter": 100})
+    assert mlp_quiet["verbose"] is False
+
 
 def test_quiet_params_is_case_insensitive():
     cat_quiet = apply_quiet_params(" CATBOOST_CLASSIFIER ", {"iterations": 100})
     assert cat_quiet["logging_level"] == "Silent"
+
+    mlp_quiet = apply_quiet_params(" SKLEARN_MLP_REGRESSOR ", {"verbose": True})
+    assert mlp_quiet["verbose"] is False
 
 
 def test_interactive_progress_params_default_for_catboost():
@@ -156,3 +165,18 @@ def test_interactive_progress_params_respects_existing_verbosity():
         catboost_progress_every=25,
     )
     assert params["verbose"] == 7
+
+
+def test_interactive_progress_params_default_for_sklearn_mlp():
+    params = apply_interactive_progress_params("sklearn_mlp_regressor", {"max_iter": 100})
+
+    assert params["verbose"] is True
+
+
+def test_interactive_progress_params_respects_sklearn_mlp_verbose_setting():
+    params = apply_interactive_progress_params(
+        "sklearn_mlp_regressor",
+        {"max_iter": 100, "verbose": False},
+    )
+
+    assert params["verbose"] is False

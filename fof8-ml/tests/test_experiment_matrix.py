@@ -55,6 +55,29 @@ def test_resolve_matrix_candidates_filters_requested_ids():
     assert candidates[0].adjustment_method == "position_group_multiplier_proxy"
 
 
+def test_set_f_mlp_talent_matrix_resolves_top3_raw_candidates():
+    matrix_path = (
+        Path(__file__).resolve().parents[2]
+        / "pipelines"
+        / "conf"
+        / "matrix"
+        / "set_f_mlp_talent.yaml"
+    )
+    cfg = OmegaConf.load(matrix_path)
+
+    candidates = resolve_matrix_candidates(cfg)
+
+    assert [candidate.candidate_id for candidate in candidates] == ["F1", "F2"]
+    assert [candidate.regressor_model for candidate in candidates] == [
+        "catboost_regressor_rmse",
+        "sklearn_mlp_regressor",
+    ]
+    assert {candidate.regressor_target_col for candidate in candidates} == {
+        "Top3_Mean_Current_Overall"
+    }
+    assert {candidate.regressor_target_space for candidate in candidates} == {"raw"}
+
+
 def test_experiment_matrix_and_report_smoke(monkeypatch, tmp_path):
     cfg = OmegaConf.create(
         {

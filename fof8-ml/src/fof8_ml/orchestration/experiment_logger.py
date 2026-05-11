@@ -273,10 +273,14 @@ class ExperimentLogger:
         metadata = {"model_format": "joblib", "model_path": "model.joblib"}
         if role_name == "regressor":
             scaler_src = "regressor_model_scaler.joblib"
+            preprocessor_src = "regressor_model_preprocessor.joblib"
             features_src = "regressor_model_features.txt"
             if os.path.exists(scaler_src):
                 shutil.copy2(scaler_src, os.path.join(bundle_dir, scaler_src))
                 metadata["scaler_path"] = scaler_src
+            if os.path.exists(preprocessor_src):
+                shutil.copy2(preprocessor_src, os.path.join(bundle_dir, preprocessor_src))
+                metadata["preprocessor_path"] = preprocessor_src
             if os.path.exists(features_src):
                 shutil.copy2(features_src, os.path.join(bundle_dir, features_src))
                 metadata["features_path"] = features_src
@@ -435,7 +439,11 @@ class ExperimentLogger:
                 "role": "regressor",
                 "target_space": str(cfg.target.regressor_intensity.get("target_space", "log")),
             },
-            extra_artifact_paths=["regressor_model_scaler.joblib", "regressor_model_features.txt"],
+            extra_artifact_paths=[
+                "regressor_model_scaler.joblib",
+                "regressor_model_preprocessor.joblib",
+                "regressor_model_features.txt",
+            ],
         )
 
         if not quiet:

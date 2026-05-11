@@ -130,17 +130,13 @@ def _build_derived_classifier_targets(df: pl.DataFrame, cfg: DictConfig) -> pl.D
             elif op == "<":
                 expr = pl.col(source_col) < threshold
             else:
-                raise ValueError(
-                    f"Unsupported derived target operator '{op}' for '{target_col}'."
-                )
+                raise ValueError(f"Unsupported derived target operator '{op}' for '{target_col}'.")
             out = out.with_columns(expr.cast(pl.Int8).alias(target_col))
             continue
 
         if kind == "position_group_percentile":
             if "Position_Group" not in out.columns:
-                raise ValueError(
-                    f"Derived target '{target_col}' requires Position_Group column."
-                )
+                raise ValueError(f"Derived target '{target_col}' requires Position_Group column.")
             percentile = float(spec.get("percentile", 0.9))
             if not 0 < percentile < 1:
                 raise ValueError(
@@ -149,7 +145,9 @@ def _build_derived_classifier_targets(df: pl.DataFrame, cfg: DictConfig) -> pl.D
             min_group_size = int(spec.get("min_group_size", 1))
             group_threshold_col = f"__{target_col}_group_q"
             group_count_col = f"__{target_col}_group_n"
-            global_threshold = out.get_column(source_col).quantile(percentile, interpolation="linear")
+            global_threshold = out.get_column(source_col).quantile(
+                percentile, interpolation="linear"
+            )
             global_threshold = 0.0 if global_threshold is None else float(global_threshold)
             out = (
                 out.with_columns(
