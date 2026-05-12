@@ -1,0 +1,29 @@
+# @package _global_
+
+# Standalone MLP regressor tuning run for the control-window talent target.
+# This is intentionally not a matrix run and does not evaluate a stitched complete model.
+
+defaults:
+  - override /model: sklearn_mlp_regressor_control_window
+  - override /hparams_search: sklearn_mlp_regressor
+  - override /target: talent_control_window
+
+experiment_name: "Regressor_Sklearn_MLP_Control_Window_Hyperopt_v1"
+quiet_sweep: true
+use_gpu: false
+
+optimization:
+  metric: "regressor_val_top32_target_capture_ratio"
+  direction: "maximize"
+
+diagnostics:
+  log_importance: false
+  log_shap: false
+  skip_mlflow_model_logging: true
+
+hydra:
+  sweeper:
+    n_trials: 40
+    direction: ${optimization.direction}
+    study_name: sklearn_mlp_control_window_v1
+    storage: sqlite:///fof8-ml/optuna.db

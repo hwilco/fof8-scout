@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import numpy as np
 import polars as pl
 from fof8_ml.orchestration.experiment_logger import ExperimentLogger
 from fof8_ml.reporting.matrix_diagnostics import export_matrix_diagnostics
@@ -157,3 +158,138 @@ def test_export_matrix_diagnostics_writes_second_pass_artifacts(monkeypatch, tmp
     assert "overlap_count" in overlap_text
     rank_text = (matrix_dir / "board_rank_deltas.csv").read_text(encoding="utf-8")
     assert "abs_rank_delta" in rank_text
+
+
+def test_export_matrix_diagnostics_writes_regressor_only_position_slice_summary(
+    monkeypatch, tmp_path
+):
+    matrix_dir = tmp_path / "outputs" / "matrices" / "talent_only"
+    matrix_dir.mkdir(parents=True)
+
+    candidate_manifest = {
+        "candidate_id": "H1",
+        "label": "top3_raw_all_positions",
+        "classifier_source": "none",
+        "regressor_run_id": "reg-1",
+        "regressor_target_col": "Control_Window_Mean_Current_Overall",
+        "complete_run_id": "",
+    }
+    candidate_manifest_b = {
+        "candidate_id": "H2",
+        "label": "top3_qb_only",
+        "classifier_source": "none",
+        "regressor_run_id": "reg-2",
+        "regressor_target_col": "Control_Window_Mean_Current_Overall",
+        "complete_run_id": "",
+    }
+    candidate_path = matrix_dir / "H1.json"
+    candidate_b_path = matrix_dir / "H2.json"
+    candidate_path.write_text(__import__("json").dumps(candidate_manifest), encoding="utf-8")
+    candidate_b_path.write_text(__import__("json").dumps(candidate_manifest_b), encoding="utf-8")
+    (matrix_dir / "matrix_manifest.json").write_text(
+        __import__("json").dumps(
+            {
+                "matrix_name": "talent_only",
+                "candidates": [
+                    {
+                        "candidate_id": "H1",
+                        "label": "top3_raw_all_positions",
+                        "manifest_path": str(candidate_path),
+                    },
+                    {
+                        "candidate_id": "H2",
+                        "label": "top3_qb_only",
+                        "manifest_path": str(candidate_b_path),
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_init_tracking(self):
+        self.client = object()
+        self.experiment_id = "exp-1"
+
+    monkeypatch.setattr(ExperimentLogger, "init_tracking", fake_init_tracking)
+
+    prepared = SimpleNamespace(
+        X_val=pl.DataFrame({"f1": [1.0, 2.0, 3.0, 4.0]}),
+        y_cls_val=np.array([1, 1, 1, 1]),
+        y_reg_val=np.array([10.0, 8.0, 7.0, 3.0]),
+        meta_val=pl.DataFrame(
+            {
+                "Universe": ["U1", "U1", "U2", "U2"],
+                "Year": [2020, 2020, 2021, 2021],
+                "Position_Group": ["QB", "RB", "QB", "RB"],
+            }
+        ),
+    )
+
+    monkeypatch.setattr(
+        "fof8_ml.reporting.matrix_diagnostics._prepare_regressor_only_validation_frame",
+        lambda cfg, exp_root, reference_candidate: (
+            prepared.X_val,
+            prepared.y_reg_val,
+            (
+                prepared.meta_val.get_column("Universe")
+                + ":"
+                + prepared.meta_val.get_column("Year").cast(pl.Utf8)
+            ).to_numpy(),
+            prepared.meta_val,
+        ),
+    )
+    monkeypatch.setattr(
+        "fof8_ml.reporting.matrix_diagnostics._load_role_bundle",
+        lambda client, run_id, role, artifact_path, exp_root=None: {"run_id": run_id},
+    )
+
+    def fake_predict(bundle, X_full):
+        _ = X_full
+        if bundle["run_id"] == "reg-1":
+            return np.array([9.0, 5.0, 6.0, 2.0])
+        return np.array([8.0, 4.0, 9.0, 1.0])
+
+    monkeypatch.setattr("fof8_ml.reporting.matrix_diagnostics._predict_regressor", fake_predict)
+
+    cfg = OmegaConf.create(
+        {
+            "manifest_path": None,
+            "output_dir": None,
+            "matrix": {
+                "matrix_name": "talent_only",
+                "output_subdir": "matrices",
+                "candidates": [
+                    {
+                        "candidate_id": "H1",
+                        "label": "top3_raw_all_positions",
+                        "regressor": {
+                            "model": "catboost_regressor_rmse",
+                            "target_config": "talent_control_window",
+                            "target_col": "Control_Window_Mean_Current_Overall",
+                            "target_space": "raw",
+                        },
+                    },
+                    {
+                        "candidate_id": "H2",
+                        "label": "top3_qb_only",
+                        "positions": ["QB"],
+                        "regressor": {
+                            "model": "catboost_regressor_rmse",
+                            "target_config": "talent_control_window",
+                            "target_col": "Control_Window_Mean_Current_Overall",
+                            "target_space": "raw",
+                        },
+                    },
+                ],
+            },
+        }
+    )
+
+    result = export_matrix_diagnostics(cfg, exp_root=str(tmp_path))
+    assert result["candidate_count"] == 2
+    slice_path = matrix_dir / "regressor_position_slice_summary.csv"
+    assert slice_path.exists()
+    summary = pl.read_csv(slice_path)
+    assert set(summary.get_column("evaluation_position_group").to_list()) == {"all", "QB", "RB"}
+    assert set(summary.get_column("training_scope").to_list()) == {"all", "QB"}

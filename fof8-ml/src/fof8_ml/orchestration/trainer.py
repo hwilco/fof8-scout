@@ -153,6 +153,7 @@ def run_cv_regressor(
     use_gpu: bool = False,
     quiet: bool = False,
     target_space: str = "log",
+    sample_weight: np.ndarray | None = None,
 ) -> CVResult:
     """Run regressor CV. When groups are provided, folds respect group boundaries."""
     if target_space not in {"log", "raw"}:
@@ -169,6 +170,8 @@ def run_cv_regressor(
             print(f"--- Regressor Fold {fold} ---")
         X_cv_train, X_cv_val = X[train_idx], X[val_idx]
         y_cv_train, y_cv_val = y[train_idx], y[val_idx]
+        w_cv_train = sample_weight[train_idx] if sample_weight is not None else None
+        w_cv_val = sample_weight[val_idx] if sample_weight is not None else None
 
         params = cast(dict[str, Any], OmegaConf.to_container(model_cfg.params, resolve=True))
         if quiet:
@@ -190,7 +193,14 @@ def run_cv_regressor(
             thread_count=thread_count,
         )
 
-        model.fit(X_cv_train, y_cv_train, X_cv_val, y_cv_val)
+        model.fit(
+            X_cv_train,
+            y_cv_train,
+            X_cv_val,
+            y_cv_val,
+            sample_weight=w_cv_train,
+            sample_weight_val=w_cv_val,
+        )
         best_iterations.append(model.get_best_iteration())
         y_val_pred = model.predict(X_cv_val)
 
@@ -228,6 +238,7 @@ def train_final_model(
     interactive_progress_every: int = 100,
     use_gpu: bool = False,
     quiet: bool = False,
+    sample_weight: np.ndarray | None = None,
 ) -> ModelWrapper:
     """Train the final full-dataset model using averaged best iterations from CV."""
     final_params = cast(dict[str, Any], OmegaConf.to_container(model_cfg.params, resolve=True))
@@ -256,7 +267,7 @@ def train_final_model(
         use_gpu=use_gpu,
         thread_count=model_cfg.params.get("thread_count", -1),
     )
-    model.fit(X, y)
+    model.fit(X, y, sample_weight=sample_weight)
     return model
 
 
@@ -271,6 +282,8 @@ def train_model_with_validation(
     interactive_progress_every: int = 100,
     use_gpu: bool = False,
     quiet: bool = False,
+    sample_weight: np.ndarray | None = None,
+    sample_weight_val: np.ndarray | None = None,
 ) -> ModelWrapper:
     """Train a single model with an explicit validation set for early stopping."""
     params = cast(dict[str, Any], OmegaConf.to_container(model_cfg.params, resolve=True))
@@ -291,5 +304,12 @@ def train_model_with_validation(
         use_gpu=use_gpu,
         thread_count=model_cfg.params.get("thread_count", -1),
     )
-    model.fit(X_train, y_train, X_val, y_val)
+    model.fit(
+        X_train,
+        y_train,
+        X_val,
+        y_val,
+        sample_weight=sample_weight,
+        sample_weight_val=sample_weight_val,
+    )
     return model

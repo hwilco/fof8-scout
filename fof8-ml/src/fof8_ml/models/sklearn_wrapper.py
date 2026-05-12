@@ -36,12 +36,18 @@ class SklearnRegressorWrapper(ModelWrapper[SupportedSklearnRegressorModel]):
         y_train: np.ndarray,
         X_val: pl.DataFrame | None = None,
         y_val: np.ndarray | None = None,
+        sample_weight: np.ndarray | None = None,
+        sample_weight_val: np.ndarray | None = None,
     ) -> None:
+        _ = X_val, y_val, sample_weight_val
 
         y_train_raw = np.expm1(y_train)
 
         X_sk, self.scaler, self.columns = preprocess_for_sklearn(X_train)
-        self.require_model().fit(X_sk.to_numpy(), y_train_raw)
+        fit_kwargs: dict[str, Any] = {}
+        if sample_weight is not None:
+            fit_kwargs["sample_weight"] = sample_weight
+        self.require_model().fit(X_sk.to_numpy(), y_train_raw, **fit_kwargs)
 
     def predict(self, X: pl.DataFrame) -> np.ndarray:
         X_sk, _, _ = preprocess_for_sklearn(X, scaler=self.scaler, expected_columns=self.columns)
@@ -208,12 +214,17 @@ class SklearnMLPRegressorWrapper(ModelWrapper[MLPRegressor]):
         y_train: np.ndarray,
         X_val: pl.DataFrame | None = None,
         y_val: np.ndarray | None = None,
+        sample_weight: np.ndarray | None = None,
+        sample_weight_val: np.ndarray | None = None,
     ) -> None:
-        _ = X_val, y_val
+        _ = X_val, y_val, sample_weight_val
         with timed_step("sklearn_mlp.fit_preprocess", enabled=self.timing_diagnostics):
             X_np = self._fit_preprocess(X_train)
         with timed_step("sklearn_mlp.fit_model", enabled=self.timing_diagnostics):
-            self.require_model().fit(X_np, y_train)
+            fit_kwargs: dict[str, Any] = {}
+            if sample_weight is not None:
+                fit_kwargs["sample_weight"] = sample_weight
+            self.require_model().fit(X_np, y_train, **fit_kwargs)
 
     def predict(self, X: pl.DataFrame) -> np.ndarray:
         with timed_step("sklearn_mlp.predict_preprocess", enabled=self.timing_diagnostics):

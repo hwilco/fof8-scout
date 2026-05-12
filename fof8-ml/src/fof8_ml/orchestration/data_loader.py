@@ -25,6 +25,9 @@ _GLOBAL_DATA_CACHE: Dict[str, Any] = {
     "y_reg": None,
     "y_reg_val": None,
     "y_reg_test": None,
+    "reg_weight": None,
+    "reg_weight_val": None,
+    "reg_weight_test": None,
     "meta_train": None,
     "meta_val": None,
     "meta_test": None,
@@ -134,6 +137,10 @@ def _build_derived_classifier_targets(df: pl.DataFrame, cfg: DictConfig) -> pl.D
             out = out.with_columns(expr.cast(pl.Int8).alias(target_col))
             continue
 
+        if kind == "not_null":
+            out = out.with_columns(pl.col(source_col).is_not_null().cast(pl.Int8).alias(target_col))
+            continue
+
         if kind == "position_group_percentile":
             if "Position_Group" not in out.columns:
                 raise ValueError(f"Derived target '{target_col}' requires Position_Group column.")
@@ -174,6 +181,135 @@ def _build_derived_classifier_targets(df: pl.DataFrame, cfg: DictConfig) -> pl.D
         raise ValueError(f"Unsupported derived target kind '{kind}' for '{target_col}'.")
 
     return out
+
+
+def _build_derived_regressor_targets(df: pl.DataFrame, cfg: DictConfig) -> pl.DataFrame:
+    """Materialize optional continuous regressor-derived targets onto the feature frame."""
+    derived_specs = cfg.target.get("regressor_intensity", {}).get("derived_targets", [])
+    if not derived_specs:
+        return df
+
+    out = df
+    for raw_spec in list(derived_specs):
+        spec = cast(dict[str, Any], raw_spec)
+        target_col = str(spec["target_col"])
+        kind = str(spec.get("kind", "position_group_zscore"))
+        source_col = str(spec["source_col"])
+        if source_col not in out.columns:
+            raise ValueError(
+                f"Derived regressor target '{target_col}' source column '{source_col}' is missing."
+            )
+
+        if kind == "position_group_zscore":
+            group_col = str(spec.get("group_col", "Position_Group"))
+            if group_col not in out.columns:
+                raise ValueError(
+                    f"Derived regressor target '{target_col}' requires group column '{group_col}'."
+                )
+            out = out.with_columns(
+                pl.when(pl.col(source_col).is_not_null())
+                .then(
+                    pl.when(pl.col(source_col).std().over(group_col) > 0)
+                    .then(
+                        (pl.col(source_col) - pl.col(source_col).mean().over(group_col))
+                        / pl.col(source_col).std().over(group_col)
+                    )
+                    .otherwise(0.0)
+                )
+                .otherwise(None)
+                .alias(target_col)
+            )
+            continue
+
+        raise ValueError(f"Unsupported derived regressor target kind '{kind}' for '{target_col}'.")
+
+    return out
+
+
+def _build_regressor_sample_weights(df: pl.DataFrame, cfg: DictConfig) -> pl.DataFrame:
+    weight_cfg = cfg.target.get("regressor_intensity", {}).get("sample_weight")
+    if not weight_cfg or not bool(weight_cfg.get("enabled", False)):
+        return df
+
+    out = df
+    target_col = str(weight_cfg.get("target_col", "__regressor_sample_weight"))
+    source_col = str(weight_cfg["source_col"])
+    kind = str(weight_cfg.get("kind", "global_percentile_bucket"))
+    base_weight = float(weight_cfg.get("base_weight", 1.0))
+    thresholds = [cast(dict[str, Any], item) for item in list(weight_cfg.get("thresholds", []))]
+    if source_col not in out.columns:
+        raise ValueError(f"Regressor sample_weight source column '{source_col}' is missing.")
+    if not thresholds:
+        raise ValueError("Regressor sample_weight requires at least one threshold entry.")
+
+    def _bucket_expr(
+        source_expr: pl.Expr, threshold_exprs: list[tuple[float, pl.Expr, float]]
+    ) -> pl.Expr:
+        expr = pl.lit(base_weight)
+        for _percentile, threshold_expr, weight_value in sorted(
+            threshold_exprs, key=lambda item: item[0]
+        ):
+            expr = pl.when(source_expr >= threshold_expr).then(pl.lit(weight_value)).otherwise(expr)
+        return expr
+
+    if kind == "global_percentile_bucket":
+        threshold_exprs: list[tuple[float, pl.Expr, float]] = []
+        for spec in thresholds:
+            percentile = float(spec["percentile"])
+            threshold_value = out.get_column(source_col).quantile(
+                percentile, interpolation="linear"
+            )
+            threshold_exprs.append(
+                (
+                    percentile,
+                    pl.lit(0.0 if threshold_value is None else float(threshold_value)),
+                    float(spec["weight"]),
+                )
+            )
+        out = out.with_columns(
+            pl.when(pl.col(source_col).is_not_null())
+            .then(_bucket_expr(pl.col(source_col), threshold_exprs))
+            .otherwise(None)
+            .alias(target_col)
+        )
+        return out
+
+    if kind == "position_group_percentile_bucket":
+        group_col = str(weight_cfg.get("group_col", "Position_Group"))
+        if group_col not in out.columns:
+            raise ValueError(
+                f"Regressor sample_weight '{target_col}' requires group column '{group_col}'."
+            )
+        min_group_size = int(weight_cfg.get("min_group_size", 1))
+        threshold_cols: list[str] = []
+        threshold_exprs: list[tuple[float, pl.Expr, float]] = []
+        for idx, spec in enumerate(thresholds):
+            percentile = float(spec["percentile"])
+            weight_value = float(spec["weight"])
+            global_threshold = out.get_column(source_col).quantile(
+                percentile, interpolation="linear"
+            )
+            global_threshold = 0.0 if global_threshold is None else float(global_threshold)
+            threshold_col = f"__{target_col}_q_{idx}"
+            threshold_cols.append(threshold_col)
+            out = out.with_columns(
+                pl.when(pl.len().over(group_col) >= min_group_size)
+                .then(
+                    pl.col(source_col).quantile(percentile, interpolation="linear").over(group_col)
+                )
+                .otherwise(pl.lit(global_threshold))
+                .alias(threshold_col)
+            )
+            threshold_exprs.append((percentile, pl.col(threshold_col), weight_value))
+        out = out.with_columns(
+            pl.when(pl.col(source_col).is_not_null())
+            .then(_bucket_expr(pl.col(source_col), threshold_exprs))
+            .otherwise(None)
+            .alias(target_col)
+        ).drop(threshold_cols)
+        return out
+
+    raise ValueError(f"Unsupported regressor sample_weight kind '{kind}'.")
 
 
 def resolve_feature_ablation_config(cfg: DictConfig) -> dict[str, Any]:
@@ -610,6 +746,10 @@ class DataLoader:
             "threshold": cfg.target.classifier_sieve.merit_threshold,
             "regressor_target_col": cfg.target.regressor_intensity.target_col,
             "regressor_target_space": cfg.target.regressor_intensity.get("target_space", "log"),
+            "regressor_sample_weight": cast(
+                dict[str, Any] | None,
+                cfg.target.get("regressor_intensity", {}).get("sample_weight"),
+            ),
             "outcome_scorecard_columns": _coerce_str_list(
                 cfg.target.get("outcome_scorecard", {}).get("columns")
             ),
@@ -683,6 +823,9 @@ class DataLoader:
                 y_reg=_GLOBAL_DATA_CACHE["y_reg"],
                 y_reg_val=_GLOBAL_DATA_CACHE["y_reg_val"],
                 y_reg_test=_GLOBAL_DATA_CACHE["y_reg_test"],
+                reg_weight=_GLOBAL_DATA_CACHE["reg_weight"],
+                reg_weight_val=_GLOBAL_DATA_CACHE["reg_weight_val"],
+                reg_weight_test=_GLOBAL_DATA_CACHE["reg_weight_test"],
                 meta_train=_GLOBAL_DATA_CACHE["meta_train"],
                 meta_val=_GLOBAL_DATA_CACHE["meta_val"],
                 meta_test=_GLOBAL_DATA_CACHE["meta_test"],
@@ -708,6 +851,8 @@ class DataLoader:
             df = df.with_columns(pl.lit(fallback_universe).alias("Universe"))
 
         df = _build_derived_classifier_targets(df, cfg)
+        df = _build_derived_regressor_targets(df, cfg)
+        df = _build_regressor_sample_weights(df, cfg)
 
         available_columns = list(df.columns)
 
@@ -754,6 +899,11 @@ class DataLoader:
             *DRAFT_OUTCOME_LEAKAGE_COLUMNS,
             *scorecard_cols,
         ]
+        weight_col = (
+            cfg.target.get("regressor_intensity", {}).get("sample_weight", {}).get("target_col")
+        )
+        if weight_col:
+            target_cols.append(str(weight_col))
         target_cols = list(dict.fromkeys(target_cols))
         feature_cols = [c for c in df.columns if c not in metadata_cols and c not in target_cols]
 
@@ -783,6 +933,21 @@ class DataLoader:
         y_reg = y_train_df.get_column(cfg.target.regressor_intensity.target_col).to_numpy()
         y_reg_val = y_val_df.get_column(cfg.target.regressor_intensity.target_col).to_numpy()
         y_reg_test = y_test_df.get_column(cfg.target.regressor_intensity.target_col).to_numpy()
+        reg_weight = (
+            y_train_df.get_column(str(weight_col)).cast(pl.Float64).to_numpy()
+            if weight_col and str(weight_col) in y_train_df.columns
+            else None
+        )
+        reg_weight_val = (
+            y_val_df.get_column(str(weight_col)).cast(pl.Float64).to_numpy()
+            if weight_col and str(weight_col) in y_val_df.columns
+            else None
+        )
+        reg_weight_test = (
+            y_test_df.get_column(str(weight_col)).cast(pl.Float64).to_numpy()
+            if weight_col and str(weight_col) in y_test_df.columns
+            else None
+        )
 
         timeline = TimelineInfo(
             initial_year=min(v["initial_year"] for v in per_universe.values()),
@@ -809,6 +974,9 @@ class DataLoader:
                 "y_reg": y_reg,
                 "y_reg_val": y_reg_val,
                 "y_reg_test": y_reg_test,
+                "reg_weight": reg_weight,
+                "reg_weight_val": reg_weight_val,
+                "reg_weight_test": reg_weight_test,
                 "meta_train": meta_train,
                 "meta_val": meta_val,
                 "meta_test": meta_test,
@@ -842,6 +1010,9 @@ class DataLoader:
             y_reg=y_reg,
             y_reg_val=y_reg_val,
             y_reg_test=y_reg_test,
+            reg_weight=reg_weight,
+            reg_weight_val=reg_weight_val,
+            reg_weight_test=reg_weight_test,
             meta_train=meta_train,
             meta_val=meta_val,
             meta_test=meta_test,
@@ -907,6 +1078,9 @@ class DataLoader:
             y_reg=data.y_reg,
             y_reg_val=data.y_reg_val,
             y_reg_test=data.y_reg_test,
+            reg_weight=data.reg_weight,
+            reg_weight_val=data.reg_weight_val,
+            reg_weight_test=data.reg_weight_test,
             meta_train=data.meta_train,
             meta_val=data.meta_val,
             meta_test=data.meta_test,

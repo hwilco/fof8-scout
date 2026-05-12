@@ -5,9 +5,9 @@ stages:
     deps:
     - path: fof8-core/src/fof8_core/
       hash: md5
-      md5: b96d019b04e869777a6fd4306eb938f3.dir
-      size: 166669
-      nfiles: 43
+      md5: 787b07f2c7879dc4c62c510eefae2b3d.dir
+      size: 179632
+      nfiles: 45
     - path: fof8-gen/data/raw
       hash: md5
       md5: 86ffbad32f34d43ef6b5eeb213f20f80.dir
@@ -34,12 +34,12 @@ stages:
     outs:
     - path: fof8-ml/data/processed/features.parquet
       hash: md5
-      md5: 370318ad97d081f8714c138aaee93f9e
-      size: 43307113
+      md5: cd04ac41f707c8a3d7db2ce90c5c03c6
+      size: 45751124
     - path: fof8-ml/data/processed/universes
       hash: md5
-      md5: 00c74c75e421063c8bb85fb17aba1e76.dir
-      size: 44922173
+      md5: 70aebcf98b83096dcca50756d88bc9a0.dir
+      size: 47553282
       nfiles: 15
   train_model:
     cmd: uv run python pipelines/train.py

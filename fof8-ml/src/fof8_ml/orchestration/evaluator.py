@@ -269,11 +269,49 @@ def compute_regressor_oof_metrics(
         top64_weighted_mae_normalized = topk_weighted_mae_normalized(y_real, y_pred, k=64)
         top64_bias = topk_bias(y_real, y_pred, k=64)
 
+    def _mean_topk_actual_value_by_group(k: int) -> float:
+        values: list[float] = []
+        for group in np.unique(group_key):
+            mask = group_key == group
+            if not np.any(mask):
+                continue
+            y_group = y_real[mask]
+            y_pred_group = y_pred[mask]
+            k_eff = min(k, y_group.shape[0])
+            if k_eff <= 0:
+                continue
+            order = np.argsort(-y_pred_group)[:k_eff]
+            values.append(float(np.sum(y_group[order])))
+        return float(np.mean(values)) if values else 0.0
+
+    def _mean_topk_capture_ratio_by_group(k: int) -> float:
+        values: list[float] = []
+        for group in np.unique(group_key):
+            mask = group_key == group
+            if not np.any(mask):
+                continue
+            y_group = y_real[mask]
+            y_pred_group = y_pred[mask]
+            k_eff = min(k, y_group.shape[0])
+            if k_eff <= 0:
+                continue
+            model_order = np.argsort(-y_pred_group)[:k_eff]
+            oracle_order = np.argsort(-y_group)[:k_eff]
+            model_value = float(np.sum(y_group[model_order]))
+            oracle_value = float(np.sum(y_group[oracle_order]))
+            if oracle_value > 0:
+                values.append(model_value / oracle_value)
+        return float(np.mean(values)) if values else 0.0
+
     metrics.update(
         {
             "regressor_oof_mean_ndcg_at_32": mean_ndcg_by_group(y_real, y_pred, group_key, k=32),
             "regressor_oof_mean_ndcg_at_64": mean_ndcg_by_group(y_real, y_pred, group_key, k=64),
             "regressor_oof_mean_ndcg_at_128": mean_ndcg_by_group(y_real, y_pred, group_key, k=128),
+            "regressor_oof_top32_actual_target_value": _mean_topk_actual_value_by_group(32),
+            "regressor_oof_top64_actual_target_value": _mean_topk_actual_value_by_group(64),
+            "regressor_oof_top32_target_capture_ratio": _mean_topk_capture_ratio_by_group(32),
+            "regressor_oof_top64_target_capture_ratio": _mean_topk_capture_ratio_by_group(64),
             "regressor_oof_top64_weighted_mae": top64_weighted_mae,
             "regressor_oof_top64_weighted_mae_normalized": top64_weighted_mae_normalized,
             "regressor_oof_top64_bias": top64_bias,

@@ -27,6 +27,16 @@ CORE_METRIC_COLUMNS = [
     "complete_longevity_mean_ndcg_at_64",
 ]
 
+REGRESSOR_METRIC_COLUMNS = [
+    "regressor_val_top32_target_capture_ratio",
+    "regressor_val_top64_target_capture_ratio",
+    "regressor_val_mean_ndcg_at_32",
+    "regressor_val_mean_ndcg_at_64",
+    "regressor_val_rmse",
+    "regressor_val_mae",
+    "regressor_test_draft_value_score",
+]
+
 
 def _read_json(path: str) -> dict[str, Any]:
     with open(path, encoding="utf-8") as handle:
@@ -64,8 +74,14 @@ def flatten_candidate_summary(
     client: MlflowClient,
     candidate_manifest: dict[str, Any],
 ) -> dict[str, Any]:
-    complete_run = client.get_run(candidate_manifest["complete_run_id"])
-    metrics = cast(dict[str, float], complete_run.data.metrics)
+    regressor_only = str(candidate_manifest.get("classifier_source", "")) == "none"
+    metrics_run_id = (
+        str(candidate_manifest["regressor_run_id"])
+        if regressor_only
+        else str(candidate_manifest["complete_run_id"])
+    )
+    run = client.get_run(metrics_run_id)
+    metrics = cast(dict[str, float], run.data.metrics)
     elite_cfg = cast(dict[str, Any], candidate_manifest.get("elite_config", {}))
 
     row: dict[str, Any] = {
@@ -87,7 +103,8 @@ def flatten_candidate_summary(
         "elite_scope": elite_cfg.get("scope"),
         "elite_fallback_scope": elite_cfg.get("fallback_scope"),
     }
-    for metric_name in CORE_METRIC_COLUMNS:
+    metric_columns = REGRESSOR_METRIC_COLUMNS if regressor_only else CORE_METRIC_COLUMNS
+    for metric_name in metric_columns:
         row[metric_name] = float(metrics.get(metric_name, 0.0))
     return row
 

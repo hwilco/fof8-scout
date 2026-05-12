@@ -1,0 +1,39 @@
+defaults:
+  - common
+
+matrix_name: "talent_target_standardization"
+shared:
+  classifier_source: "none"
+  tags:
+    phase: "4"
+    matrix_stage: "target_standardization"
+    experiment_set: "H"
+candidates:
+  - candidate_id: "H1"
+    label: "top3_raw_all_positions"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_top3"
+      target_col: "Top3_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "H2"
+    label: "top3_pos_z_all_positions"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_top3_pos_z"
+      target_col: "Top3_Mean_Current_Overall_Pos_Z"
+      target_space: "raw"
+  - candidate_id: "H3"
+    label: "control_window_raw_all_positions"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_control_window"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "H4"
+    label: "control_window_pos_z_all_positions"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_control_window_pos_z"
+      target_col: "Control_Window_Mean_Current_Overall_Pos_Z"
+      target_space: "raw"

@@ -1,0 +1,26 @@
+defaults:
+  - common
+
+matrix_name: "talent_targets"
+shared:
+  tags:
+    phase: "4"
+    matrix_stage: "draft_utility_baseline"
+    experiment_set: "G"
+  regressor:
+    target_config: "talent_top3"
+candidates:
+  - candidate_id: "G1"
+    label: "talent_top3_rmse_raw"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_top3"
+      target_col: "Top3_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "G2"
+    label: "talent_control_window_mean_rmse_raw"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_control_window"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"

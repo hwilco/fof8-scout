@@ -50,6 +50,35 @@ def _empty_meta() -> pl.DataFrame:
     )
 
 
+def _observed_target_mask(y_reg: np.ndarray) -> np.ndarray:
+    values = np.asarray(y_reg, dtype=object)
+    mask = np.ones(values.shape[0], dtype=bool)
+    for idx, value in enumerate(values):
+        if value is None:
+            mask[idx] = False
+        elif isinstance(value, (float, np.floating)) and np.isnan(value):
+            mask[idx] = False
+    return mask
+
+
+def _resolve_regressor_row_mask(
+    *,
+    filter_mode: str,
+    y_cls: np.ndarray,
+    y_reg: np.ndarray,
+) -> np.ndarray:
+    if filter_mode == "classifier_positive":
+        return (y_cls == 1).astype(bool)
+    if filter_mode == "regression_target_observed":
+        return _observed_target_mask(y_reg)
+    if filter_mode == "all_rows":
+        return np.ones(len(y_reg), dtype=bool)
+    raise ValueError(
+        f"Unsupported regressor row_filter '{filter_mode}'. "
+        "Expected 'classifier_positive', 'regression_target_observed', or 'all_rows'."
+    )
+
+
 def _scope_meta_from_features(X: pl.DataFrame, elite_cfg: ConfigLike) -> pl.DataFrame | None:
     scope_column = "Position_Group"
     if isinstance(elite_cfg, Mapping):
@@ -84,13 +113,32 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
     y_cls_test = getattr(data, "y_cls_test", np.array([], dtype=int))
     y_reg_val = getattr(data, "y_reg_val", np.array([], dtype=float))
     y_reg_test = getattr(data, "y_reg_test", np.array([], dtype=float))
+    reg_weight = getattr(data, "reg_weight", None)
+    reg_weight_val = getattr(data, "reg_weight_val", None)
+    reg_weight_test = getattr(data, "reg_weight_test", None)
     meta_val = getattr(data, "meta_val", _empty_meta())
     meta_test = getattr(data, "meta_test", _empty_meta())
     outcomes_val = getattr(data, "outcomes_val", None)
     outcomes_test = getattr(data, "outcomes_test", None)
     elite_cfg = cfg.target.get("outcome_scorecard", {}).get("elite")
 
-    positive_mask = (data.y_cls == 1).astype(bool)
+    regressor_cfg = cfg.target.regressor_intensity
+    row_filter_mode = str(regressor_cfg.get("row_filter", "classifier_positive")).strip().lower()
+    positive_mask = _resolve_regressor_row_mask(
+        filter_mode=row_filter_mode,
+        y_cls=data.y_cls,
+        y_reg=data.y_reg,
+    )
+    val_positive_mask = _resolve_regressor_row_mask(
+        filter_mode=row_filter_mode,
+        y_cls=y_cls_val,
+        y_reg=y_reg_val,
+    )
+    test_positive_mask = _resolve_regressor_row_mask(
+        filter_mode=row_filter_mode,
+        y_cls=y_cls_test,
+        y_reg=y_reg_test,
+    )
     X_reg = data.X_train.filter(pl.Series(positive_mask))
     required_meta_columns = {"Universe", "Year"}
     missing_meta_columns = sorted(required_meta_columns.difference(data.meta_train.columns))
@@ -113,7 +161,6 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
         + ":"
         + meta_positive.get_column("Year").cast(pl.Utf8)
     ).to_numpy()
-    regressor_cfg = cfg.target.regressor_intensity
     target_space_value = (
         regressor_cfg.get("target_space", "log")
         if hasattr(regressor_cfg, "get")
@@ -134,6 +181,11 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
         )
 
     y_reg_raw = data.y_reg[positive_mask]
+    reg_weight_train = reg_weight[positive_mask] if reg_weight is not None else None
+    reg_weight_holdout = reg_weight_val[val_positive_mask] if reg_weight_val is not None else None
+    reg_weight_test_holdout = (
+        reg_weight_test[test_positive_mask] if reg_weight_test is not None else None
+    )
     if model_family == "catboost" and loss_function.startswith("Tweedie") and np.any(y_reg_raw < 0):
         raise ValueError(
             "CatBoost Tweedie requires non-negative regressor targets, but negative values were "
@@ -143,7 +195,8 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
 
     if not quiet:
         n_hits = int(positive_mask.sum())
-        print(f"\nFiltered to {n_hits} ground truth positive cases for regressor training.")
+        print(f"\nFiltered to {n_hits} regressor-eligible rows for training.")
+        print(f"Regressor row filter: {row_filter_mode}")
         print(f"Regressor target space: {target_space}")
         print("\n" + "=" * 40)
         print("REGRESSOR: INTENSITY REGRESSOR")
@@ -153,9 +206,8 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
         ctx.logger.log_model_params(cfg.model, prefix="regressor")
         mlflow.log_param("target.regressor.target_col", cfg.target.regressor_intensity.target_col)
         mlflow.log_param("target.regressor.target_space", target_space)
+        mlflow.log_param("target.regressor.row_filter", row_filter_mode)
         mlflow.log_param("regressor_target_space", target_space)
-        val_positive_mask = (y_cls_val == 1).astype(bool)
-        test_positive_mask = (y_cls_test == 1).astype(bool)
         has_validation = int(val_positive_mask.sum()) > 0
         tuning_model = None
         mlflow.log_param("regressor_mode", "validation_holdout" if has_validation else "grouped_cv")
@@ -169,14 +221,12 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
                     meta_val=meta_val.filter(pl.Series(val_positive_mask)),
                     meta_test=meta_test.filter(pl.Series(test_positive_mask)),
                     extra_detail=(
-                        f"Positive-only training rows: train={len(X_reg)}, "
+                        f"Regressor-eligible rows: train={len(X_reg)}, "
                         f"val={int(val_positive_mask.sum())}, "
                         f"test={int(test_positive_mask.sum())}."
                     ),
                 )
-                print_phase(
-                    "Training regressor on positive cases with held-out universe validation"
-                )
+                print_phase("Training regressor with held-out universe validation")
             X_val_reg = X_val.filter(pl.Series(val_positive_mask))
             y_val_reg_raw = y_reg_val[val_positive_mask]
             y_val_reg_target = y_val_reg_raw if target_space == "raw" else np.log1p(y_val_reg_raw)
@@ -187,6 +237,8 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
                 y_train=y_reg_target,
                 X_val=X_val_reg,
                 y_val=y_val_reg_target,
+                sample_weight=reg_weight_train,
+                sample_weight_val=reg_weight_holdout,
                 seed=cfg.seed,
                 interactive_progress_every=progress_every,
                 use_gpu=cfg.use_gpu,
@@ -255,6 +307,7 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
                 use_gpu=cfg.use_gpu,
                 quiet=quiet,
                 target_space=target_space,
+                sample_weight=reg_weight_train,
             )
 
             regressor_metrics = compute_regressor_oof_metrics(
@@ -304,8 +357,21 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
                 final_train_y_raw = _concat_targets(
                     data.y_reg[positive_mask], y_reg_val[val_positive_mask]
                 )
+                final_train_weight = (
+                    _concat_targets(
+                        reg_weight_train
+                        if reg_weight_train is not None
+                        else np.array([], dtype=float),
+                        reg_weight_holdout
+                        if reg_weight_holdout is not None
+                        else np.array([], dtype=float),
+                    )
+                    if reg_weight_train is not None or reg_weight_holdout is not None
+                    else None
+                )
             else:
                 final_train_X = X_reg
+                final_train_weight = reg_weight_train
             model_log_X = final_train_X
             final_train_y = (
                 final_train_y_raw if target_space == "raw" else np.log1p(final_train_y_raw)
@@ -318,6 +384,7 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
                 X=final_train_X,
                 y=final_train_y,
                 avg_best_iterations=avg_best_iters,
+                sample_weight=final_train_weight,
                 seed=cfg.seed,
                 interactive_progress_every=progress_every,
                 use_gpu=cfg.use_gpu,
@@ -399,14 +466,34 @@ def run_regressor(ctx: PipelineContext) -> dict[str, float]:
             }
         )
 
+    rmse_key = "regressor_val_rmse" if has_validation else "regressor_oof_rmse"
+    mae_key = "regressor_val_mae" if has_validation else "regressor_oof_mae"
+    top32_capture_key = (
+        "regressor_val_top32_target_capture_ratio"
+        if has_validation
+        else "regressor_oof_top32_target_capture_ratio"
+    )
+    top64_capture_key = (
+        "regressor_val_top64_target_capture_ratio"
+        if has_validation
+        else "regressor_oof_top64_target_capture_ratio"
+    )
+    ndcg32_key = (
+        "regressor_val_mean_ndcg_at_32" if has_validation else "regressor_oof_mean_ndcg_at_32"
+    )
+    ndcg64_key = (
+        "regressor_val_mean_ndcg_at_64" if has_validation else "regressor_oof_mean_ndcg_at_64"
+    )
     draft_value_key = (
         "regressor_val_draft_value_score" if has_validation else "regressor_oof_draft_value_score"
     )
-    rmse_key = "regressor_val_rmse" if has_validation else "regressor_oof_rmse"
-    mae_key = "regressor_val_mae" if has_validation else "regressor_oof_mae"
     return {
         rmse_key: regressor_metrics[rmse_key],
         mae_key: regressor_metrics[mae_key],
+        top32_capture_key: regressor_metrics[top32_capture_key],
+        top64_capture_key: regressor_metrics[top64_capture_key],
+        ndcg32_key: regressor_metrics[ndcg32_key],
+        ndcg64_key: regressor_metrics[ndcg64_key],
         draft_value_key: regressor_metrics[draft_value_key],
         "regressor_test_draft_value_score": test_metrics.get(
             "regressor_test_draft_value_score", 0.0

@@ -1,0 +1,42 @@
+defaults:
+  - common
+
+matrix_name: "talent_position_scope"
+shared:
+  classifier_source: "none"
+  tags:
+    phase: "4"
+    matrix_stage: "position_scope"
+    experiment_set: "I"
+candidates:
+  - candidate_id: "I1"
+    label: "control_window_raw_all_positions"
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_control_window"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "I2"
+    label: "control_window_raw_qb_only"
+    positions: ["QB"]
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_control_window"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "I3"
+    label: "control_window_raw_rb_only"
+    positions: ["RB"]
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_control_window"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "I4"
+    label: "control_window_raw_core_positions_no_special_teams"
+    positions: ["QB", "RB", "WR", "TE", "C", "G", "T", "DE", "DT", "OLB", "ILB", "CB", "S"]
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_control_window"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"

@@ -1,0 +1,42 @@
+defaults:
+  - common
+
+matrix_name: "mlp_talent_position_scope"
+shared:
+  classifier_source: "none"
+  tags:
+    phase: "5"
+    matrix_stage: "position_scope"
+    experiment_set: "J"
+candidates:
+  - candidate_id: "J1"
+    label: "control_window_raw_all_positions_sklearn_mlp"
+    regressor:
+      model: "sklearn_mlp_regressor_control_window"
+      target_config: "talent_control_window"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "J2"
+    label: "control_window_raw_qb_only_sklearn_mlp"
+    positions: ["QB"]
+    regressor:
+      model: "sklearn_mlp_regressor_control_window"
+      target_config: "talent_control_window"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "J3"
+    label: "control_window_raw_rb_only_sklearn_mlp"
+    positions: ["RB"]
+    regressor:
+      model: "sklearn_mlp_regressor_control_window"
+      target_config: "talent_control_window"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "J4"
+    label: "control_window_raw_core_positions_no_special_teams_sklearn_mlp"
+    positions: ["QB", "RB", "WR", "TE", "C", "G", "T", "DE", "DT", "OLB", "ILB", "CB", "S"]
+    regressor:
+      model: "sklearn_mlp_regressor_control_window"
+      target_config: "talent_control_window"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"

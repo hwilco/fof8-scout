@@ -65,6 +65,8 @@ def test_compute_regressor_oof_metrics_uses_raw_space_directly():
     assert metrics["regressor_oof_rmse"] == pytest.approx(3.5355339)
     assert metrics["regressor_oof_mae"] == pytest.approx(3.5)
     assert "regressor_oof_mean_ndcg_at_128" in metrics
+    assert "regressor_oof_top32_target_capture_ratio" in metrics
+    assert "regressor_oof_top64_actual_target_value" in metrics
 
 
 def test_compute_regressor_oof_metrics_clips_negative_targets_for_ranking_relevance():
@@ -78,7 +80,25 @@ def test_compute_regressor_oof_metrics_clips_negative_targets_for_ranking_releva
     )
     assert 0.0 <= metrics["regressor_oof_mean_ndcg_at_32"] <= 1.0
     assert 0.0 <= metrics["regressor_oof_mean_ndcg_at_128"] <= 1.0
+    assert 0.0 <= metrics["regressor_oof_top32_target_capture_ratio"] <= 1.0
     assert "regressor_oof_draft_value_score" in metrics
+
+
+def test_compute_regressor_oof_metrics_computes_topk_actual_value_and_capture_ratio():
+    y_true = np.array([100.0] + [80.0] * 31 + [1.0] * 8)
+    y_pred = np.array([0.0] + [1.0] * 31 + [0.9] + [0.1] * 7)
+
+    metrics = compute_regressor_oof_metrics(
+        y_true,
+        y_pred,
+        target_space="raw",
+        draft_group=np.array(["A:2020"] * len(y_true), dtype=object),
+    )
+
+    assert metrics["regressor_oof_top32_actual_target_value"] == pytest.approx(2481.0)
+    assert metrics["regressor_oof_top64_actual_target_value"] == pytest.approx(float(y_true.sum()))
+    assert metrics["regressor_oof_top32_target_capture_ratio"] == pytest.approx(2481.0 / 2580.0)
+    assert metrics["regressor_oof_top64_target_capture_ratio"] == pytest.approx(1.0)
 
 
 def test_compute_regressor_oof_metrics_separates_overlapping_years_by_universe():

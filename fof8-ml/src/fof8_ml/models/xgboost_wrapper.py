@@ -64,7 +64,10 @@ class XGBoostClassifierWrapper(ModelWrapper[xgb.XGBClassifier]):
         y_train: np.ndarray,
         X_val: pl.DataFrame | None = None,
         y_val: np.ndarray | None = None,
+        sample_weight: np.ndarray | None = None,
+        sample_weight_val: np.ndarray | None = None,
     ) -> None:
+        _ = sample_weight, sample_weight_val
         eval_set = None
         if X_val is not None and y_val is not None:
             eval_set = [(X_val, y_val)]
@@ -134,12 +137,22 @@ class XGBoostRegressorWrapper(ModelWrapper[xgb.XGBRegressor]):
         y_train: np.ndarray,
         X_val: pl.DataFrame | None = None,
         y_val: np.ndarray | None = None,
+        sample_weight: np.ndarray | None = None,
+        sample_weight_val: np.ndarray | None = None,
     ) -> None:
         eval_set = None
         if X_val is not None and y_val is not None:
             eval_set = [(X_val, y_val)]
 
-        self.require_model().fit(X_train, y_train, eval_set=eval_set, verbose=False)
+        fit_kwargs: dict[str, Any] = {
+            "eval_set": eval_set,
+            "verbose": False,
+        }
+        if sample_weight is not None:
+            fit_kwargs["sample_weight"] = sample_weight
+        if eval_set is not None and sample_weight_val is not None:
+            fit_kwargs["sample_weight_eval_set"] = [sample_weight_val]
+        self.require_model().fit(X_train, y_train, **fit_kwargs)
 
     def predict(self, X: pl.DataFrame) -> np.ndarray:
         return np.asarray(self.require_model().predict(X))

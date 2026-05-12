@@ -1,0 +1,51 @@
+defaults:
+  - common
+
+matrix_name: "talent_sample_weighting"
+shared:
+  classifier_source: "none"
+  tags:
+    phase: "5"
+    matrix_stage: "sample_weighting"
+    experiment_set: "K"
+candidates:
+  - candidate_id: "K1"
+    label: "control_window_core_unweighted"
+    positions: ["QB", "RB", "WR", "TE", "C", "G", "T", "DE", "DT", "OLB", "ILB", "CB", "S"]
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_control_window"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "K2"
+    label: "control_window_core_weighted_top25"
+    positions: ["QB", "RB", "WR", "TE", "C", "G", "T", "DE", "DT", "OLB", "ILB", "CB", "S"]
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_control_window_weighted_top25"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "K3"
+    label: "control_window_core_weighted_top10"
+    positions: ["QB", "RB", "WR", "TE", "C", "G", "T", "DE", "DT", "OLB", "ILB", "CB", "S"]
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_control_window_weighted_top10"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "K4"
+    label: "control_window_core_weighted_top10_top5"
+    positions: ["QB", "RB", "WR", "TE", "C", "G", "T", "DE", "DT", "OLB", "ILB", "CB", "S"]
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_control_window_weighted_top10_top5"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"
+  - candidate_id: "K5"
+    label: "control_window_core_weighted_position_top10"
+    positions: ["QB", "RB", "WR", "TE", "C", "G", "T", "DE", "DT", "OLB", "ILB", "CB", "S"]
+    regressor:
+      model: "catboost_regressor_rmse"
+      target_config: "talent_control_window_weighted_position_top10"
+      target_col: "Control_Window_Mean_Current_Overall"
+      target_space: "raw"

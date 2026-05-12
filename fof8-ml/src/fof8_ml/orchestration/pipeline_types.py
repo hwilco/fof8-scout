@@ -33,6 +33,9 @@ class PreparedData:
     y_reg: np.ndarray  # regressor continuous target
     y_reg_val: np.ndarray
     y_reg_test: np.ndarray
+    reg_weight: np.ndarray | None
+    reg_weight_val: np.ndarray | None
+    reg_weight_test: np.ndarray | None
     meta_train: pl.DataFrame
     meta_val: pl.DataFrame
     meta_test: pl.DataFrame

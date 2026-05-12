@@ -51,6 +51,7 @@ def test_resolve_matrix_candidates_filters_requested_ids():
 
     assert [candidate.candidate_id for candidate in candidates] == ["A2"]
     assert candidates[0].regressor_target_space == "log"
+    assert candidates[0].regressor_target_config is None
     assert candidates[0].ablation_toggles == {"no_college": False}
     assert candidates[0].classifier_ablation_toggles == {"no_college": False}
     assert candidates[0].regressor_ablation_toggles == {"no_college": False}
@@ -82,6 +83,141 @@ def test_set_f_mlp_talent_matrix_resolves_top3_raw_candidates():
     assert candidates[2].ablation_toggles == {}
     assert candidates[2].classifier_ablation_toggles == {}
     assert candidates[2].regressor_ablation_toggles == {"no_position": True}
+
+
+def test_set_g_talent_matrix_resolves_per_candidate_target_configs():
+    matrix_path = (
+        Path(__file__).resolve().parents[2]
+        / "pipelines"
+        / "conf"
+        / "matrix"
+        / "set_g_talent_targets.yaml"
+    )
+    cfg = OmegaConf.load(matrix_path)
+
+    candidates = resolve_matrix_candidates(cfg)
+
+    assert [candidate.candidate_id for candidate in candidates] == ["G1", "G2"]
+    assert [candidate.regressor_target_config for candidate in candidates] == [
+        "talent_top3",
+        "talent_control_window",
+    ]
+    assert [candidate.regressor_target_col for candidate in candidates] == [
+        "Top3_Mean_Current_Overall",
+        "Control_Window_Mean_Current_Overall",
+    ]
+
+
+def test_position_scope_matrix_resolves_candidate_positions():
+    matrix_path = (
+        Path(__file__).resolve().parents[2]
+        / "pipelines"
+        / "conf"
+        / "matrix"
+        / "set_i_talent_position_scope.yaml"
+    )
+    cfg = OmegaConf.load(matrix_path)
+
+    candidates = resolve_matrix_candidates(cfg)
+
+    assert [candidate.candidate_id for candidate in candidates] == ["I1", "I2", "I3", "I4"]
+    assert candidates[0].positions is None
+    assert candidates[1].positions == ["QB"]
+    assert candidates[2].positions == ["RB"]
+    assert candidates[3].positions == [
+        "QB",
+        "RB",
+        "WR",
+        "TE",
+        "C",
+        "G",
+        "T",
+        "DE",
+        "DT",
+        "OLB",
+        "ILB",
+        "CB",
+        "S",
+    ]
+
+
+def test_set_j_mlp_position_scope_resolves_candidate_positions_and_model():
+    matrix_path = (
+        Path(__file__).resolve().parents[2]
+        / "pipelines"
+        / "conf"
+        / "matrix"
+        / "set_j_mlp_position_scope.yaml"
+    )
+    cfg = OmegaConf.load(matrix_path)
+
+    candidates = resolve_matrix_candidates(cfg)
+
+    assert [candidate.candidate_id for candidate in candidates] == ["J1", "J2", "J3", "J4"]
+    assert {candidate.regressor_model for candidate in candidates} == {
+        "sklearn_mlp_regressor_control_window"
+    }
+    assert {candidate.regressor_target_config for candidate in candidates} == {
+        "talent_control_window"
+    }
+    assert {candidate.regressor_target_col for candidate in candidates} == {
+        "Control_Window_Mean_Current_Overall"
+    }
+    assert candidates[0].positions is None
+    assert candidates[1].positions == ["QB"]
+    assert candidates[2].positions == ["RB"]
+    assert candidates[3].positions == [
+        "QB",
+        "RB",
+        "WR",
+        "TE",
+        "C",
+        "G",
+        "T",
+        "DE",
+        "DT",
+        "OLB",
+        "ILB",
+        "CB",
+        "S",
+    ]
+
+
+def test_talent_matrices_use_regressor_only_mode():
+    for filename in [
+        "set_h_talent_target_standardization.yaml",
+        "set_i_talent_position_scope.yaml",
+        "set_j_mlp_position_scope.yaml",
+        "set_k_talent_sample_weighting.yaml",
+    ]:
+        matrix_path = (
+            Path(__file__).resolve().parents[2] / "pipelines" / "conf" / "matrix" / filename
+        )
+        cfg = OmegaConf.load(matrix_path)
+        assert cfg.shared.classifier_source == "none"
+
+
+def test_set_k_sample_weighting_matrix_resolves_target_variants():
+    matrix_path = (
+        Path(__file__).resolve().parents[2]
+        / "pipelines"
+        / "conf"
+        / "matrix"
+        / "set_k_talent_sample_weighting.yaml"
+    )
+    cfg = OmegaConf.load(matrix_path)
+
+    candidates = resolve_matrix_candidates(cfg)
+
+    assert [candidate.candidate_id for candidate in candidates] == ["K1", "K2", "K3", "K4", "K5"]
+    assert {candidate.regressor_model for candidate in candidates} == {"catboost_regressor_rmse"}
+    assert candidates[0].regressor_target_config == "talent_control_window"
+    assert [candidate.regressor_target_config for candidate in candidates[1:]] == [
+        "talent_control_window_weighted_top25",
+        "talent_control_window_weighted_top10",
+        "talent_control_window_weighted_top10_top5",
+        "talent_control_window_weighted_position_top10",
+    ]
 
 
 def test_experiment_matrix_and_report_smoke(monkeypatch, tmp_path):
@@ -193,9 +329,10 @@ def test_experiment_matrix_and_report_smoke(monkeypatch, tmp_path):
         run_tags,
         regressor_target_col=None,
         regressor_target_space=None,
+        positions_override=None,
         ablation_toggles=None,
     ):
-        _ = target_config_name, runtime_refit_final_model, run_tags
+        _ = target_config_name, runtime_refit_final_model, run_tags, positions_override
         base_ablation = {
             "toggles": {
                 "no_position": False,
@@ -397,6 +534,202 @@ def test_experiment_matrix_and_report_smoke(monkeypatch, tmp_path):
     assert "adjustment_method" in csv_text
     assert "A1" in csv_text
     assert "A2" in csv_text
+
+
+def test_experiment_matrix_supports_regressor_only_mode(monkeypatch, tmp_path):
+    cfg = OmegaConf.create(
+        {
+            "candidate_ids": [],
+            "matrix": {
+                "matrix_name": "talent_only",
+                "output_subdir": "matrices",
+                "shared": {
+                    "classifier_source": "none",
+                    "fixed_classifier_run_id": None,
+                    "classifier": {
+                        "experiment_name": "Unused_Classifier",
+                        "model": "catboost_classifier",
+                        "target_config": "economic",
+                    },
+                    "regressor": {
+                        "experiment_name": "Matrix_Regressor",
+                        "target_config": "talent_top3",
+                    },
+                    "complete_model": {
+                        "experiment_name": "Unused_Complete_Model",
+                        "target_config": "economic",
+                    },
+                    "tags": {"phase": "4", "experiment_set": "H"},
+                    "runtime": {"refit_final_model": False},
+                },
+                "candidates": [
+                    {
+                        "candidate_id": "H1",
+                        "label": "top3_raw_all_positions",
+                        "regressor": {
+                            "model": "catboost_regressor_rmse",
+                            "target_config": "talent_top3",
+                            "target_col": "Top3_Mean_Current_Overall",
+                            "target_space": "raw",
+                        },
+                    }
+                ],
+            },
+            "manifest_path": None,
+            "output_path": None,
+        }
+    )
+
+    def fake_prepare_pipeline_cfg(
+        _exp_root,
+        *,
+        pipeline_config_name,
+        experiment_name,
+        target_config_name,
+        model_config_name,
+        runtime_refit_final_model,
+        run_tags,
+        regressor_target_col=None,
+        regressor_target_space=None,
+        positions_override=None,
+        ablation_toggles=None,
+    ):
+        _ = (
+            pipeline_config_name,
+            target_config_name,
+            runtime_refit_final_model,
+            run_tags,
+            positions_override,
+            ablation_toggles,
+        )
+        return OmegaConf.create(
+            {
+                "experiment_name": experiment_name,
+                "optimization": {"metric": "regressor_val_top32_target_capture_ratio"},
+                "model": {"name": model_config_name, "params": {"loss_function": "RMSE"}},
+                "target": {
+                    "classifier_sieve": {"target_col": "unused"},
+                    "regressor_intensity": {
+                        "target_col": regressor_target_col,
+                        "target_space": regressor_target_space,
+                    },
+                },
+                "ablation_signature": "default",
+            }
+        )
+
+    regressor_calls = []
+
+    def fake_train_regressor(_exp_root, cfg_obj):
+        regressor_calls.append(cfg_obj.target.regressor_intensity.target_col)
+        return MatrixRunResult(
+            run_id="reg-1",
+            experiment_name="Matrix_Regressor",
+            optimization_metric="regressor_val_top32_target_capture_ratio",
+            optimization_score=0.75,
+            metrics={"regressor_val_top32_target_capture_ratio": 0.75},
+        )
+
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.experiment_matrix._prepare_pipeline_cfg",
+        fake_prepare_pipeline_cfg,
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.experiment_matrix._train_regressor_pipeline",
+        fake_train_regressor,
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.experiment_matrix._train_classifier_pipeline",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("should not train classifier")
+        ),
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.experiment_matrix._evaluate_complete_model_pipeline",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("should not evaluate complete model")
+        ),
+    )
+
+    result = run_experiment_matrix(cfg, exp_root=str(tmp_path))
+
+    assert regressor_calls == ["Top3_Mean_Current_Overall"]
+    assert result["candidate_count"] == 1
+
+
+def test_export_matrix_report_supports_regressor_only_manifests(monkeypatch, tmp_path):
+    matrix_dir = tmp_path / "outputs" / "matrices" / "talent_only"
+    matrix_dir.mkdir(parents=True)
+
+    candidate_manifest = {
+        "candidate_id": "H1",
+        "label": "top3_raw_all_positions",
+        "classifier_source": "none",
+        "classifier_run_id": "",
+        "regressor_run_id": "reg-1",
+        "complete_run_id": "",
+        "classifier_target_col": "",
+        "regressor_target_col": "Top3_Mean_Current_Overall",
+        "regressor_target_space": "raw",
+        "regressor_model": "catboost_regressor_rmse",
+        "regressor_loss_function": "RMSE",
+        "adjustment_method": None,
+        "ablation_signature": "default",
+        "elite_config": {},
+    }
+    candidate_path = matrix_dir / "H1.json"
+    candidate_path.write_text(__import__("json").dumps(candidate_manifest), encoding="utf-8")
+    (matrix_dir / "matrix_manifest.json").write_text(
+        __import__("json").dumps(
+            {
+                "matrix_name": "talent_only",
+                "candidates": [
+                    {
+                        "candidate_id": "H1",
+                        "label": "top3_raw_all_positions",
+                        "manifest_path": str(candidate_path),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    metrics_by_run_id = {
+        "reg-1": {
+            "regressor_val_top32_target_capture_ratio": 0.81,
+            "regressor_val_top64_target_capture_ratio": 0.87,
+            "regressor_val_mean_ndcg_at_32": 0.72,
+            "regressor_val_mean_ndcg_at_64": 0.75,
+            "regressor_val_rmse": 8.4,
+            "regressor_val_mae": 5.9,
+            "regressor_test_draft_value_score": 0.0,
+        }
+    }
+
+    def fake_init_tracking(self):
+        self.client = _FakeMlflowClient(metrics_by_run_id)
+        self.experiment_id = "exp-1"
+
+    monkeypatch.setattr(ExperimentLogger, "init_tracking", fake_init_tracking)
+
+    cfg = OmegaConf.create(
+        {
+            "manifest_path": None,
+            "output_path": None,
+            "matrix": {
+                "matrix_name": "talent_only",
+                "output_subdir": "matrices",
+            },
+        }
+    )
+
+    result = export_matrix_report(cfg, exp_root=str(tmp_path))
+
+    assert result["row_count"] == 1
+    csv_text = Path(result["output_path"]).read_text(encoding="utf-8")
+    assert "regressor_val_top32_target_capture_ratio" in csv_text
+    assert "0.81" in csv_text
 
 
 def test_fixed_classifier_complete_eval_keeps_classifier_feature_schema(monkeypatch, tmp_path):

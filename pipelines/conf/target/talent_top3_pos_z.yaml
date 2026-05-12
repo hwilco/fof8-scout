@@ -1,0 +1,42 @@
+target_name: "draft_outcome_targets"
+classifier_sieve:
+  target_col: "Top3_Target_Observed"
+  merit_threshold: 0
+  min_positive_recall: 0.95
+  derived_targets:
+    - target_col: "Top3_Target_Observed"
+      kind: "not_null"
+      source_col: "Top3_Mean_Current_Overall"
+regressor_intensity:
+  target_col: "Top3_Mean_Current_Overall_Pos_Z"
+  target_space: "raw"
+  target_family: "talent"
+  derived_targets:
+    - target_col: "Top3_Mean_Current_Overall_Pos_Z"
+      kind: "position_group_zscore"
+      source_col: "Top3_Mean_Current_Overall"
+      group_col: "Position_Group"
+outcome_scorecard:
+  columns:
+    - "Top3_Mean_Current_Overall"
+    - "Peak_Overall"
+    - "Career_Games_Played"
+    - "Positive_Career_Merit_Cap_Share"
+    - "Career_Merit_Cap_Share"
+    - "Positive_DPO"
+  optional_columns:
+    - "Control_Window_Mean_Current_Overall"
+    - "Control_Window_Discounted_Mean_Current_Overall"
+    - "Award_Count"
+    - "Hall_of_Fame_Flag"
+    - "Hall_Of_Fame_Points"
+  elite:
+    enabled: true
+    source_column: "Top3_Mean_Current_Overall"
+    quantile: 0.95
+    scope: "position_group"
+    scope_column: "Position_Group"
+    fallback_scope: "global"
+    min_group_size: 100
+    top_k_precision: 32
+    top_k_recall: 64

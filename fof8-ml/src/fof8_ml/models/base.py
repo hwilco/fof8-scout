@@ -39,6 +39,8 @@ class ModelWrapper(Generic[TModel], ABC):
         y_train: np.ndarray,
         X_val: pl.DataFrame | None = None,
         y_val: np.ndarray | None = None,
+        sample_weight: np.ndarray | None = None,
+        sample_weight_val: np.ndarray | None = None,
     ) -> None:
         """Fit the model to the training data."""
         pass

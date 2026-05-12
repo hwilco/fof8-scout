@@ -4,12 +4,20 @@ import itertools
 import os
 from typing import Any
 
+import numpy as np
 import polars as pl
 from mlflow.tracking import MlflowClient
 from omegaconf import DictConfig
 
-from fof8_ml.evaluation.complete_model import evaluate_complete_model_by_slice
+from fof8_ml.evaluation.complete_model import (
+    _load_role_bundle,
+    _predict_regressor,
+    evaluate_complete_model_by_slice,
+)
+from fof8_ml.orchestration.data_loader import DataLoader
+from fof8_ml.orchestration.evaluator import compute_regressor_oof_metrics
 from fof8_ml.orchestration.experiment_logger import ExperimentLogger
+from fof8_ml.orchestration.experiment_matrix import _prepare_pipeline_cfg, resolve_matrix_candidates
 from fof8_ml.orchestration.pipeline_runner import resolve_exp_root
 from fof8_ml.reporting.matrix_report import (
     load_candidate_manifests,
@@ -120,6 +128,187 @@ def _position_mix_rows(candidate: dict[str, Any], k: int) -> pl.DataFrame:
     )
 
 
+def _position_scope_label(positions: str | list[str] | None) -> str:
+    if positions is None:
+        return "all"
+    if isinstance(positions, str):
+        return positions
+    return ",".join(str(value) for value in positions)
+
+
+def _observed_target_mask(values: np.ndarray) -> np.ndarray:
+    raw = np.asarray(values, dtype=object)
+    mask = np.ones(raw.shape[0], dtype=bool)
+    for idx, value in enumerate(raw):
+        if value is None:
+            mask[idx] = False
+        elif isinstance(value, (float, np.floating)) and np.isnan(value):
+            mask[idx] = False
+    return mask
+
+
+def _resolve_regressor_only_row_mask(
+    cfg: DictConfig, *, y_cls: np.ndarray, y_reg: np.ndarray
+) -> np.ndarray:
+    filter_mode = (
+        str(cfg.target.get("regressor_intensity", {}).get("row_filter", "classifier_positive"))
+        .strip()
+        .lower()
+    )
+    if filter_mode == "classifier_positive":
+        return np.asarray(y_cls == 1, dtype=bool)
+    if filter_mode == "regression_target_observed":
+        return _observed_target_mask(y_reg)
+    if filter_mode == "all_rows":
+        return np.ones(len(y_reg), dtype=bool)
+    raise ValueError(
+        f"Unsupported regressor row_filter '{filter_mode}'. "
+        "Expected 'classifier_positive', 'regression_target_observed', or 'all_rows'."
+    )
+
+
+def _prepare_regressor_only_validation_frame(
+    cfg: DictConfig,
+    *,
+    exp_root: str,
+    reference_candidate: Any,
+) -> tuple[pl.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
+    regressor_cfg = _prepare_pipeline_cfg(
+        exp_root,
+        pipeline_config_name="regressor_pipeline.yaml",
+        experiment_name="Matrix_Diagnostics_Regressor",
+        target_config_name=str(reference_candidate.regressor_target_config),
+        model_config_name=reference_candidate.regressor_model,
+        runtime_refit_final_model=False,
+        run_tags={"matrix_stage": "diagnostics"},
+        regressor_target_col=reference_candidate.regressor_target_col,
+        regressor_target_space=reference_candidate.regressor_target_space,
+        positions_override=None,
+        diagnostics_cfg={"log_importance": False, "log_shap": False},
+    )
+    data = DataLoader(exp_root, quiet=True).load(regressor_cfg)
+    val_mask = _resolve_regressor_only_row_mask(
+        regressor_cfg,
+        y_cls=getattr(data, "y_cls_val"),
+        y_reg=getattr(data, "y_reg_val"),
+    )
+    meta_val = getattr(data, "meta_val").filter(pl.Series(val_mask))
+    X_val = getattr(data, "X_val").filter(pl.Series(val_mask))
+    if "Position_Group" not in meta_val.columns and "Position_Group" in X_val.columns:
+        meta_val = meta_val.with_columns(X_val.get_column("Position_Group").cast(pl.Utf8))
+    y_val = np.asarray(getattr(data, "y_reg_val")[val_mask], dtype=float)
+    draft_group = (
+        meta_val.get_column("Universe").cast(pl.Utf8)
+        + ":"
+        + meta_val.get_column("Year").cast(pl.Utf8)
+    ).to_numpy()
+    return X_val, y_val, draft_group, meta_val
+
+
+def _export_regressor_only_diagnostics(
+    cfg: DictConfig,
+    *,
+    exp_root: str,
+    manifest_path: str,
+    candidate_manifests: list[dict[str, Any]],
+    logger: ExperimentLogger,
+) -> dict[str, Any]:
+    matrix_candidates = {c.candidate_id: c for c in resolve_matrix_candidates(cfg.matrix)}
+    missing_candidates = sorted(
+        candidate["candidate_id"]
+        for candidate in candidate_manifests
+        if candidate["candidate_id"] not in matrix_candidates
+    )
+    if missing_candidates:
+        raise ValueError(
+            "Regressor-only diagnostics require matrix candidate definitions for all manifest rows. "
+            f"Missing: {missing_candidates}"
+        )
+
+    target_cols = {
+        str(candidate.get("regressor_target_col", ""))
+        for candidate in candidate_manifests
+        if str(candidate.get("regressor_target_col", ""))
+    }
+    if len(target_cols) != 1:
+        raise ValueError(
+            "Regressor-only position diagnostics require a common regressor target column. "
+            f"Found: {sorted(target_cols)}"
+        )
+
+    reference_candidate = matrix_candidates[candidate_manifests[0]["candidate_id"]]
+    X_val, y_val, draft_group, meta_val = _prepare_regressor_only_validation_frame(
+        cfg,
+        exp_root=exp_root,
+        reference_candidate=reference_candidate,
+    )
+    position_values = sorted(meta_val.get_column("Position_Group").cast(pl.Utf8).unique().to_list())
+
+    slice_rows: list[dict[str, Any]] = []
+    for candidate in candidate_manifests:
+        matrix_candidate = matrix_candidates[candidate["candidate_id"]]
+        bundle = _load_role_bundle(
+            logger.client,
+            str(candidate["regressor_run_id"]),
+            "regressor",
+            "regressor_model",
+            exp_root=exp_root,
+        )
+        predictions = np.asarray(_predict_regressor(bundle, X_val), dtype=float)
+        for slice_value in ["__all__"] + position_values:
+            if slice_value == "__all__":
+                slice_mask = np.ones(len(y_val), dtype=bool)
+                eval_label = "all"
+            else:
+                slice_mask = (
+                    meta_val.get_column("Position_Group").cast(pl.Utf8).to_numpy() == slice_value
+                )
+                eval_label = str(slice_value)
+            if not np.any(slice_mask):
+                continue
+            metrics = compute_regressor_oof_metrics(
+                y_true=y_val[slice_mask],
+                oof_predictions=predictions[slice_mask],
+                target_space="raw",
+                draft_group=draft_group[slice_mask],
+            )
+            slice_rows.append(
+                {
+                    "candidate_id": candidate["candidate_id"],
+                    "label": candidate["label"],
+                    "training_scope": _position_scope_label(matrix_candidate.positions),
+                    "evaluation_position_group": eval_label,
+                    "n_rows": int(slice_mask.sum()),
+                    "regressor_mean_ndcg_at_32": float(metrics["regressor_oof_mean_ndcg_at_32"]),
+                    "regressor_mean_ndcg_at_64": float(metrics["regressor_oof_mean_ndcg_at_64"]),
+                    "regressor_top32_target_capture_ratio": float(
+                        metrics["regressor_oof_top32_target_capture_ratio"]
+                    ),
+                    "regressor_top64_target_capture_ratio": float(
+                        metrics["regressor_oof_top64_target_capture_ratio"]
+                    ),
+                    "regressor_rmse": float(metrics["regressor_oof_rmse"]),
+                    "regressor_mae": float(metrics["regressor_oof_mae"]),
+                }
+            )
+
+    output_dir = cfg.get("output_dir")
+    resolved_output_dir = (
+        os.path.abspath(str(output_dir)) if output_dir else os.path.dirname(manifest_path)
+    )
+    os.makedirs(resolved_output_dir, exist_ok=True)
+
+    slice_summary = pl.DataFrame(slice_rows) if slice_rows else pl.DataFrame()
+    slice_summary_path = os.path.join(resolved_output_dir, "regressor_position_slice_summary.csv")
+    slice_summary.write_csv(slice_summary_path)
+    return {
+        "manifest_path": manifest_path,
+        "output_dir": resolved_output_dir,
+        "regressor_position_slice_summary_path": slice_summary_path,
+        "candidate_count": len(candidate_manifests),
+    }
+
+
 def export_matrix_diagnostics(cfg: DictConfig, *, exp_root: str | None = None) -> dict[str, Any]:
     exp_root = exp_root or resolve_exp_root(
         os.path.join(os.getcwd(), "pipelines", "export_matrix_diagnostics.py")
@@ -127,11 +316,28 @@ def export_matrix_diagnostics(cfg: DictConfig, *, exp_root: str | None = None) -
     manifest_path = resolve_matrix_manifest_path(cfg, exp_root=exp_root)
     matrix_manifest = load_matrix_manifest(manifest_path)
     candidate_manifests = load_candidate_manifests(matrix_manifest)
+    is_regressor_only = all(
+        str(candidate.get("classifier_source", "")) == "none" for candidate in candidate_manifests
+    )
+    if not is_regressor_only and any(
+        str(candidate.get("classifier_source", "")) == "none" for candidate in candidate_manifests
+    ):
+        raise ValueError(
+            "Matrix diagnostics do not support mixed complete/regressor-only manifests."
+        )
 
     logger = ExperimentLogger(exp_root, f"Matrix_Diagnostics_{cfg.matrix.matrix_name}")
     logger.init_tracking()
     if logger.client is None:
         raise RuntimeError("MLflow tracking client was not initialized.")
+    if is_regressor_only:
+        return _export_regressor_only_diagnostics(
+            cfg,
+            exp_root=exp_root,
+            manifest_path=manifest_path,
+            candidate_manifests=candidate_manifests,
+            logger=logger,
+        )
 
     enriched_candidates: list[dict[str, Any]] = []
     for candidate in candidate_manifests:

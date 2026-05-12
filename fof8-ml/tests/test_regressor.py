@@ -27,6 +27,7 @@ def _make_context(
                 "regressor_intensity": {
                     "target_col": "Positive_Career_Merit_Cap_Share",
                     "target_space": target_space,
+                    "row_filter": "classifier_positive",
                 }
             },
             "cv": {"n_folds": 2, "shuffle": True},
@@ -118,6 +119,10 @@ def test_run_regressor_uses_configured_target_space(monkeypatch):
         lambda **_kwargs: {
             "regressor_oof_rmse": 1.0,
             "regressor_oof_mae": 1.0,
+            "regressor_oof_top32_target_capture_ratio": 0.8,
+            "regressor_oof_top64_target_capture_ratio": 0.9,
+            "regressor_oof_mean_ndcg_at_32": 0.7,
+            "regressor_oof_mean_ndcg_at_64": 0.75,
             "regressor_oof_draft_value_score": 0.75,
         },
     )
@@ -138,6 +143,57 @@ def test_run_regressor_uses_configured_target_space(monkeypatch):
 
     assert captured["target_space"] == "log"
     assert np.allclose(captured["y"], np.log1p(y_reg))
+
+
+def test_run_regressor_can_filter_on_observed_regression_target_instead_of_classifier(monkeypatch):
+    captured = {}
+
+    def fake_run_cv_regressor(*, X, y, target_space, **_kwargs):
+        captured["rows"] = len(X)
+        captured["y"] = y
+        captured["target_space"] = target_space
+        return CVResult(
+            oof_predictions=np.array([0.1, 0.2, 0.3]),
+            best_iterations=[10, 12],
+            fold_metrics=[{"rmse": 1.0, "mae": 1.0}, {"rmse": 1.2, "mae": 1.1}],
+        )
+
+    monkeypatch.setattr("fof8_ml.orchestration.regressor.get_model_family", lambda **_: "catboost")
+    monkeypatch.setattr("fof8_ml.orchestration.regressor.run_cv_regressor", fake_run_cv_regressor)
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.regressor.compute_regressor_oof_metrics",
+        lambda **_kwargs: {
+            "regressor_oof_rmse": 1.0,
+            "regressor_oof_mae": 1.0,
+            "regressor_oof_top32_target_capture_ratio": 0.8,
+            "regressor_oof_top64_target_capture_ratio": 0.9,
+            "regressor_oof_mean_ndcg_at_32": 0.7,
+            "regressor_oof_mean_ndcg_at_64": 0.75,
+            "regressor_oof_draft_value_score": 0.75,
+        },
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.regressor.train_final_model", lambda **_kwargs: object()
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.regressor.mlflow.log_param", lambda *_args, **_kwargs: None
+    )
+    monkeypatch.setattr(
+        "fof8_ml.orchestration.regressor.mlflow.log_metrics", lambda *_args, **_kwargs: None
+    )
+
+    ctx = _make_context(
+        target_space="raw",
+        loss_function="RMSE",
+        y_reg=np.array([2.0, np.nan, 4.0, 5.0]),
+        y_cls=np.array([0, 0, 0, 0]),
+    )
+    ctx.cfg.target.regressor_intensity.row_filter = "regression_target_observed"
+    run_regressor(ctx)
+
+    assert captured["target_space"] == "raw"
+    assert captured["rows"] == 3
+    assert np.allclose(captured["y"], np.array([2.0, 4.0, 5.0]))
 
 
 def test_run_regressor_requires_universe_and_year_for_draft_aware_metrics():
@@ -168,6 +224,10 @@ def test_run_regressor_passes_one_group_per_universe_year(monkeypatch):
         return {
             "regressor_oof_rmse": 1.0,
             "regressor_oof_mae": 1.0,
+            "regressor_oof_top32_target_capture_ratio": 0.8,
+            "regressor_oof_top64_target_capture_ratio": 0.9,
+            "regressor_oof_mean_ndcg_at_32": 0.7,
+            "regressor_oof_mean_ndcg_at_64": 0.75,
             "regressor_oof_draft_value_score": 0.75,
         }
 

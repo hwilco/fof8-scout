@@ -94,7 +94,10 @@ class CatBoostClassifierWrapper(CatBoostWrapper[cb.CatBoostClassifier]):
         y_train: np.ndarray,
         X_val: pl.DataFrame | None = None,
         y_val: np.ndarray | None = None,
+        sample_weight: np.ndarray | None = None,
+        sample_weight_val: np.ndarray | None = None,
     ) -> None:
+        _ = sample_weight, sample_weight_val
         X_train_pd, cat_features = self._prepare_data(X_train)
 
         eval_set = None
@@ -195,19 +198,30 @@ class CatBoostRegressorWrapper(CatBoostWrapper[cb.CatBoostRegressor]):
         y_train: np.ndarray,
         X_val: pl.DataFrame | None = None,
         y_val: np.ndarray | None = None,
+        sample_weight: np.ndarray | None = None,
+        sample_weight_val: np.ndarray | None = None,
     ) -> None:
         X_train_pd, cat_features = self._prepare_data(X_train)
+        train_pool = cb.Pool(
+            X_train_pd,
+            y_train,
+            cat_features=cat_features,
+            weight=sample_weight,
+        )
 
         eval_set = None
         if X_val is not None and y_val is not None:
             X_val_pd, _ = self._prepare_data(X_val)
-            eval_set = [(X_val_pd, y_val)]
+            eval_set = cb.Pool(
+                X_val_pd,
+                y_val,
+                cat_features=cat_features,
+                weight=sample_weight_val,
+            )
 
         self.require_model().fit(
-            X_train_pd,
-            y_train,
+            train_pool,
             eval_set=eval_set,
-            cat_features=cat_features,
             early_stopping_rounds=self.early_stopping_rounds if eval_set else None,
         )
 
